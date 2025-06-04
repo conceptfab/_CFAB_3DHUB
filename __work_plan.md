@@ -231,10 +231,10 @@ CFAB_3DHUB/
     - Test dla `get_archive_size()`:
       - Z istniejącym plikiem.
       - Z nieistniejącym plikiem (powinien obsłużyć błąd, np. zwrócić 0 lub None).
-    - Test dla `get_formatted_archive_size()` dla różnych rozmiarów (bajty, KB, MB, GB).  - **Jednostkowe (`tests/unit/test_image_utils.py` - jeśli utworzony):**
+    - Test dla `get_formatted_archive_size()` dla różnych rozmiarów (bajty, KB, MB, GB). - **Jednostkowe (`tests/unit/test_image_utils.py` - jeśli utworzony):**
     - Test dla `create_placeholder_pixmap`.
 - **Podsumowanie Testów:** `[x] Wykonane`
-- **Dokumentacja:**  - `[x] Zakończone`: Docstringi dla nowych metod w `FilePair` i funkcji w `image_utils.py`.
+- **Dokumentacja:** - `[x] Zakończone`: Docstringi dla nowych metod w `FilePair` i funkcji w `image_utils.py`.
 - **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
@@ -246,7 +246,7 @@ CFAB_3DHUB/
 
 ### Etap 2.B: Interfejs Użytkownika - Galeria Kafelków i Skalowanie
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** `[x] Zakończony`
 - **Cel Etapu:** Zmiana sposobu wyświetlania na galerię kafelków. Każdy kafelek wyświetla miniaturę, nazwę, rozmiar archiwum. Dodanie suwaka do skalowania kafelków.
 - **Wymagane Funkcjonalności:**
   1.  **`src/ui/widgets/file_tile_widget.py` (nowy):**
@@ -284,12 +284,12 @@ CFAB_3DHUB/
     - Sprawdzenie, czy zmiana wartości suwaka dynamicznie zmienia rozmiar kafelków/miniatur.
     - Test z folderem zawierającym obrazy, których nie da się wczytać (sprawdzić, czy wyświetlana jest domyślna/błędna miniatura).
     - Obserwacja responsywności UI podczas ładowania i skalowania.
-- **Podsumowanie Testów:** `[ ] Do wykonania`
+- **Podsumowanie Testów:** `[x] Wykonane`
 - **Dokumentacja:**
-  - `[ ] Do uzupełnienia`: Docstringi dla klasy `FileTileWidget` i jej metod.
-  - `[ ] Do uzupełnienia`: Aktualizacja docstringów i komentarzy w `main_window.py`.
-  - `[ ] Do uzupełnienia`: Opis mechanizmu wyświetlania kafelków.
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+  - `[x] Uzupełnione`: Docstringi dla klasy `FileTileWidget` i jej metod.
+  - `[x] Uzupełnione`: Aktualizacja docstringów i komentarzy w `main_window.py`.
+  - `[x] Uzupełnione`: Opis mechanizmu wyświetlania kafelków.
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 
