@@ -112,7 +112,7 @@ CFAB_3DHUB/
 
 ### Etap 1.A: Logika Biznesowa - Skanowanie Folderu i Parowanie Plików
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** `[x] Implementacja kodu zakończona`
 - **Cel Etapu:** Implementacja logiki wyboru folderu roboczego, rekursywnego skanowania folderu, parowania plików na podstawie nazw i rozszerzeń oraz rozbudowa klasy `FilePair`.
 - **Wymagane Funkcjonalności:**
   1.  **`src/app_config.py`**: Zdefiniowanie list obsługiwanych rozszerzeń archiwów (np. `.rar`, `.zip`) i podglądów (np. `.jpg`, `.jpeg`, `.png`).
@@ -145,11 +145,11 @@ CFAB_3DHUB/
   - **Jednostkowe (`tests/unit/test_file_pair.py`):**
     - Test konstruktora `FilePair`.
     - Test metod `get_base_name()`, `get_archive_path()`, `get_preview_path()`.
-- **Podsumowanie Testów:** `[ ] Do wykonania`
+- **Podsumowanie Testów:** `[x] Wykonane`
 - **Dokumentacja:**
-  - `[ ] Do uzupełnienia`: Docstringi dla funkcji w `scanner.py` i metod w `FilePair`.
-  - `[ ] Do uzupełnienia`: Komentarze wyjaśniające logikę parowania w `scanner.py`.
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+  - `[x] Zakończone`: Docstringi dla funkcji w `scanner.py` i metod w `FilePair`.
+  - `[x] Zakończone`: Komentarze wyjaśniające logikę parowania w `scanner.py`.
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 
@@ -160,7 +160,7 @@ CFAB_3DHUB/
 
 ### Etap 1.B: Interfejs Użytkownika - Wybór Folderu i Wyświetlanie Listy Nazw
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** `[x] Implementacja kodu zakończona`
 - **Cel Etapu:** Dodanie do UI przycisku wyboru folderu roboczego i wyświetlenie listy nazw sparowanych plików.
 - **Wymagane Funkcjonalności:**
   1.  **`src/ui/main_window.py`**:
@@ -182,11 +182,11 @@ CFAB_3DHUB/
     - Sprawdzenie, czy po wybraniu folderu z testowymi danymi, `QListWidget` jest poprawnie zapełniany nazwami sparowanych plików.
     - Sprawdzenie, czy wybranie innego folderu aktualizuje listę.
     - Sprawdzenie, czy anulowanie wyboru folderu nie powoduje błędu i lista pozostaje pusta/niezmieniona.
-- **Podsumowanie Testów:** `[ ] Do wykonania`
+- **Podsumowanie Testów:** `[x] Wykonane`
 - **Dokumentacja:**
-  - `[ ] Do uzupełnienia`: Docstringi dla nowych metod w `main_window.py`.
-  - `[ ] Do uzupełnienia`: Komentarze w UI dotyczące obsługi zdarzeń.
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+  - `[x] Zakończone`: Docstringi dla nowych metod w `main_window.py`.
+  - `[x] Zakończone`: Komentarze w UI dotyczące obsługi zdarzeń.
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 
