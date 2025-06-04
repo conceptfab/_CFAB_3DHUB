@@ -1,0 +1,52 @@
+import os
+import tempfile
+import shutil
+from PIL import Image
+
+import pytest
+
+from src.models.file_pair import FilePair
+from PyQt6.QtGui import QPixmap
+
+
+@pytest.mark.unit
+def test_file_pair_basic():
+    file_pair = FilePair("path/to/archive.zip", "path/to/preview.jpg")
+    assert file_pair.get_base_name() == "archive"
+    assert file_pair.get_archive_path() == "path/to/archive.zip"
+    assert file_pair.get_preview_path() == "path/to/preview.jpg"
+
+
+@pytest.mark.unit
+def test_file_pair_with_real_files():
+    # Utwórz tymczasowy katalog na pliki testowe
+    test_dir = tempfile.mkdtemp()
+    
+    try:
+        # Utwórz testowy plik archiwum
+        archive_path = os.path.join(test_dir, "testarchive.zip")
+        with open(archive_path, 'wb') as f:
+            f.write(b'testdata')  # 8 bajtów danych testowych
+        
+        # Utwórz testowy plik podglądu
+        preview_path = os.path.join(test_dir, "testarchive.jpg")
+        test_image = Image.new('RGB', (100, 100), color='blue')
+        test_image.save(preview_path)
+        
+        # Utwórz instancję FilePair
+        file_pair = FilePair(archive_path, preview_path)
+        
+        # Testuj metody dostępu do rozmiarów plików
+        assert file_pair.get_archive_size() == 8
+        assert file_pair.get_formatted_archive_size() == "8 B"
+        
+        # Testuj generowanie miniatury
+        thumbnail = file_pair.load_preview_thumbnail((50, 50))
+        assert isinstance(thumbnail, QPixmap)
+        assert not thumbnail.isNull()
+        assert thumbnail.width() == 50
+        assert thumbnail.height() == 50
+        
+    finally:
+        # Posprzątaj po teście
+        shutil.rmtree(test_dir)

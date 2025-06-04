@@ -197,7 +197,7 @@ CFAB_3DHUB/
 
 ### Etap 2.A: Logika Biznesowa - Miniatury i Rozmiar Pliku
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** `[x] Zakończony`
 - **Cel Etapu:** Rozbudowa `FilePair` o przechowywanie miniatury podglądu i rozmiaru pliku archiwum. Implementacja funkcji do ich pozyskiwania.
 - **Wymagane Funkcjonalności:**
   1.  **`src/models/file_pair.py`**:
@@ -231,13 +231,11 @@ CFAB_3DHUB/
     - Test dla `get_archive_size()`:
       - Z istniejącym plikiem.
       - Z nieistniejącym plikiem (powinien obsłużyć błąd, np. zwrócić 0 lub None).
-    - Test dla `get_formatted_archive_size()` dla różnych rozmiarów (bajty, KB, MB, GB).
-  - **Jednostkowe (`tests/unit/test_image_utils.py` - jeśli utworzony):**
+    - Test dla `get_formatted_archive_size()` dla różnych rozmiarów (bajty, KB, MB, GB).  - **Jednostkowe (`tests/unit/test_image_utils.py` - jeśli utworzony):**
     - Test dla `create_placeholder_pixmap`.
-- **Podsumowanie Testów:** `[ ] Do wykonania`
-- **Dokumentacja:**
-  - `[ ] Do uzupełnienia`: Docstringi dla nowych metod w `FilePair` i funkcji w `image_utils.py`.
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+- **Podsumowanie Testów:** `[x] Wykonane`
+- **Dokumentacja:**  - `[x] Zakończone`: Docstringi dla nowych metod w `FilePair` i funkcji w `image_utils.py`.
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 
