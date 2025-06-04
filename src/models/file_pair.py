@@ -12,6 +12,7 @@ class FilePair:
         self.preview_path = preview_path
         self.preview_thumbnail = None
         self.archive_size_bytes = None
+        self.is_favorite = False  # Domyślnie plik nie jest "ulubionym"
         logging.debug(f"Utworzono nowy obiekt FilePair: {self.get_base_name()}")
 
     def get_base_name(self):
@@ -123,3 +124,38 @@ class FilePair:
             )
 
         return f"{formatted_size} {units[unit_index]}"
+
+    def toggle_favorite(self):
+        """
+        Przełącza status "ulubiony" dla danego pliku.
+
+        Returns:
+            bool: Nowy stan flagi is_favorite
+        """
+        self.is_favorite = not self.is_favorite
+        logging.debug(
+            f"Przełączono status 'ulubiony' dla {self.get_base_name()}: {self.is_favorite}"
+        )
+        return self.is_favorite
+
+    def is_favorite_file(self):
+        """
+        Sprawdza, czy plik jest oznaczony jako "ulubiony".
+
+        Returns:
+            bool: True jeśli plik jest oznaczony jako ulubiony, False w przeciwnym wypadku
+        """
+        return self.is_favorite
+
+    def set_favorite(self, state):
+        """
+        Ustawia status "ulubiony" dla danego pliku.
+
+        Args:
+            state (bool): Nowy stan flagi is_favorite
+
+        Returns:
+            bool: Aktualny stan flagi is_favorite
+        """
+        self.is_favorite = bool(state)
+        return self.is_favorite

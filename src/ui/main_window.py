@@ -22,6 +22,8 @@ from PyQt6.QtWidgets import (
 )
 
 from src.logic.scanner import scan_folder_for_pairs
+from src.logic import metadata_manager
+from src.logic import file_operations
 from src.models.file_pair import FilePair
 from src.ui.widgets.file_tile_widget import FileTileWidget
 
@@ -73,21 +75,21 @@ class MainWindow(QMainWindow):
         self.top_panel = QWidget()
         self.top_layout = QHBoxLayout(self.top_panel)
         self.top_layout.setContentsMargins(0, 0, 0, 0)
-
+        
         # Przycisk wyboru folderu
         self.select_folder_button = QPushButton("Wybierz Folder Roboczy")
         self.select_folder_button.clicked.connect(self._select_working_directory)
         self.top_layout.addWidget(self.select_folder_button)
-
+        
         # Panel kontroli rozmiaru
         self.size_control_panel = QWidget()
         self.size_control_layout = QHBoxLayout(self.size_control_panel)
         self.size_control_layout.setContentsMargins(0, 0, 0, 0)
-
+        
         # Label dla suwaka
         self.size_label = QLabel("Rozmiar miniatur:")
         self.size_control_layout.addWidget(self.size_label)
-
+        
         # Suwak rozmiaru miniatur
         self.size_slider = QSlider(Qt.Orientation.Horizontal)
         self.size_slider.setMinimum(0)
@@ -97,45 +99,39 @@ class MainWindow(QMainWindow):
         self.size_slider.setTickInterval(20)
         self.size_slider.valueChanged.connect(self._update_thumbnail_size)
         self.size_control_layout.addWidget(self.size_slider)
-
+        
         # Dodanie do panelu górnego
         self.top_layout.addStretch(1)  # Elastyczny odstęp
         self.top_layout.addWidget(self.size_control_panel)
-
+        
         # Dodanie panelu górnego do głównego layoutu
         self.main_layout.addWidget(self.top_panel)
-
+        
         # Separator poziomy
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
         separator.setFrameShadow(QFrame.Shadow.Sunken)
         self.main_layout.addWidget(separator)
-
+        
         # Panel przewijany dla kafelków
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-        self.scroll_area.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
         # Kontener dla kafelków
         self.tiles_container = QWidget()
         self.tiles_layout = QGridLayout(self.tiles_container)
         self.tiles_layout.setContentsMargins(10, 10, 10, 10)
         self.tiles_layout.setSpacing(15)
-        self.tiles_layout.setAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
-        )
-
+        self.tiles_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        
         # Dodanie kontenera do obszaru przewijanego
         self.scroll_area.setWidget(self.tiles_container)
-
+        
         # Dodanie obszaru przewijanego do głównego layoutu
         self.main_layout.addWidget(self.scroll_area)
-
+        
         # Na początku ukrywamy panel kontroli rozmiaru (nie ma miniatur)
         self.size_control_panel.setVisible(False)
 
@@ -158,11 +154,18 @@ class MainWindow(QMainWindow):
             logging.info(f"Wybrano folder: {self.current_working_directory}")
             base_folder_name = os.path.basename(self.current_working_directory)
             self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
-
+            
             try:
                 self.file_pairs_list = scan_folder_for_pairs(
                     self.current_working_directory
                 )
+                
+                # Wczytanie i zastosowanie metadanych (np. status "ulubione")
+                metadata_manager.apply_metadata_to_file_pairs(
+                    self.current_working_directory,
+                    self.file_pairs_list
+                )
+                
                 self._update_gallery_view()
                 logging.info(f"Znaleziono par: {len(self.file_pairs_list)}.")
             except Exception as e:
@@ -179,46 +182,44 @@ class MainWindow(QMainWindow):
         """
         # Wyczyść istniejące kafelki
         self._clear_gallery()
-
+        
         if not self.file_pairs_list:
             logging.debug("Lista par pusta, galeria pusta.")
             # Ukryj panel kontroli rozmiaru, jeśli nie ma miniatur
             self.size_control_panel.setVisible(False)
             return
-
+        
         # Pokaż panel kontroli rozmiaru, jeśli są miniatury do wyświetlenia
         self.size_control_panel.setVisible(True)
-
+        
         try:
             # Zapisujemy szerokość kontenera do obliczeń liczby kolumn
             container_width = self.tiles_container.width()
-
+            
             # Obliczamy liczbę kolumn na podstawie rozmiaru miniatury i szerokości kontenera
             # Dodajemy margines 30px na kafelek
             tile_width = self.current_thumbnail_size[0] + 30
             cols = max(1, math.floor(container_width / tile_width))
-
+            
             # Tworzymy kafelki dla każdej pary plików i dodajemy je do siatki
             for idx, file_pair in enumerate(self.file_pairs_list):
                 try:
                     # Utwórz nowy kafelek
                     tile = FileTileWidget(file_pair, self.current_thumbnail_size, self)
-
+                    
                     # Zapisz referencję do kafelka
                     self.file_tile_widgets.append(tile)
-
+                    
                     # Oblicz pozycję w siatce (wiersz, kolumna)
                     row = idx // cols
                     col = idx % cols
-
+                    
                     # Dodaj kafelek do siatki
                     self.tiles_layout.addWidget(tile, row, col)
-
+                    
                 except Exception as e:
-                    logging.error(
-                        f"Błąd tworzenia kafelka dla {file_pair.get_base_name()}: {e}"
-                    )
-
+                    logging.error(f"Błąd tworzenia kafelka dla {file_pair.get_base_name()}: {e}")
+        
         except Exception as e:
             logging.error(f"Błąd aktualizacji galerii: {e}")
 
@@ -231,14 +232,14 @@ class MainWindow(QMainWindow):
             item = self.tiles_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-
+        
         # Wyczyść listę referencji do kafelków
         self.file_tile_widgets = []
 
     def _update_thumbnail_size(self, value):
         """
         Aktualizuje rozmiar miniatur na podstawie wartości suwaka.
-
+        
         Args:
             value (int): Wartość suwaka (0-100)
         """
@@ -246,19 +247,19 @@ class MainWindow(QMainWindow):
         # gdzie 0 = minimalny rozmiar, 100 = maksymalny rozmiar
         width_range = self.max_thumbnail_size[0] - self.min_thumbnail_size[0]
         height_range = self.max_thumbnail_size[1] - self.min_thumbnail_size[1]
-
+        
         new_width = self.min_thumbnail_size[0] + (width_range * value / 100)
         new_height = self.min_thumbnail_size[1] + (height_range * value / 100)
-
+        
         self.current_thumbnail_size = (int(new_width), int(new_height))
-
+        
         # Aktualizacja rozmiaru wszystkich kafelków
         for tile in self.file_tile_widgets:
             try:
                 tile.set_thumbnail_size(self.current_thumbnail_size)
             except Exception as e:
                 logging.error(f"Błąd aktualizacji rozmiaru kafelka: {e}")
-
+        
         logging.debug(f"Zaktualizowano rozmiar miniatur: {self.current_thumbnail_size}")
 
     def resizeEvent(self, event):
@@ -266,7 +267,39 @@ class MainWindow(QMainWindow):
         Obsługuje zdarzenie zmiany rozmiaru okna.
         """
         super().resizeEvent(event)
-
+        
         # Aktualizuje układ kafelków po zmianie rozmiaru okna
         if self.file_pairs_list:
             self._update_gallery_view()
+    
+    def _save_metadata(self):
+        """
+        Zapisuje metadane dla bieżących par plików.
+        """
+        if self.current_working_directory and self.file_pairs_list:
+            metadata_manager.save_metadata(
+                self.current_working_directory,
+                self.file_pairs_list
+            )
+    
+    def open_archive(self, file_pair):
+        """
+        Otwiera plik archiwum w domyślnym programie systemu.
+        
+        Args:
+            file_pair (FilePair): Para plików, której archiwum ma zostać otwarte
+        """
+        if file_pair:
+            file_operations.open_archive_externally(file_pair.archive_path)
+    
+    def toggle_favorite_status(self, file_pair):
+        """
+        Przełącza status "ulubiony" dla wskazanej pary plików i zapisuje metadane.
+        
+        Args:
+            file_pair (FilePair): Para plików, dla której ma zostać zmieniony status
+        """
+        if file_pair:
+            file_pair.toggle_favorite()
+            # Zapisujemy zaktualizowane metadane
+            self._save_metadata()
