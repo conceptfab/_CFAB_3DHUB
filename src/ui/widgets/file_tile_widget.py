@@ -6,9 +6,7 @@ import logging
 from collections import OrderedDict
 
 from PyQt6.QtCore import QEvent, Qt, pyqtSignal
-from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QColorDialog,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -46,7 +44,6 @@ class FileTileWidget(QWidget):
             ("Żółty", "#FDD835"),  # Żółty
             ("Fioletowy", "#8E24AA"),  # Fioletowy
             ("Czarny", "#000000"),
-            ("Niestandardowy...", "custom"),  # Otworzy QColorDialog
         ]
     )
 
@@ -68,16 +65,21 @@ class FileTileWidget(QWidget):
 
         # Oryg. QPixmap dla wydajnego skalowania
         self.original_thumbnail = None
-        # Przechowywanie bazowego stylesheetu
-        self.base_style_sheet = (  # Przeniesione do wielu linii
-            "FileTileWidget {\n"
-            "    background-color: #f5f5f5;\n"
-            "    border: 1px solid #cccccc;\n"
-            "    border-radius: 5px;\n"
-            "}\n"
-            "FileTileWidget:hover {\n"
-            "    border: 1px solid #aaaaaa;\n"
-            "}\n"
+
+        # Ustawienie podstawowych właściwości widgetu
+        self.setObjectName("FileTileWidget")
+        self.setStyleSheet(
+            """
+            #FileTileWidget {
+                background-color: #f5f5f5;
+                border: 3px solid #cccccc;
+                border-radius: 5px;
+                padding: 2px;
+            }
+            #FileTileWidget:hover {
+                border: 3px solid #aaaaaa;
+            }
+        """
         )
 
         # Inicjalizacja UI
@@ -192,13 +194,6 @@ class FileTileWidget(QWidget):
         for name, value in self.PREDEFINED_COLORS.items():
             self.color_tag_combo.addItem(name, userData=value)
 
-        # Zapisujemy indeks pozycji "Niestandardowy..." do późniejszego użytku
-        self.custom_color_combo_index = -1
-        for i in range(self.color_tag_combo.count()):
-            if self.color_tag_combo.itemData(i) == "custom":
-                self.custom_color_combo_index = i
-                break
-
         self.color_tag_combo.activated.connect(self._on_color_combo_activated)
         self.bottom_controls_layout.addWidget(self.color_tag_combo)
 
@@ -212,9 +207,6 @@ class FileTileWidget(QWidget):
         additional_height = 120 + self.color_indicator_bar.height()
         min_height = self.thumbnail_size[1] + additional_height
         self.setMinimumSize(self.thumbnail_size[0] + 20, min_height)
-
-        # Ustawienie tła i ramki dla wyróżnienia kafelków
-        self.setStyleSheet(self.base_style_sheet)
 
     def update_data(self, file_pair: FilePair):
         """
@@ -345,36 +337,15 @@ class FileTileWidget(QWidget):
         tag_value = self.color_tag_combo.itemData(index)
         current_hex = self.file_pair.get_color_tag()
 
-        if tag_value == "custom":
-            initial_color = QColor(current_hex) if current_hex else Qt.GlobalColor.white
-            # Wywołanie QColorDialog w wielu liniach dla czytelności
-            color = QColorDialog.getColor(
-                initial_color, self, "Wybierz kolor niestandardowy"
-            )
-
-            if color.isValid():
-                new_color_hex = color.name()  # Format #RRGGBB
-                if new_color_hex != current_hex:
-                    self.file_pair.set_color_tag(new_color_hex)
-                    # Aktualizuj UI natychmiast
-                    self.update_color_tag_display(new_color_hex)
-                    self.color_tag_changed.emit(self.file_pair, new_color_hex)
-                    fp_name = self.file_pair.get_base_name()[:15]
-                    logging.debug(f"Custom color: {fp_name}.. -> {new_color_hex}")
-            else:  # Anulowano QColorDialog, przywróć poprzednią wartość
-                self.update_color_tag_display(current_hex)
-                return
-        else:  # Predefiniowany kolor (w tym "Brak" == "")
-            new_color_hex = tag_value
-            if new_color_hex != current_hex:
-                self.file_pair.set_color_tag(new_color_hex)
-                self.update_color_tag_display(new_color_hex)
-                self.color_tag_changed.emit(self.file_pair, new_color_hex)
-                fp_name = self.file_pair.get_base_name()[:15]
-                logging.debug(f"Predef color: {fp_name}.. -> {new_color_hex}")
+        if tag_value != current_hex:
+            self.file_pair.set_color_tag(tag_value)
+            self.update_color_tag_display(tag_value)
+            self.color_tag_changed.emit(self.file_pair, tag_value)
+            fp_name = self.file_pair.get_base_name()[:15]
+            logging.debug(f"Color: {fp_name}.. -> {tag_value}")
 
     def update_color_tag_display(self, color_hex_string: str):
-        """Aktualizuje QComboBox i styl kafelka na podstawie tagu koloru."""
+        """Aktualizuje QComboBox i styl miniaturki na podstawie tagu koloru."""
         logging.debug(
             f"Aktualizacja UI koloru dla {self.file_pair.get_base_name()[:20]} z kolorem '{color_hex_string}'"
         )
@@ -388,12 +359,7 @@ class FileTileWidget(QWidget):
                 break
 
         if not found_in_predefined and color_hex_string:  # Niestandardowy kolor
-            if self.custom_color_combo_index != -1:
-                if self.color_tag_combo.currentIndex() != self.custom_color_combo_index:
-                    self.color_tag_combo.setCurrentIndex(self.custom_color_combo_index)
-            # Usunięto komentarz o zmianie tekstu "Niestandardowy..."
-            else:  # Fallback, jeśli "Niestandardowy..." nie istnieje
-                pass
+            pass
         elif not color_hex_string:  # "Brak" koloru
             for i in range(self.color_tag_combo.count()):
                 if self.color_tag_combo.itemData(i) == "":  # Znajdź "Brak"
@@ -401,20 +367,27 @@ class FileTileWidget(QWidget):
                         self.color_tag_combo.setCurrentIndex(i)
                     break
 
-        # 2. Aktualizacja paska wskaźnika koloru
+        # 2. Ustawienie stylu tylko na miniaturce
         if color_hex_string:
-            self.color_indicator_bar.setStyleSheet(
-                f"background-color: {color_hex_string};"
+            border_color = color_hex_string
+            self.thumbnail_label.setStyleSheet(
+                f"""
+                background-color: {border_color};
+                border: 6px solid {border_color};
+                border-radius: 7px;
+                padding: 0px;
+            """
             )
-            self.color_indicator_bar.setVisible(True)
+            logging.debug(f"Ustawiono ramkę miniaturki: {border_color}")
         else:
-            self.color_indicator_bar.setStyleSheet("background-color: transparent;")
-            # Ukrywamy pasek, jeśli nie ma koloru (setVisible(False)).
-            # Można też zostawić transparentny i widoczny.
-            self.color_indicator_bar.setVisible(False)
-
-        # 3. Ustawienie bazowego stylu dla całego widgetu (bez dynamicznej zmiany ramki)
-        self.setStyleSheet(self.base_style_sheet)
+            self.thumbnail_label.setStyleSheet(
+                f"""
+                border: 0;
+                border-radius: 7px;
+                padding: 2px;
+            """
+            )
+            logging.debug("Usunięto ramkę miniaturki (brak koloru)")
 
     # MODIFICATION: New method to handle clicks on labels (event filter)
     def eventFilter(self, obj, event):
