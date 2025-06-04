@@ -414,7 +414,7 @@ CFAB_3DHUB/
 
 ### Etap 4.A: Logika Biznesowa - Zaawansowane Tagowanie i Logika Filtrowania
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** `[x] Zakończony`
 - **Cel Etapu:** Rozbudowa `FilePair` o atrybuty dla gwiazdek i tagu kolorystycznego. Aktualizacja mechanizmu zapisu/odczytu metadanych. Implementacja logiki filtrowania listy `FilePair`.
 - **Wymagane Funkcjonalności:**
   1.  **`src/models/file_pair.py`**:
@@ -458,11 +458,11 @@ CFAB_3DHUB/
       - Określony kolor.
       - Kombinacje (np. ulubione z >= 4 gwiazdkami i czerwonym tagiem).
       - Brak kryteriów (powinien zwrócić wszystkie pary).
-- **Podsumowanie Testów:** `[ ] Do wykonania`
+- **Podsumowanie Testów:** `[x] Wykonane`
 - **Dokumentacja:**
-  - `[ ] Do uzupełnienia`: Aktualizacja docstringów w `FilePair` i `MetadataManager`.
-  - `[ ] Do uzupełnienia`: Dokumentacja funkcji `filter_file_pairs` i formatu `filter_criteria`.
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+  - `[x] Uzupełnione`: Aktualizacja docstringów w `FilePair` i `MetadataManager`.
+  - `[x] Uzupełnione`: Dokumentacja funkcji `filter_file_pairs` i formatu `filter_criteria`.
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 
@@ -472,7 +472,7 @@ CFAB_3DHUB/
 
 ### Etap 4.B: Interfejs Użytkownika - Kontrolki Tagowania i Panel Filtrowania
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** `[x] Zakończony`
 - **Cel Etapu:** Dodanie kontrolek na kafelkach lub w menu kontekstowym do przypisywania gwiazdek i kolorów. Dodanie panelu filtrowania i aktualizacja widoku kafelków w odpowiedzi na zmiany filtrów.
 - **Wymagane Funkcjonalności:**
   1.  **`src/ui/widgets/file_tile_widget.py`**:
@@ -511,11 +511,11 @@ CFAB_3DHUB/
       - Kombinacje filtrów.
       - Resetowanie filtrów (powinno pokazać wszystkie kafelki).
     - Sprawdzenie, czy widok kafelków aktualizuje się poprawnie po zmianie filtrów.
-- **Podsumowanie Testów:** `[ ] Do wykonania`
+- **Podsumowanie Testów:** `[x] Wykonane`
 - **Dokumentacja:**
-  - `[ ] Do uzupełnienia`: Aktualizacja dokumentacji `FileTileWidget` i `MainWindow`.
-  - `[ ] Do uzupełnienia`: Opis działania panelu filtrowania i kontrolek tagowania.
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+  - `[x] Uzupełnione`: Aktualizacja dokumentacji `FileTileWidget` i `MainWindow`.
+  - `[x] Uzupełnione`: Opis działania panelu filtrowania i kontrolek tagowania.
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 
@@ -734,6 +734,7 @@ CFAB_3DHUB/
   - Przegląd całego kodu pod kątem:
     - Czytelności, spójności nazw.
     - Modularności (ścisłe oddzielenie UI od logiki, SRP dla klas/funkcji).
+    - Dodania obłsugi wielątkowości
     - Eliminacji powtórzeń kodu (DRY).
     - Poprawności obsługi błędów i wyjątków.
     - Zgodności z PEP 8.

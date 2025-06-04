@@ -146,8 +146,9 @@ def save_metadata(working_directory: str, file_pairs_list: List) -> bool:
 
             # Zapisujemy tylko te właściwości, które chcemy zachować między sesjami
             pair_metadata = {
-                "is_favorite": file_pair.is_favorite
-                # W przyszłości można dodać więcej metadanych, np. notatki, kategorie, tagi, itp.
+                "is_favorite": file_pair.is_favorite,
+                "stars": file_pair.get_stars(),
+                "color_tag": file_pair.get_color_tag(),
             }
 
             # Aktualizujemy istniejące metadane
@@ -208,7 +209,19 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
                         f"Zastosowano status 'ulubiony' dla {file_pair.get_base_name()}: {file_pair.is_favorite}"
                     )
 
-                # W przyszłości można dodać więcej metadanych do stosowania
+                # Ustawiamy liczbę gwiazdek, jeśli istnieje w metadanych
+                if "stars" in pair_metadata:
+                    file_pair.set_stars(pair_metadata["stars"])
+                    logging.debug(
+                        f"Zastosowano gwiazdki dla {file_pair.get_base_name()}: {file_pair.get_stars()}"
+                    )
+
+                # Ustawiamy tag kolorystyczny, jeśli istnieje w metadanych
+                if "color_tag" in pair_metadata:
+                    file_pair.set_color_tag(pair_metadata["color_tag"])
+                    logging.debug(
+                        f"Zastosowano tag koloru dla {file_pair.get_base_name()}: {file_pair.get_color_tag()}"
+                    )
 
         return True
 

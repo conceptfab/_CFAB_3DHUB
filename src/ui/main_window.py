@@ -5,13 +5,17 @@ Główne okno aplikacji.
 import logging
 import math
 import os
+from collections import OrderedDict
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QFileDialog,
     QFrame,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -23,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.logic import file_operations, metadata_manager
+from src.logic.filter_logic import filter_file_pairs
 from src.logic.scanner import scan_folder_for_pairs
 from src.models.file_pair import FilePair
 from src.ui.widgets.file_tile_widget import FileTileWidget
@@ -34,6 +39,19 @@ class MainWindow(QMainWindow):
     Główne okno aplikacji CFAB_3DHUB.
     """
 
+    PREDEFINED_COLORS_FILTER = OrderedDict(
+        [
+            ("Wszystkie kolory", "ALL"),
+            ("Brak koloru", "__NONE__"),
+            ("Czerwony", "#E53935"),
+            ("Zielony", "#43A047"),
+            ("Niebieski", "#1E88E5"),
+            ("Żółty", "#FDD835"),
+            ("Fioletowy", "#8E24AA"),
+            ("Czarny", "#000000"),
+        ]
+    )
+
     def __init__(self):
         """
         Inicjalizuje główne okno aplikacji.
@@ -41,8 +59,9 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.current_working_directory = None
-        self.file_pairs_list: list[FilePair] = []  # Sparowane pliki
-        self.file_tile_widgets = []  # Lista wszystkich kafelków
+        self.all_file_pairs: list[FilePair] = []
+        self.file_pairs_list: list[FilePair] = []
+        self.file_tile_widgets = []
 
         # Konfiguracja rozmiaru miniatur
         self.default_thumbnail_size = (150, 150)  # Domyślny rozmiar (px)
@@ -65,6 +84,12 @@ class MainWindow(QMainWindow):
 
         # Inicjalizacja interfejsu użytkownika
         self._init_ui()
+        # Domyślne kryteria filtrowania (wszystko pokazane)
+        self.current_filter_criteria = {
+            "show_favorites_only": False,
+            "min_stars": 0,
+            "required_color_tag": "ALL",  # Domyślnie "Wszystkie"
+        }
 
         logging.info("Główne okno aplikacji zostało zainicjalizowane")
 
@@ -107,6 +132,44 @@ class MainWindow(QMainWindow):
 
         # Dodanie panelu górnego do głównego layoutu
         self.main_layout.addWidget(self.top_panel)
+
+        # --- Panel Filtrowania ---
+        self.filter_panel = QGroupBox("Filtry")
+        self.filter_panel_layout = QHBoxLayout(self.filter_panel)
+        self.filter_panel_layout.setContentsMargins(5, 5, 5, 5)
+        self.filter_panel_layout.setSpacing(10)
+
+        self.filter_fav_checkbox = QCheckBox("Tylko ulubione")
+        self.filter_fav_checkbox.stateChanged.connect(
+            self._apply_filters_and_update_view
+        )
+        self.filter_panel_layout.addWidget(self.filter_fav_checkbox)
+
+        self.filter_stars_label = QLabel("Min. gwiazdki:")
+        self.filter_panel_layout.addWidget(self.filter_stars_label)
+        self.filter_stars_combo = QComboBox()
+        for i in range(6):  # 0 do 5 gwiazdek
+            self.filter_stars_combo.addItem(f"{i} gwiazdek", userData=i)
+        self.filter_stars_combo.currentIndexChanged.connect(
+            self._apply_filters_and_update_view
+        )
+        self.filter_panel_layout.addWidget(self.filter_stars_combo)
+
+        self.filter_color_label = QLabel("Tag koloru:")
+        self.filter_panel_layout.addWidget(self.filter_color_label)
+
+        self.filter_color_combo = QComboBox()
+        for name, value in self.PREDEFINED_COLORS_FILTER.items():
+            self.filter_color_combo.addItem(name, userData=value)
+        self.filter_color_combo.currentIndexChanged.connect(
+            self._apply_filters_and_update_view
+        )
+        self.filter_panel_layout.addWidget(self.filter_color_combo)
+
+        self.filter_panel_layout.addStretch(1)
+        self.main_layout.addWidget(self.filter_panel)
+        self.filter_panel.setVisible(False)  # Ukryty na starcie
+        # --- Koniec Panelu Filtrowania ---
 
         # Separator poziomy
         separator = QFrame()
@@ -163,24 +226,70 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
 
             try:
-                self.file_pairs_list = scan_folder_for_pairs(
+                # 1. Wczytaj wszystkie pary
+                self.all_file_pairs = scan_folder_for_pairs(
                     self.current_working_directory
                 )
+                logging.info(f"Wczytano {len(self.all_file_pairs)} par.")
 
-                # Wczytanie i zastosowanie metadanych (np. status "ulubione")
+                # 2. Zastosuj metadane do wszystkich par
                 metadata_manager.apply_metadata_to_file_pairs(
-                    self.current_working_directory, self.file_pairs_list
+                    self.current_working_directory, self.all_file_pairs
                 )
 
-                self._update_gallery_view()
-                logging.info(f"Znaleziono par: {len(self.file_pairs_list)}.")
+                # 3. Zastosuj filtry (początkowo domyślne) i odśwież widok
+                self._apply_filters_and_update_view()
+
+                # Pokaż panel filtrów i kontroli rozmiaru
+                self.filter_panel.setVisible(True)
+                is_gallery_populated = bool(self.file_pairs_list)
+                self.size_control_panel.setVisible(is_gallery_populated)
+
+                logging.info(f"Wyświetlono po filtracji: {len(self.file_pairs_list)}.")
             except Exception as e:
-                err_msg = f"Błąd skanowania '{base_folder_name}': {e}"
+                err_msg = (
+                    f"Błąd skanowania/inicjalizacji widoku "
+                    f"'{base_folder_name}': {e}"
+                )
                 logging.error(err_msg)
+                self.all_file_pairs = []
                 self.file_pairs_list = []
-                self._update_gallery_view()
+                self._update_gallery_view()  # Wyczyść galerię
+                self.filter_panel.setVisible(False)
         else:
             logging.info("Anulowano wybór folderu.")
+
+    def _apply_filters_and_update_view(self):
+        """Zbiera kryteria, filtruje pary i aktualizuje galerię."""
+        if not self.all_file_pairs and not self.current_working_directory:
+            # Nic nie rób, jeśli nie ma załadowanego folderu
+            self.file_pairs_list = []
+            self._clear_gallery()
+            self.size_control_panel.setVisible(False)
+            return
+
+        show_fav = self.filter_fav_checkbox.isChecked()
+        min_stars = self.filter_stars_combo.currentData()  # Pobiera userData (int)
+        if min_stars is None:
+            min_stars = 0  # Fallback
+
+        req_color = self.filter_color_combo.currentData()
+        if req_color is None:  # Fallback
+            req_color = "ALL"
+
+        self.current_filter_criteria = {
+            "show_favorites_only": show_fav,
+            "min_stars": min_stars,
+            "required_color_tag": req_color,
+        }
+        logging.debug(f"Filtry: {self.current_filter_criteria}")
+
+        self.file_pairs_list = filter_file_pairs(
+            self.all_file_pairs, self.current_filter_criteria
+        )
+        is_gallery_populated_after_filter = bool(self.file_pairs_list)
+        self.size_control_panel.setVisible(is_gallery_populated_after_filter)
+        self._update_gallery_view()
 
     def _update_gallery_view(self):
         """
@@ -217,6 +326,9 @@ class MainWindow(QMainWindow):
                     tile.archive_open_requested.connect(self.open_archive)
                     tile.preview_image_requested.connect(self._show_preview_dialog)
                     tile.favorite_toggled.connect(self.toggle_favorite_status)
+                    # Podłączenie nowych sygnałów
+                    tile.stars_changed.connect(self._handle_stars_changed)
+                    tile.color_tag_changed.connect(self._handle_color_tag_changed)
 
                     # Zapisz referencję do kafelka
                     self.file_tile_widgets.append(tile)
@@ -230,7 +342,8 @@ class MainWindow(QMainWindow):
 
                 except Exception as e:
                     logging.error(
-                        f"Błąd tworzenia kafelka dla {file_pair.get_base_name()}: {e}"
+                        f"Błąd tworzenia kafelka dla "
+                        f"{file_pair.get_base_name()[:25]}..: {e}"
                     )
 
         except Exception as e:
@@ -265,6 +378,9 @@ class MainWindow(QMainWindow):
         new_height = self.min_thumbnail_size[1] + (height_range * value / 100)
 
         self.current_thumbnail_size = (int(new_width), int(new_height))
+        thumb_size_str = (
+            f"{self.current_thumbnail_size[0]}x{self.current_thumbnail_size[1]}"
+        )
 
         # Aktualizacja rozmiaru wszystkich kafelków
         for tile in self.file_tile_widgets:
@@ -273,7 +389,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logging.error(f"Błąd aktualizacji rozmiaru kafelka: {e}")
 
-        logging.debug(f"Zaktualizowano rozmiar miniatur: {self.current_thumbnail_size}")
+        logging.debug(f"Zaktualizowano rozmiar miniatur: {thumb_size_str}")
 
     def resizeEvent(self, event):
         """
@@ -286,13 +402,14 @@ class MainWindow(QMainWindow):
             self._update_gallery_view()
 
     def _save_metadata(self):
-        """
-        Zapisuje metadane dla bieżących par plików.
-        """
-        if self.current_working_directory and self.file_pairs_list:
-            metadata_manager.save_metadata(
-                self.current_working_directory, self.file_pairs_list
-            )
+        """Zapisuje metadane dla wszystkich (nieprzefiltrowanych) par plików."""
+        if self.current_working_directory and self.all_file_pairs:
+            if not metadata_manager.save_metadata(
+                self.current_working_directory, self.all_file_pairs
+            ):
+                logging.error("Nie udało się zapisać metadanych.")
+        else:
+            logging.debug("Brak folderu roboczego lub par plików do zapisu metadanych.")
 
     # MODIFICATION: Slot for archive_open_requested signal
     # This method might replace or be an update to an existing open_archive method
@@ -347,33 +464,39 @@ class MainWindow(QMainWindow):
     # MODIFICATION: Slot for favorite_toggled signal
     # This method might replace or be an update to an existing toggle_favorite_status method
     def toggle_favorite_status(self, file_pair: FilePair):
-        """
-        Przełącza status "ulubiony" dla wskazanej pary plików, aktualizuje UI i zapisuje metadane.
-
-        Args:
-            file_pair (FilePair): Para plików, dla której ma zostać zmieniony status.
-        """
-        if file_pair:
-            logging.info(
-                f"Żądanie przełączenia statusu 'ulubiony' dla: {file_pair.get_base_name()}"
-            )
-
-            # 1. Zmień stan w modelu FilePair
+        """Przełącza ulubione, zapisuje i odświeża (jeśli trzeba)."""
+        if file_pair in self.all_file_pairs:
             file_pair.toggle_favorite()
-
-            # 2. Zaktualizuj wygląd odpowiedniego kafelka
-            # Zakładamy, że self.file_tile_widgets przechowuje aktualne kafelki na ekranie
-            for tile_widget in self.file_tile_widgets:
-                if tile_widget.file_pair == file_pair:
-                    tile_widget.update_favorite_status(file_pair.is_favorite_file())
-                    logging.debug(
-                        f"Zaktualizowano ulubione na kafelku dla {file_pair.get_base_name()}"
-                    )
-                    break  # Znaleziono i zaktualizowano kafelek
-
-            # 3. Zapisz zaktualizowane metadane
             self._save_metadata()
+            # Jeśli filtr ulubionych jest aktywny, zmiana może wpłynąć na widok
+            if self.current_filter_criteria.get("show_favorites_only"):
+                self._apply_filters_and_update_view()
         else:
-            logging.warning(
-                "Próba przełączenia statusu 'ulubiony' dla nieprawidłowego FilePair."
-            )
+            logging.warning("Toggle fav dla nieznanej pary.")
+
+    # Nowe sloty obsługujące zmiany z kafelków
+    def _handle_stars_changed(self, file_pair: FilePair, new_star_count: int):
+        """Obsługuje zmianę gwiazdek, zapisuje i odświeża (jeśli trzeba)."""
+        if file_pair in self.all_file_pairs:
+            fp_name = file_pair.get_base_name()[:15]
+            logging.debug(f"Stars: {fp_name}.. -> {new_star_count}")
+            self._save_metadata()
+            # Zmiana gwiazdek może wpłynąć na widoczność przy aktywnym filtrze
+            min_stars_filter = self.current_filter_criteria.get("min_stars", 0)
+            if min_stars_filter > 0:
+                self._apply_filters_and_update_view()
+        else:
+            logging.warning("Zmiana gwiazdek dla nieznanej pary.")
+
+    def _handle_color_tag_changed(self, file_pair: FilePair, new_color_tag: str):
+        """Obsługuje zmianę koloru, zapisuje i odświeża (jeśli trzeba)."""
+        if file_pair in self.all_file_pairs:
+            fp_name = file_pair.get_base_name()[:15]
+            logging.debug(f"Color: {fp_name}.. -> {new_color_tag}")
+            self._save_metadata()
+            # Zmiana koloru może wpłynąć na widoczność przy aktywnym filtrze
+            color_filter = self.current_filter_criteria.get("required_color_tag", "ALL")
+            if color_filter != "ALL":  # Jeśli jakikolwiek filtr koloru jest aktywny
+                self._apply_filters_and_update_view()
+        else:
+            logging.warning("Zmiana koloru dla nieznanej pary.")

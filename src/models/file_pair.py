@@ -13,7 +13,9 @@ class FilePair:
         self.preview_thumbnail = None
         self.archive_size_bytes = None
         self.is_favorite = False  # Domyślnie plik nie jest "ulubionym"
-        logging.debug(f"Utworzono nowy obiekt FilePair: {self.get_base_name()}")
+        self.stars = 0  # Domyślnie 0 gwiazdek
+        self.color_tag = ""  # Domyślnie brak tagu kolorystycznego
+        logging.debug(f"Utworzono FilePair: {self.get_base_name()}")
 
     def get_base_name(self):
         return os.path.splitext(os.path.basename(self.archive_path))[0]
@@ -29,7 +31,8 @@ class FilePair:
         Wczytuje plik podglądu i tworzy z niego miniaturę o zadanym rozmiarze.
 
         Args:
-            target_size_wh (tuple): Docelowy rozmiar miniatury (szerokość, wysokość) w pikselach
+            target_size_wh (tuple): Docelowy rozmiar miniatury (szerokość,
+                                    wysokość) w pikselach
 
         Returns:
             QPixmap: Utworzona miniatura jako obiekt QPixmap
@@ -90,7 +93,8 @@ class FilePair:
 
     def get_formatted_archive_size(self):
         """
-        Zwraca sformatowany rozmiar pliku archiwum w czytelnej postaci (B, KB, MB, GB).
+        Zwraca sformatowany rozmiar pliku archiwum w czytelnej postaci
+        (B, KB, MB, GB).
 
         Jeśli rozmiar nie został jeszcze pobrany, wywołuje get_archive_size().
 
@@ -134,7 +138,8 @@ class FilePair:
         """
         self.is_favorite = not self.is_favorite
         logging.debug(
-            f"Przełączono status 'ulubiony' dla {self.get_base_name()}: {self.is_favorite}"
+            f"Przełączono status 'ulubiony' dla {self.get_base_name()}: "
+            f"{self.is_favorite}"
         )
         return self.is_favorite
 
@@ -143,7 +148,8 @@ class FilePair:
         Sprawdza, czy plik jest oznaczony jako "ulubiony".
 
         Returns:
-            bool: True jeśli plik jest oznaczony jako ulubiony, False w przeciwnym wypadku
+            bool: True jeśli plik jest oznaczony jako ulubiony,
+                  False w przeciwnym wypadku
         """
         return self.is_favorite
 
@@ -159,3 +165,60 @@ class FilePair:
         """
         self.is_favorite = bool(state)
         return self.is_favorite
+
+    def set_stars(self, num_stars: int) -> int:
+        """
+        Ustawia liczbę gwiazdek dla pliku.
+
+        Args:
+            num_stars (int): Liczba gwiazdek (0-5).
+
+        Returns:
+            int: Ustawiona liczba gwiazdek.
+        """
+        if not isinstance(num_stars, int) or not (0 <= num_stars <= 5):
+            logging.warning(
+                f"Nieprawidłowa liczba gwiazdek ({num_stars}) "
+                f"dla {self.get_base_name()}. Ustawiono 0."
+            )
+            self.stars = 0
+        else:
+            self.stars = num_stars
+        logging.debug(f"Ustawiono gwiazdki dla {self.get_base_name()} na: {self.stars}")
+        return self.stars
+
+    def get_stars(self) -> int:
+        """
+        Zwraca liczbę gwiazdek przypisanych do pliku.
+
+        Returns:
+            int: Liczba gwiazdek (0-5).
+        """
+        return self.stars
+
+    def set_color_tag(self, color: str) -> str:
+        """
+        Ustawia tag kolorystyczny dla pliku.
+
+        Args:
+            color (str): Nazwa koloru lub kod hex. Pusty string
+                         oznacza brak koloru.
+
+        Returns:
+            str: Ustawiony tag kolorystyczny.
+        """
+        self.color_tag = str(color) if color is not None else ""
+        logging.debug(
+            f"Ustawiono tag koloru dla {self.get_base_name()} na: "
+            f"'{self.color_tag}'"
+        )
+        return self.color_tag
+
+    def get_color_tag(self) -> str:
+        """
+        Zwraca tag kolorystyczny przypisany do pliku.
+
+        Returns:
+            str: Tag kolorystyczny (może być pusty).
+        """
+        return self.color_tag
