@@ -300,7 +300,7 @@ CFAB_3DHUB/
 
 ### Etap 3.A: Logika Biznesowa - Otwieranie Archiwum, Tag "Ulubione", Zapis/Odczyt Metadanych (JSON)
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** [x] Implementacja kodu zakończona
 - **Cel Etapu:** Implementacja funkcji otwierania archiwum, dodanie atrybutu "ulubione" do `FilePair` oraz mechanizmu zapisu/odczytu metadanych (w tym "ulubione") do pliku JSON w folderze `.app_metadata`.
 - **Wymagane Funkcjonalności:**
   1.  **`src/logic/file_operations.py` (nowy lub rozbudowa):**
@@ -351,10 +351,10 @@ CFAB_3DHUB/
     - Testy cyklu zapisz -> wczytaj -> sprawdź spójność.
 - **Podsumowanie Testów:** `[ ] Do wykonania`
 - **Dokumentacja:**
-  - `[ ] Do uzupełnienia`: Docstringi dla nowych funkcji/metod w `file_operations.py`, `file_pair.py`, `metadata_manager.py`.
-  - `[ ] Do uzupełnienia`: Opis formatu pliku `metadata.json`.
-  - `[ ] Do uzupełnienia`: Opis mechanizmu zapisu/odczytu metadanych i synchronizacji z obiektami `FilePair`.
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+  - `[x] Uzupełnione`: Docstringi dla nowych funkcji/metod w `file_operations.py`, `file_pair.py`, `metadata_manager.py`.
+  - `[x] Uzupełnione`: Opis formatu pliku `metadata.json`.
+  - `[x] Uzupełnione`: Opis mechanizmu zapisu/odczytu metadanych i synchronizacji z obiektami `FilePair`.
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 
@@ -365,7 +365,7 @@ CFAB_3DHUB/
 
 ### Etap 3.B: Interfejs Użytkownika - Interakcje z Kafelkami (Otwieranie, Duży Podgląd, Tagowanie "Ulubione")
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** [x] Implementacja kodu zakończona
 - **Cel Etapu:** Implementacja reakcji na kliknięcia na kafelku: otwarcie archiwum, wyświetlenie większego podglądu obrazu, dodanie ikony "Ulubione" i obsługa jej przełączania.
 - **Wymagane Funkcjonalności:**
   1.  **`src/ui/widgets/file_tile_widget.py`**:
@@ -403,7 +403,7 @@ CFAB_3DHUB/
 - **Dokumentacja:**
   - `[ ] Do uzupełnienia`: Docstringi dla `PreviewDialog` i nowych/zmodyfikowanych metod/sygnałów w `FileTileWidget` i `MainWindow`.
   - `[ ] Do uzupełnienia`: Opis interakcji użytkownika z kafelkami.
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 
@@ -411,11 +411,6 @@ CFAB_3DHUB/
 **PROSZĘ CZEKAĆ NA POTWIERDZENIE ZANIM PRZEJDZIESZ DO NASTĘPNEGO ETAPU.**
 
 ---
-
-
-
-
-
 
 ### Etap 4.A: Logika Biznesowa - Zaawansowane Tagowanie i Logika Filtrowania
 
@@ -448,7 +443,7 @@ CFAB_3DHUB/
 - **Nowe/Modyfikowane Pliki:**
   - `src/models/file_pair.py` (modyfikacja)
   - `src/logic/metadata_manager.py` (modyfikacja)
-  - `src/logic/scanner.py` (modyfikacja) lub `src/logic/filter_logic.py` (nowy)
+  - `src/logic/scanner.py` (modyfikacja lub `src/logic/filter_logic.py` (nowy)
 - **Zależności:** Etap 3.A.
 - **Wymagane Testy:**
   - **Jednostkowe (`tests/unit/test_file_pair.py`):**
