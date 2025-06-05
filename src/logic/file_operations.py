@@ -10,12 +10,16 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 
 from src.models.file_pair import FilePair
+from src.utils.path_utils import is_valid_filename, normalize_path
 
 logger = logging.getLogger(__name__)
 
 
 def open_archive_externally(archive_path: str) -> bool:
     """Otwiera plik archiwum w domyślnym programie systemowym."""
+    # Normalizacja ścieżki dla spójności
+    archive_path = normalize_path(archive_path)
+
     if not os.path.exists(archive_path):
         logger.error(f"Plik archiwum nie istnieje: {archive_path}")
         return False
@@ -56,18 +60,21 @@ def create_folder(parent_directory: str, folder_name: str) -> str | None:
     """Tworzy nowy folder w podanej lokalizacji.
     Zwraca pełną ścieżkę do utworzonego folderu lub None w przypadku błędu.
     """
+    # Normalizacja ścieżki katalogu nadrzędnego
+    parent_directory = normalize_path(parent_directory)
+
     if not os.path.isdir(parent_directory):
         logger.error(f"Katalog nadrzędny '{parent_directory}' nie istnieje.")
         return None
 
-    # Zabezpieczenie przed niedozwolonymi znakami w nazwie folderu (podstawowe)
-    # Można rozbudować o bardziej rygorystyczne walidacje
-    forbidden_chars = ["<", ">", ":", '"', "/", "\\", "|", "?", "*"]
-    if any(char in folder_name for char in forbidden_chars) or not folder_name.strip():
+    # Walidacja nazwy folderu przy użyciu funkcji z modułu path_utils
+    if not is_valid_filename(folder_name):
         logger.error(f"Nazwa folderu '{folder_name}' jest nieprawidłowa lub pusta.")
         return None
 
     folder_path = os.path.join(parent_directory, folder_name)
+    # Normalizacja ścieżki wyniku
+    folder_path = normalize_path(folder_path)
     try:
         os.makedirs(
             folder_path, exist_ok=True
@@ -83,15 +90,15 @@ def rename_folder(folder_path: str, new_folder_name: str) -> str | None:
     """Zmienia nazwę folderu.
     Zwraca nową pełną ścieżkę do folderu lub None w przypadku błędu.
     """
+    # Normalizacja ścieżki folderu
+    folder_path = normalize_path(folder_path)
+
     if not os.path.isdir(folder_path):
         logger.error(f"Folder '{folder_path}' nie istnieje lub nie jest folderem.")
         return None
 
-    forbidden_chars = ["<", ">", ":", '"', "/", "\\", "|", "?", "*"]
-    if (
-        any(char in new_folder_name for char in forbidden_chars)
-        or not new_folder_name.strip()
-    ):
+    # Walidacja nowej nazwy folderu
+    if not is_valid_filename(new_folder_name):
         logger.error(
             f"Nowa nazwa folderu '{new_folder_name}' jest nieprawidłowa lub pusta."
         )
@@ -99,6 +106,8 @@ def rename_folder(folder_path: str, new_folder_name: str) -> str | None:
 
     parent_dir = os.path.dirname(folder_path)
     new_folder_path = os.path.join(parent_dir, new_folder_name)
+    # Normalizacja ścieżki wyniku
+    new_folder_path = normalize_path(new_folder_path)
 
     if os.path.exists(new_folder_path):
         logger.error(f"Folder o nazwie '{new_folder_path}' już istnieje.")
@@ -119,6 +128,9 @@ def delete_folder(folder_path: str, delete_content: bool = False) -> bool:
     """Usuwa folder. Jeśli delete_content jest True, usuwa folder wraz z zawartością.
     W przeciwnym razie usuwa tylko pusty folder.
     """
+    # Normalizacja ścieżki folderu
+    folder_path = normalize_path(folder_path)
+
     if not os.path.isdir(folder_path):
         logger.warning(f"Folder '{folder_path}' nie istnieje, nie można usunąć.")
         return True  # Uznajemy za sukces, jeśli folderu nie ma
@@ -160,6 +172,11 @@ def manually_pair_files(
     Returns:
         FilePair | None: Obiekt FilePair, jeśli parowanie się powiodło, w przeciwnym razie None.
     """
+    # Normalizacja ścieżek dla spójności
+    archive_path = normalize_path(archive_path)
+    preview_path = normalize_path(preview_path)
+    working_directory = normalize_path(working_directory)
+
     logger.info(
         f"Rozpoczęto próbę ręcznego parowania: A='{archive_path}', P='{preview_path}'"
     )
@@ -189,8 +206,15 @@ def manually_pair_files(
 
         # Nowa nazwa pliku podglądu to nazwa bazowa archiwum + oryginalne rozszerzenie podglądu
         new_preview_filename = archive_base_name + preview_extension
-        new_preview_path = os.path.join(
-            os.path.dirname(preview_path), new_preview_filename
+        # Sprawdź, czy nowa nazwa jest poprawna
+        if not is_valid_filename(new_preview_filename):
+            logger.error(
+                f"Nowa nazwa pliku '{new_preview_filename}' jest nieprawidłowa."
+            )
+            return None
+
+        new_preview_path = normalize_path(
+            os.path.join(os.path.dirname(preview_path), new_preview_filename)
         )
 
         if os.path.exists(new_preview_path):
@@ -259,49 +283,64 @@ def rename_file_pair(
         tuple[str, str | None] | None: Krotka z nowymi ścieżkami (archiwum, podgląd)
                                       lub None w przypadku błędu.
     """
+    # Normalizacja ścieżek dla spójności
+    old_archive_path = normalize_path(old_archive_path)
+    if old_preview_path:
+        old_preview_path = normalize_path(old_preview_path)
+
     logger.debug(
         f"Próba zmiany nazwy pary: A='{old_archive_path}', P='{old_preview_path}' na nową nazwę bazową '{new_base_name}'"
     )
     directory = os.path.dirname(old_archive_path)
 
-    # Walidacja nowej nazwy
-    forbidden_chars = ["<", ">", ":", '"', "/", "\\", "|", "?", "*"]
-    if any(char in new_base_name for char in forbidden_chars) or not new_base_name:
+    # Walidacja nowej nazwy przy użyciu funkcji z modułu path_utils
+    if not is_valid_filename(new_base_name):
         logger.error(f"Nowa nazwa pliku '{new_base_name}' jest nieprawidłowa.")
         return None
 
     # Przygotowanie nowej ścieżki dla archiwum
     _, archive_ext = os.path.splitext(old_archive_path)
-    new_archive_path = os.path.join(directory, new_base_name + archive_ext)
+    new_archive_path = normalize_path(
+        os.path.join(directory, new_base_name + archive_ext)
+    )
 
     # Przygotowanie nowej ścieżki dla podglądu, jeśli istnieje
     new_preview_path = None
     if old_preview_path:
         _, preview_ext = os.path.splitext(old_preview_path)
-        new_preview_path = os.path.join(directory, new_base_name + preview_ext)
+        new_preview_path = normalize_path(
+            os.path.join(directory, new_base_name + preview_ext)
+        )
 
     # Sprawdzenie, czy pliki docelowe już nie istnieją (z wyjątkiem samych siebie)
-    if os.path.exists(new_archive_path) and new_archive_path != old_archive_path:
+    if (
+        os.path.exists(new_archive_path)
+        and new_archive_path.lower() != old_archive_path.lower()
+    ):
         logger.error(f"Plik o nazwie '{new_archive_path}' już istnieje.")
         return None
     if (
         new_preview_path
         and old_preview_path
         and os.path.exists(new_preview_path)
-        and new_preview_path != old_preview_path
+        and new_preview_path.lower() != old_preview_path.lower()
     ):
         logger.error(f"Plik o nazwie '{new_preview_path}' już istnieje.")
         return None
+
+    # Zmienna do śledzenia operacji, które trzeba cofnąć w przypadku błędu
+    operations_done = []
 
     try:
         # Zmiana nazwy musi być bezpieczna: jeśli zmiana podglądu się nie powiedzie,
         # należy przywrócić starą nazwę archiwum.
         # Najpierw zmieniamy nazwę archiwum.
-        if new_archive_path != old_archive_path:
+        if new_archive_path.lower() != old_archive_path.lower():
             os.rename(old_archive_path, new_archive_path)
             logger.info(
                 f"Zmieniono nazwę: '{old_archive_path}' -> '{new_archive_path}'"
             )
+            operations_done.append(("archive", old_archive_path, new_archive_path))
         else:
             logger.debug(f"Nazwa archiwum '{old_archive_path}' pozostaje bez zmian.")
 
@@ -309,20 +348,27 @@ def rename_file_pair(
         if (
             old_preview_path
             and new_preview_path
-            and new_preview_path != old_preview_path
+            and new_preview_path.lower() != old_preview_path.lower()
         ):
             try:
                 os.rename(old_preview_path, new_preview_path)
                 logger.info(
                     f"Zmieniono nazwę: '{old_preview_path}' -> '{new_preview_path}'"
                 )
+                operations_done.append(("preview", old_preview_path, new_preview_path))
             except Exception as e_preview:
                 logger.error(
-                    f"Błąd zmiany nazwy podglądu na '{new_preview_path}': {e_preview}. Przywracanie nazwy archiwum."
+                    f"Błąd zmiany nazwy podglądu na '{new_preview_path}': {e_preview}. Przywracanie poprzednich zmian."
                 )
-                # Przywrócenie starej nazwy archiwum w razie błędu
-                if new_archive_path != old_archive_path:
-                    os.rename(new_archive_path, old_archive_path)
+                # Przywrócenie wszystkich dokonanych zmian w kolejności odwrotnej
+                for op_type, old_path, new_path in reversed(operations_done):
+                    try:
+                        os.rename(new_path, old_path)
+                        logger.info(f"Przywrócono nazwę: '{new_path}' -> '{old_path}'")
+                    except Exception as rollback_error:
+                        logger.critical(
+                            f"KRYTYCZNY BŁĄD: Nie udało się przywrócić nazwy {op_type} z '{new_path}' na '{old_path}': {rollback_error}"
+                        )
                 return None
 
         return new_archive_path, new_preview_path
@@ -330,6 +376,15 @@ def rename_file_pair(
         logger.error(
             f"Błąd podczas zmiany nazwy pliku archiwum na '{new_archive_path}': {e}"
         )
+        # Przywrócenie wszystkich dokonanych zmian w kolejności odwrotnej
+        for op_type, old_path, new_path in reversed(operations_done):
+            try:
+                os.rename(new_path, old_path)
+                logger.info(f"Przywrócono nazwę: '{new_path}' -> '{old_path}'")
+            except Exception as rollback_error:
+                logger.critical(
+                    f"KRYTYCZNY BŁĄD: Nie udało się przywrócić nazwy {op_type} z '{new_path}' na '{old_path}': {rollback_error}"
+                )
         return None
 
 
@@ -345,6 +400,11 @@ def delete_file_pair(archive_path: str, preview_path: str | None) -> bool:
         bool: True, jeśli operacja się powiodła (lub pliki nie istniały),
               False w przypadku błędu.
     """
+    # Normalizacja ścieżek
+    archive_path = normalize_path(archive_path)
+    if preview_path:
+        preview_path = normalize_path(preview_path)
+
     logger.debug(f"Próba usunięcia pary plików: A='{archive_path}', P='{preview_path}'")
     success = True
 
@@ -391,6 +451,12 @@ def move_file_pair(
         tuple[str, str | None] | None: Krotka z nowymi, absolutnymi ścieżkami
                                       (archiwum, podgląd) lub None w przypadku błędu.
     """
+    # Normalizacja ścieżek
+    old_archive_path = normalize_path(old_archive_path)
+    if old_preview_path:
+        old_preview_path = normalize_path(old_preview_path)
+    new_target_directory = normalize_path(new_target_directory)
+
     logger.debug(
         f"Próba przeniesienia pary: A='{old_archive_path}', P='{old_preview_path}' do folderu '{new_target_directory}'"
     )
@@ -400,12 +466,16 @@ def move_file_pair(
 
     # Przygotowanie nowych ścieżek
     archive_filename = os.path.basename(old_archive_path)
-    new_archive_path = os.path.join(new_target_directory, archive_filename)
+    new_archive_path = normalize_path(
+        os.path.join(new_target_directory, archive_filename)
+    )
     new_preview_path = None
 
     if old_preview_path:
         preview_filename = os.path.basename(old_preview_path)
-        new_preview_path = os.path.join(new_target_directory, preview_filename)
+        new_preview_path = normalize_path(
+            os.path.join(new_target_directory, preview_filename)
+        )
 
     # Sprawdzenie, czy pliki docelowe już nie istnieją
     if os.path.exists(new_archive_path):
@@ -415,10 +485,14 @@ def move_file_pair(
         logger.error(f"Plik '{new_preview_path}' już istnieje w lokalizacji docelowej.")
         return None
 
+    # Lista wykonanych operacji do potencjalnego cofnięcia
+    operations_done = []
+
     try:
         # Przenosimy archiwum
         shutil.move(old_archive_path, new_archive_path)
         logger.info(f"Przeniesiono: '{old_archive_path}' -> '{new_archive_path}'")
+        operations_done.append(("archive", old_archive_path, new_archive_path))
 
         # Przenosimy podgląd, jeśli istnieje
         if old_preview_path and new_preview_path:
@@ -427,19 +501,37 @@ def move_file_pair(
                 logger.info(
                     f"Przeniesiono: '{old_preview_path}' -> '{new_preview_path}'"
                 )
+                operations_done.append(("preview", old_preview_path, new_preview_path))
             except Exception as e_preview:
                 logger.error(
-                    f"Błąd przenoszenia podglądu '{old_preview_path}': {e_preview}. Przywracanie pozycji archiwum."
+                    f"Błąd przenoszenia podglądu '{old_preview_path}': {e_preview}. Przywracanie poprzednich operacji."
                 )
-                # Przywrócenie archiwum w razie błędu
-                shutil.move(new_archive_path, old_archive_path)
+                # Przywrócenie wszystkich wykonanych operacji w odwrotnej kolejności
+                for op_type, source_path, target_path in reversed(operations_done):
+                    try:
+                        shutil.move(target_path, source_path)
+                        logger.info(
+                            f"Przywrócono pozycję: '{target_path}' -> '{source_path}'"
+                        )
+                    except Exception as rollback_error:
+                        logger.critical(
+                            f"KRYTYCZNY BŁĄD: Nie udało się przywrócić {op_type} z '{target_path}' do '{source_path}': {rollback_error}"
+                        )
                 return None
 
         return new_archive_path, new_preview_path
 
     except Exception as e:
         logger.error(f"Błąd podczas przenoszenia archiwum '{old_archive_path}': {e}")
-        # Jeśli archiwum nie zostało przeniesione, nie musimy nic cofać
+        # Przywrócenie wszystkich wykonanych operacji w odwrotnej kolejności
+        for op_type, source_path, target_path in reversed(operations_done):
+            try:
+                shutil.move(target_path, source_path)
+                logger.info(f"Przywrócono pozycję: '{target_path}' -> '{source_path}'")
+            except Exception as rollback_error:
+                logger.critical(
+                    f"KRYTYCZNY BŁĄD: Nie udało się przywrócić {op_type} z '{target_path}' do '{source_path}': {rollback_error}"
+                )
         return None
 
 

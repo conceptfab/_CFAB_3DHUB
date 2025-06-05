@@ -5,6 +5,7 @@
 Po refaktoryzacji pliku `scanner.py` testy jednostkowe nie przechodzą ze względu na zmiany w sposobie działania głównych funkcji. W szczególności:
 
 1. Zmiana w funkcji `collect_files`:
+
    - Nowa implementacja grupuje pliki inaczej niż stara, co powoduje różnice w liczbie kluczy w zwracanym słowniku
    - Testy oczekują 5 unikalnych nazw bazowych, ale nowa implementacja zwraca 3
 

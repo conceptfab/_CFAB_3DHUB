@@ -326,6 +326,30 @@ def get_directory_name(path: str) -> str:
     return os.path.basename(norm_path)
 
 
+def is_valid_filename(filename: str) -> bool:
+    """
+    Sprawdza, czy podana nazwa pliku jest prawidłowa.
+
+    Reguły walidacji:
+    - Nazwa nie może być pusta
+    - Nazwa nie może zawierać znaków niedozwolonych w systemie
+
+    Args:
+        filename: Nazwa pliku do sprawdzenia (bez ścieżki)
+
+    Returns:
+        True jeśli nazwa jest prawidłowa, False w przeciwnym razie
+    """
+    if not filename or not filename.strip():
+        return False
+
+    # Znaki niedozwolone w nazwach plików (dla większości systemów)
+    forbidden_chars = ["<", ">", ":", '"', "/", "\\", "|", "?", "*"]
+
+    # Sprawdzenie czy któryś z niedozwolonych znaków występuje w nazwie
+    return not any(char in filename for char in forbidden_chars)
+
+
 def get_parent_directory(path: str) -> str:
     """
     Zwraca ścieżkę do katalogu nadrzędnego.
