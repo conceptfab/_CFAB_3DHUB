@@ -30,6 +30,10 @@ def scan_folder_for_pairs(directory_path: str) -> list[FilePair]:
 
     for root, _, files in os.walk(directory_path):
         for file_name in files:
+            # Zapewnienie, że nazwa pliku jest traktowana jako string Unicode
+            if not isinstance(file_name, str):
+                file_name = str(file_name)
+
             base_name, extension = os.path.splitext(file_name)
             extension = extension.lower()
             full_path = os.path.join(root, file_name)
@@ -66,7 +70,11 @@ def scan_folder_for_pairs(directory_path: str) -> list[FilePair]:
             archive_path = files_data["archive"]
             preview_path = files_data["preview"]
             try:
-                pair = FilePair(archive_path=archive_path, preview_path=preview_path)
+                pair = FilePair(
+                    archive_path=archive_path,
+                    preview_path=preview_path,
+                    working_directory=directory_path,
+                )
                 found_pairs.append(pair)
                 logging.debug(
                     f"Sparowano: A={os.path.basename(archive_path)}, P={os.path.basename(preview_path)}"

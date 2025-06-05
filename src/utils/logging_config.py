@@ -43,7 +43,7 @@ def setup_logging(log_level=logging.INFO, log_to_file=True, log_dir="logs"):
         # Konfiguracja handlera plików z rotacją (max 5MB, max 5 plików)
         log_file_path = os.path.join(log_dir, "app.log")
         file_handler = RotatingFileHandler(
-            log_file_path, maxBytes=5 * 1024 * 1024, backupCount=5
+            log_file_path, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
         )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)

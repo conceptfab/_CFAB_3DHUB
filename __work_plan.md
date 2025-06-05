@@ -203,7 +203,7 @@ CFAB_3DHUB/
   1.  **`src/models/file_pair.py`**:
       - Rozbudowa klasy `FilePair`:
         - Dodanie atrybutów `preview_thumbnail` (początkowo `None`) i `archive_size_bytes` (początkowo `None`).
-        - Metoda `load_preview_thumbnail(target_size_wh)`:
+        - Metoda `load_preview_thumbnail(target_width, target_height)`:
           - Przyjmuje krotkę `(width, height)` dla docelowego rozmiaru miniatury.
           - Używa `Pillow` do wczytania obrazu z `self.preview_path`.
           - Skaluje obraz do `target_size_wh` zachowując proporcje (np. `thumbnail` z Pillow).
@@ -262,7 +262,7 @@ CFAB_3DHUB/
       - Zastąpienie `QListWidget` przez `QListWidget` (w trybie `IconMode`) lub `QListView` z niestandardowym delegatem, albo `QScrollArea` z `QVBoxLayout`/`QGridLayout` dynamicznie wypełnianym widgetami `FileTileWidget`. **Rekomendacja: `QScrollArea` z dynamicznie dodawanymi `FileTileWidget` do layoutu dla większej kontroli nad wyglądem kafelka.**
       - Po wybraniu folderu roboczego i zeskanowaniu plików:
         - Dla każdego obiektu `FilePair` z listy:
-          - Wywołaj `file_pair.load_preview_thumbnail(default_thumbnail_size)`.
+          - Wywołaj `file_pair.load_preview_thumbnail(width, height)` z rozpakowanym `default_thumbnail_size`.
           - Wywołaj `file_pair.get_archive_size()`.
           - Stwórz instancję `FileTileWidget` i przekaż jej `file_pair`.
           - Dodaj `FileTileWidget` do layoutu w `QScrollArea`.
@@ -270,7 +270,7 @@ CFAB_3DHUB/
       - Połączenie sygnału `valueChanged` suwaka ze slotem, który:
         - Pobiera nową wartość suwaka (np. reprezentującą procent rozmiaru kafelka).
         - Przelicza ją na docelowy rozmiar miniatury/kafelka.
-        - Iteruje po wszystkich `FileTileWidget` i wywołuje ich metodę `set_thumbnail_size()` oraz potencjalnie `file_pair.load_preview_thumbnail()` z nowym rozmiarem, jeśli miniatury mają być dynamicznie regenerowane (uwaga na wydajność, cache'owanie oryginalnych `QPixmap` lub regeneracja z `Pillow.Image` może być potrzebna).
+        - Iteruje po wszystkich `FileTileWidget` i wywołuje ich metodę `set_thumbnail_size()` oraz potencjalnie `file_pair.load_preview_thumbnail(width, height)` z nowym rozmiarem, jeśli miniatury mają być dynamicznie regenerowane (uwaga na wydajność, cache'owanie oryginalnych `QPixmap` lub regeneracja z `Pillow.Image` może być potrzebna).
       - **Rozważenie asynchronicznego ładowania miniatur, aby UI nie blokowało się przy dużej liczbie plików.** (Można odłożyć do Etapu 6/7 jeśli zbyt skomplikowane teraz, ale warto mieć na uwadze).
 - **Nowe/Modyfikowane Pliki:**
   - `src/ui/widgets/file_tile_widget.py` (nowy)
@@ -525,7 +525,7 @@ CFAB_3DHUB/
 
 ### Etap 5.A: Logika Biznesowa - Operacje na Plikach i Folderach
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** `[x] Zakończony`
 - **Cel Etapu:** Rozbudowa `FilePair` o metody do zmiany nazwy, usuwania, przenoszenia. Implementacja funkcji do tworzenia, usuwania i zmiany nazwy folderów.
 - **Wymagane Funkcjonalności:**
   1.  **`src/models/file_pair.py`**:
@@ -563,11 +563,11 @@ CFAB_3DHUB/
     - Test dla `create_folder`.
     - Test dla `rename_folder`.
     - Test dla `delete_folder` (na folderze testowym, nie produkcyjnym!).
-- **Podsumowanie Testów:** `[ ] Do wykonania`
+- **Podsumowanie Testów:** `[x] Wykonane`
 - **Dokumentacja:**
-  - `[ ] Do uzupełnienia`: Szczegółowe docstringi dla nowych metod w `FilePair` i funkcji w `file_operations.py`.
-  - `[ ] Do uzupełnienia`: Opis obsługi błędów i potencjalnych problemów (np. uprawnienia).
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+  - `[x] Uzupełnione`: Szczegółowe docstringi dla nowych metod w `FilePair` i funkcji w `file_operations.py`.
+  - `[x] Uzupełnione`: Opis obsługi błędów i potencjalnych problemów (np. uprawnienia).
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 

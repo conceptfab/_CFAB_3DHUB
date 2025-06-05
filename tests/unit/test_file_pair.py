@@ -1,7 +1,7 @@
 import os
 import shutil
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
@@ -39,17 +39,18 @@ def test_file_pair_with_real_files():
 
         # Testuj metody dostępu do rozmiarów plików
         assert file_pair.get_archive_size() == 8
-        assert file_pair.get_formatted_archive_size() == "8 B"        # Testuj generowanie miniatury - użyjemy patchowania aby uniknąć problemów z QPixmap
-        with patch('src.utils.image_utils.pillow_image_to_qpixmap') as mock_to_qpixmap:
+        assert (
+            file_pair.get_formatted_archive_size() == "8 B"
+        )  # Testuj generowanie miniatury - użyjemy patchowania aby uniknąć problemów z QPixmap
+        with patch("src.utils.image_utils.pillow_image_to_qpixmap") as mock_to_qpixmap:
             # Utwórz mock QPixmap
             mock_pixmap = MagicMock()
             mock_pixmap.isNull.return_value = False
             mock_pixmap.width.return_value = 50
             mock_pixmap.height.return_value = 50
             mock_to_qpixmap.return_value = mock_pixmap
-            
             # Teraz testuj
-            thumbnail = file_pair.load_preview_thumbnail((50, 50))
+            thumbnail = file_pair.load_preview_thumbnail(50, 50)
             assert thumbnail is mock_pixmap
             assert not thumbnail.isNull()
             assert thumbnail.width() == 50
@@ -58,6 +59,3 @@ def test_file_pair_with_real_files():
     finally:
         # Posprzątaj po teście
         shutil.rmtree(test_dir)
-
-
-

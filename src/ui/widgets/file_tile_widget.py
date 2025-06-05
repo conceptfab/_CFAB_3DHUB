@@ -217,10 +217,10 @@ class FileTileWidget(QWidget):
         """
         self.file_pair = file_pair
 
-        try:
-            # Wczytujemy miniaturę jeśli nie była jeszcze wczytana
+        try:  # Wczytujemy miniaturę jeśli nie była jeszcze wczytana
             if not self.original_thumbnail:
-                thumbnail = self.file_pair.load_preview_thumbnail(self.thumbnail_size)
+                width, height = self.thumbnail_size
+                thumbnail = self.file_pair.load_preview_thumbnail(width, height)
                 if thumbnail and not thumbnail.isNull():
                     self.original_thumbnail = thumbnail
                     self.thumbnail_label.setPixmap(thumbnail)
@@ -278,10 +278,10 @@ class FileTileWidget(QWidget):
                 Qt.TransformationMode.SmoothTransformation,
             )
             self.thumbnail_label.setPixmap(scaled_pixmap)
-        else:
-            # Jeśli nie ma miniatury, regenerujemy placeholder
+        else:  # Jeśli nie ma miniatury, regenerujemy placeholder
             try:
-                new_thumbnail = self.file_pair.load_preview_thumbnail(size_wh)
+                width, height = size_wh
+                new_thumbnail = self.file_pair.load_preview_thumbnail(width, height)
                 if new_thumbnail and not new_thumbnail.isNull():
                     self.original_thumbnail = new_thumbnail
                     self.thumbnail_label.setPixmap(new_thumbnail)
