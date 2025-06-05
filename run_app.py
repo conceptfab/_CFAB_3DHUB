@@ -22,7 +22,7 @@ def run():
     import sys
 
     if "--debug" in sys.argv:
-        print("TRYB DEBUGOWANIA WŁĄCZONY - szczegółowe logi skanowania folderów")
+        print("TRYB DEBUGOWANIA WŁĄCZONY - szczegółowe logi skanowania")
         # Ustawienie poziomu logowania na DEBUG dla modułu skanowania
         import logging
 

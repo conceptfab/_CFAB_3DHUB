@@ -237,12 +237,6 @@ class MainWindow(QMainWindow):
         self.select_folder_button.clicked.connect(self._select_working_directory)
         self.top_layout.addWidget(self.select_folder_button)
 
-        # Przycisk "W górę" do katalogu nadrzędnego
-        self.up_button = QPushButton("↑ Góra")
-        self.up_button.setEnabled(False)
-        self.up_button.clicked.connect(self._go_up_directory)
-        self.top_layout.addWidget(self.up_button)
-
         # Panel kontroli rozmiaru
         self.size_control_panel = QWidget()
         self.size_control_panel.setSizePolicy(
@@ -471,11 +465,6 @@ class MainWindow(QMainWindow):
         base_folder_name = os.path.basename(self.current_working_directory)
         self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
         logging.info("Wybrano folder roboczy: %s", self.current_working_directory)
-
-        # Włącz/wyłącz przycisk "Góra" w zależności od tego, czy można iść wyżej
-        parent_dir = os.path.dirname(self.current_working_directory)
-        can_go_up = parent_dir and parent_dir != self.current_working_directory
-        self.up_button.setEnabled(can_go_up)
 
         # 1. Wyczyść wszystkie dane i widoki przed nowym skanowaniem
         self._clear_all_data_and_views()
@@ -953,6 +942,33 @@ class MainWindow(QMainWindow):
                 f"na {new_color_tag}."
             )
 
+    def _scan_folders_with_files(self, root_folder):
+        """
+        Skanuje rekursywnie folder roboczy i zwraca listę wszystkich
+        podfolderów które zawierają min. 1 plik.
+        """
+        folders_with_files = []
+
+        try:
+            for root, dirs, files in os.walk(root_folder):
+                # Pomiń ukryte foldery (zaczynające się od .)
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+
+                # Jeśli folder ma pliki, dodaj go do listy
+                if files:
+                    folders_with_files.append(root)
+
+            logging.info(
+                "Znaleziono %d folderów z plikami w: %s",
+                len(folders_with_files),
+                root_folder,
+            )
+
+        except Exception as e:
+            logging.error("Błąd podczas skanowania folderów: %s", str(e))
+
+        return folders_with_files
+
     def _init_directory_tree(self):
         """
         Inicjalizuje i konfiguruje model drzewa katalogów.
@@ -960,10 +976,17 @@ class MainWindow(QMainWindow):
         if not self.current_working_directory:
             return
 
-        # Inicjalizuj drzewo tylko raz z głównym folderem roboczym
-        if not hasattr(self, "_tree_initialized") or not self._tree_initialized:
-            # Pierwsze uruchomienie - ustaw root na główny folder roboczy
+        # Sprawdź czy to pierwszy wybór folderu roboczego
+        if not hasattr(self, "_main_working_directory"):
+            # Pierwsze uruchomienie - ustaw główny folder roboczy jako root
+            # Drzewo pokazuje TYLKO ten folder i jego podfoldery
             self._main_working_directory = self.current_working_directory
+
+            # Przeskanuj wszystkie podfoldery z plikami
+            folders_with_files = self._scan_folders_with_files(
+                self._main_working_directory
+            )
+
             root_index = self.file_system_model.setRootPath(
                 self._main_working_directory
             )
@@ -983,25 +1006,87 @@ class MainWindow(QMainWindow):
                 pass  # Sygnał nie był podłączony
             self.folder_tree.clicked.connect(self._folder_tree_item_clicked)
 
-            self._tree_initialized = True
+            # Rozwiń automatycznie wszystkie foldery które zawierają pliki
+            QTimer.singleShot(
+                100, lambda: self._expand_folders_with_files(folders_with_files)
+            )
+
             logging.info(
-                "Drzewo katalogów zainicjalizowane dla głównego folderu: %s",
+                "Drzewo katalogów zainicjalizowane - główny folder: %s, "
+                "foldery z plikami: %d",
                 self._main_working_directory,
+                len(folders_with_files),
+            )
+        elif not self.current_working_directory.startswith(
+            self._main_working_directory
+        ):
+            # Jeśli wybrano folder poza głównym folderem roboczym
+            self._main_working_directory = self.current_working_directory
+
+            # Przeskanuj wszystkie podfoldery z plikami
+            folders_with_files = self._scan_folders_with_files(
+                self._main_working_directory
+            )
+
+            root_index = self.file_system_model.setRootPath(
+                self._main_working_directory
+            )
+            self.folder_tree.setRootIndex(root_index)
+
+            # Rozwiń automatycznie wszystkie foldery które zawierają pliki
+            QTimer.singleShot(
+                100, lambda: self._expand_folders_with_files(folders_with_files)
+            )
+
+            logging.info(
+                "Zmieniono root drzewa na nowy główny folder: %s, "
+                "foldery z plikami: %d",
+                self._main_working_directory,
+                len(folders_with_files),
             )
 
         # Zawsze zaznacz aktualny folder w drzewie
         current_index = self.file_system_model.index(self.current_working_directory)
         if current_index.isValid():
-            self.folder_tree.setCurrentIndex(current_index)
-            # Rozwiń ścieżkę do aktualnego folderu
+            # Rozwiń ścieżkę do aktualnego folderu PRZED zaznaczeniem
             parent = current_index.parent()
             while parent.isValid():
                 self.folder_tree.expand(parent)
                 parent = parent.parent()
 
-        logging.info(
-            "Zaznaczono aktualny folder w drzewie: %s", self.current_working_directory
-        )
+            # Teraz zaznacz folder
+            self.folder_tree.setCurrentIndex(current_index)
+            self.folder_tree.scrollTo(current_index)  # Przewiń do widoku
+
+            logging.info(
+                "Zaznaczono aktualny folder w drzewie: %s (indeks: %s)",
+                self.current_working_directory,
+                current_index.row(),
+            )
+        else:
+            logging.warning(
+                "Nie można zaznaczić folderu w drzewie - nieprawidłowy indeks: %s",
+                self.current_working_directory,
+            )
+
+    def _expand_folders_with_files(self, folders_with_files):
+        """
+        Rozwijaj foldery w drzewie które zawierają pliki.
+        """
+        try:
+            for folder_path in folders_with_files:
+                folder_index = self.file_system_model.index(folder_path)
+                if folder_index.isValid():
+                    # Rozwiń ścieżkę do tego folderu
+                    parent = folder_index.parent()
+                    while parent.isValid():
+                        self.folder_tree.expand(parent)
+                        parent = parent.parent()
+
+            logging.debug("Rozwinięto %d folderów z plikami", len(folders_with_files))
+
+        except Exception as e:
+            logging.error("Błąd podczas rozwijania folderów: %s", str(e))
 
     def _show_folder_context_menu(self, position):
         """
@@ -1057,7 +1142,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     "Błąd tworzenia folderu",
-                    f"Nie udało się utworzyć folderu '{folder_name}' w '{parent_folder_path}'.",
+                    f"Nie udało się utworzyć folderu '{folder_name}' "
+                    f"w '{parent_folder_path}'.",
                     QMessageBox.StandardButton.Ok,
                 )
 
@@ -1209,18 +1295,6 @@ class MainWindow(QMainWindow):
             # Wywołaj główną logikę wyboru folderu, która zajmie się
             # skanowaniem, czyszczeniem i aktualizacją UI.
             self._select_working_directory(folder_path)
-
-    def _go_up_directory(self):
-        """Przechodzi do katalogu nadrzędnego."""
-        if not self.current_working_directory:
-            return
-
-        parent_dir = os.path.dirname(self.current_working_directory)
-        if parent_dir and parent_dir != self.current_working_directory:
-            logging.info(f"Przechodzenie do katalogu nadrzędnego: {parent_dir}")
-            self._select_working_directory(parent_dir)
-        else:
-            logging.debug("Już jesteś w głównym katalogu dysku")
 
     def _show_file_context_menu(self, file_pair: FilePair, widget: QWidget, position):
         """
