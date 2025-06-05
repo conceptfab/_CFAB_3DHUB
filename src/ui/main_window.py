@@ -415,6 +415,30 @@ class MainWindow(QMainWindow):
         self.unpaired_previews_list_widget.clear()
         logging.debug("Wyczyszczono listy niesparowanych plików w UI.")
 
+    def _update_unpaired_files_lists(self):
+        """Aktualizuje listy niesparowanych plików w interfejsie użytkownika."""
+        if not hasattr(self, "unpaired_archives_list_widget"):
+            return  # UI not ready
+
+        self.unpaired_archives_list_widget.clear()
+        self.unpaired_previews_list_widget.clear()
+
+        for archive_path in self.unpaired_archives:
+            item = QListWidgetItem(os.path.basename(archive_path))
+            item.setData(Qt.ItemDataRole.UserRole, archive_path)
+            self.unpaired_archives_list_widget.addItem(item)
+
+        for preview_path in self.unpaired_previews:
+            item = QListWidgetItem(os.path.basename(preview_path))
+            item.setData(Qt.ItemDataRole.UserRole, preview_path)
+            self.unpaired_previews_list_widget.addItem(item)
+
+        logging.debug(
+            f"Zaktualizowano listy niesparowanych: {len(self.unpaired_archives)} archiwów, "
+            f"{len(self.unpaired_previews)} podglądów."
+        )
+        self._update_pair_button_state()
+
     def _handle_scan_finished(self, found_pairs, unpaired_archives, unpaired_previews):
         """
         Obsługuje wyniki pomyślnie zakończonego skanowania folderu.
@@ -462,18 +486,18 @@ class MainWindow(QMainWindow):
 
         # 3. Zastosuj metadane do wszystkich sparowanych par
         if self.all_file_pairs:
-                metadata_manager.apply_metadata_to_file_pairs(
-                    self.current_working_directory, self.all_file_pairs
-                )
+            metadata_manager.apply_metadata_to_file_pairs(
+                self.current_working_directory, self.all_file_pairs
+            )
 
         # 4. Zastosuj filtry (początkowo domyślne) i odśwież widok (teraz tylko pokaże/ukryje)
-                self._apply_filters_and_update_view()
+        self._apply_filters_and_update_view()
         self._update_unpaired_files_lists()
 
-                # Pokaż panel filtrów i kontroli rozmiaru
-                self.filter_panel.setVisible(True)
-                is_gallery_populated = bool(self.file_pairs_list)
-                self.size_control_panel.setVisible(is_gallery_populated)
+        # Pokaż panel filtrów i kontroli rozmiaru
+        self.filter_panel.setVisible(True)
+        is_gallery_populated = bool(self.file_pairs_list)
+        self.size_control_panel.setVisible(is_gallery_populated)
         self.tab_widget.setTabVisible(
             1, bool(self.unpaired_archives or self.unpaired_previews)
         )
@@ -510,7 +534,7 @@ class MainWindow(QMainWindow):
         self.select_folder_button.setText("Wybierz Folder Roboczy")
         self.select_folder_button.setEnabled(True)
         # Ukryj panel filtrów
-                self.filter_panel.setVisible(False)
+        self.filter_panel.setVisible(False)
 
     def _apply_filters_and_update_view(self):
         """Zbiera kryteria, filtruje pary i aktualizuje galerię (pokazuje/ukrywa kafelki)."""
@@ -988,9 +1012,9 @@ class MainWindow(QMainWindow):
 
         # Załaduj metadane
         if self.all_file_pairs:
-        metadata_manager.apply_metadata_to_file_pairs(
-            self.current_working_directory, self.all_file_pairs
-        )
+            metadata_manager.apply_metadata_to_file_pairs(
+                self.current_working_directory, self.all_file_pairs
+            )
 
         # Zastosuj filtry i zaktualizuj widok
         if current_filters:
@@ -1191,7 +1215,7 @@ class MainWindow(QMainWindow):
                 logging.info(f"Usunięto parę plików: {file_name}")
 
                 # Usuń parę z listy głównej
-                    self.all_file_pairs.remove(file_pair)
+                self.all_file_pairs.remove(file_pair)
 
                 # Zaktualizuj metadane (przed usunięciem z UI)
                 self._save_metadata()
@@ -1405,28 +1429,4 @@ class MainWindow(QMainWindow):
             )
 
         # Zaktualizuj stan przycisku po operacji (zaznaczenia prawdopodobnie znikną lub się zmienią)
-        self._update_pair_button_state()
-
-    def _update_unpaired_files_lists(self):
-        """Aktualizuje listy niesparowanych plików w interfejsie użytkownika."""
-        if not hasattr(self, "unpaired_archives_list_widget"):
-            return  # UI not ready
-
-        self.unpaired_archives_list_widget.clear()
-        self.unpaired_previews_list_widget.clear()
-
-        for archive_path in self.unpaired_archives:
-            item = QListWidgetItem(os.path.basename(archive_path))
-            item.setData(Qt.ItemDataRole.UserRole, archive_path)
-            self.unpaired_archives_list_widget.addItem(item)
-
-        for preview_path in self.unpaired_previews:
-            item = QListWidgetItem(os.path.basename(preview_path))
-            item.setData(Qt.ItemDataRole.UserRole, preview_path)
-            self.unpaired_previews_list_widget.addItem(item)
-
-        logging.debug(
-            f"Zaktualizowano listy niesparowanych: {len(self.unpaired_archives)} archiwów, "
-            f"{len(self.unpaired_previews)} podglądów."
-        )
         self._update_pair_button_state()
