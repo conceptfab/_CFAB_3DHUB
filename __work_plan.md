@@ -155,26 +155,14 @@ Zadania:
 Implementacja asynchronicznego ładowania miniatur (np. QThreadPool).
 Implementacja cache'owania miniaturek na dysku (.app_metadata/thumbnails/).
 Rozważenie optymalizacji skanowania dużych folderów.
-Warunkowo: Przejście na SQLite dla metadanych, jeśli metadata.json okaże się wąskim gardłem (zgodnie z DATA.md). Wymagałoby to stworzenia nowej wersji MetadataManager i skryptu migracji.
 Profilowanie aplikacji w celu identyfikacji wąskich gardeł.
 Lepsze zarządzanie pamięcią dla miniatur (z TODO.md).
 3.D: Implementacja Zadań z TODO.md
 Kluczowe Funkcjonalności:
-Wyszukiwanie pełnotekstowe w nazwach plików.
-Sortowanie kafelków.
 Grupowe operacje na plikach (wymaga modyfikacji UI do wielokrotnego zaznaczania).
 Ulepszenia UI/UX:
-Wyświetlanie długich nazw plików na kafelkach (elide).
 Wskaźnik postępu dla długotrwałych operacji (QProgressDialog).
-Konfigurowalny rozmiar czcionki na kafelkach.
-Przycisk "Odśwież".
-Zapamiętywanie ostatnio otwartego folderu (QSettings).
-Przegląd i ewentualna poprawa ikon.
-Ulepszenia Logiki/Konfiguracji:
-Konfigurowalna ścieżka do .app_metadata (QSettings).
-Definiowanie przez użytkownika własnych rozszerzeń (QSettings).
-Potencjalne Przyszłe Funkcjonalności:
-Internacjonalizacja (i18n) - wstępne przygotowanie.
+
 3.E: Finalne Testowanie Systemowe
 Zadania:
 Przeprowadzenie kompleksowych testów regresji (manualnych i automatycznych).

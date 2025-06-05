@@ -12,7 +12,7 @@ from src.models.file_pair import FilePair
 
 @pytest.mark.unit
 def test_file_pair_basic():
-    file_pair = FilePair("path/to/archive.zip", "path/to/preview.jpg")
+    file_pair = FilePair("path/to/archive.zip", "path/to/preview.jpg", "path/to")
     assert file_pair.get_base_name() == "archive"
     assert file_pair.get_archive_path() == "path/to/archive.zip"
     assert file_pair.get_preview_path() == "path/to/preview.jpg"
@@ -34,8 +34,8 @@ def test_file_pair_with_real_files():
         test_image = Image.new("RGB", (100, 100), color="blue")
         test_image.save(preview_path)
 
-        # Utwórz instancję FilePair
-        file_pair = FilePair(archive_path, preview_path)
+        # Utwórz instancję FilePair, dodając 'working_directory'
+        file_pair = FilePair(archive_path, preview_path, test_dir)
 
         # Testuj metody dostępu do rozmiarów plików
         assert file_pair.get_archive_size() == 8

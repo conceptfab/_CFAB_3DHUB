@@ -4,10 +4,9 @@ Operacje na plikach, takie jak otwieranie zewnętrznym programem, usuwanie, zmia
 
 import logging
 import os
-import platform
 import shutil
 
-from PyQt6.QtCore import QStandardPaths, QUrl
+from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 
 from src.models.file_pair import FilePair
@@ -239,6 +238,193 @@ def manually_pair_files(
         return paired_file
     except Exception as e:
         logger.error(f"Błąd tworzenia obiektu FilePair podczas ręcznego parowania: {e}")
+        return None
+
+
+# --- Nowe funkcje przeniesione z FilePair ---
+
+
+def rename_file_pair(
+    old_archive_path: str, old_preview_path: str | None, new_base_name: str
+) -> tuple[str, str | None] | None:
+    """
+    Zmienia nazwę pary plików (archiwum i opcjonalnie podgląd).
+
+    Args:
+        old_archive_path (str): Aktualna ścieżka do pliku archiwum.
+        old_preview_path (str | None): Aktualna ścieżka do pliku podglądu.
+        new_base_name (str): Nowa nazwa bazowa bez rozszerzenia.
+
+    Returns:
+        tuple[str, str | None] | None: Krotka z (nowa_sciezka_archiwum, nowa_sciezka_podgladu)
+                                      lub None w przypadku błędu.
+    """
+    if not new_base_name:
+        logger.error("Nowa nazwa bazowa nie może być pusta.")
+        return None
+    if not os.path.exists(old_archive_path):
+        log_msg = f"Plik archiwum do zmiany nazwy nie istnieje: {old_archive_path}"
+        logger.error(log_msg)
+        return None
+
+    archive_dir = os.path.dirname(old_archive_path)
+    archive_ext = os.path.splitext(old_archive_path)[1]
+    new_archive_path = os.path.join(archive_dir, f"{new_base_name}{archive_ext}")
+
+    new_preview_path = None
+    if old_preview_path:
+        if not os.path.exists(old_preview_path):
+            log_msg = (
+                f"Plik podglądu do zmiany nazwy nie istnieje: "
+                f"{old_preview_path}, zostanie zignorowany."
+            )
+            logger.warning(log_msg)
+            old_preview_path = None  # Traktuj jakby go nie było
+        else:
+            preview_dir = os.path.dirname(old_preview_path)
+            preview_ext = os.path.splitext(old_preview_path)[1]
+            new_preview_path = os.path.join(
+                preview_dir, f"{new_base_name}{preview_ext}"
+            )
+
+    try:
+        # Sprawdzanie konfliktów nazw przed wykonaniem jakiejkolwiek operacji
+        if os.path.exists(new_archive_path):
+            log_msg = f"Plik archiwum o nowej nazwie {new_archive_path} już istnieje."
+            logger.error(log_msg)
+            return None
+        if new_preview_path and os.path.exists(new_preview_path):
+            log_msg = f"Plik podglądu o nowej nazwie {new_preview_path} już istnieje."
+            logger.error(log_msg)
+            return None
+
+        # Zmiana nazwy archiwum
+        logger.info(f"Zmiana nazwy archiwum z {old_archive_path} na {new_archive_path}")
+        os.rename(old_archive_path, new_archive_path)
+
+        # Zmiana nazwy podglądu (jeśli istnieje)
+        if old_preview_path and new_preview_path:
+            logger.info(
+                f"Zmiana nazwy podglądu z {old_preview_path} na {new_preview_path}"
+            )
+            os.rename(old_preview_path, new_preview_path)
+
+        logger.info(f"Pomyślnie zmieniono nazwę pary plików na: {new_base_name}")
+        return new_archive_path, new_preview_path
+
+    except OSError as e:
+        logger.error(f"Błąd zmiany nazwy plików dla '{new_base_name}': {e}")
+        # Próba przywrócenia stanu początkowego (rollback)
+        if os.path.exists(new_archive_path) and not os.path.exists(old_archive_path):
+            os.rename(new_archive_path, old_archive_path)
+            logger.info(f"Rollback: Przywrócono nazwę archiwum: {old_archive_path}")
+        # Nie musimy przywracać podglądu, bo błąd musiał wystąpić na archiwum,
+        # zanim doszło do zmiany nazwy podglądu.
+        return None
+
+
+def delete_file_pair(archive_path: str, preview_path: str | None) -> bool:
+    """
+    Usuwa parę plików (archiwum i opcjonalnie podgląd).
+    Zwraca True, jeśli oba pliki zostały usunięte lub nie istniały.
+    Zwraca False, jeśli wystąpił błąd uniemożliwiający usunięcie.
+    """
+    success = True
+    base_name = os.path.splitext(os.path.basename(archive_path))[0]
+
+    # Usuwanie pliku archiwum
+    try:
+        if os.path.exists(archive_path):
+            logger.info(f"Usuwanie pliku archiwum: {archive_path}")
+            os.remove(archive_path)
+        else:
+            logger.warning(
+                f"Plik archiwum {archive_path} nie istnieje, uznano za usunięty."
+            )
+    except OSError as e:
+        logger.error(f"Błąd podczas usuwania pliku archiwum {archive_path}: {e}")
+        success = False  # Krytyczny błąd, nie można kontynuować
+
+    # Usuwanie pliku podglądu (tylko jeśli archiwum usunięto pomyślnie)
+    if success and preview_path:
+        try:
+            if os.path.exists(preview_path):
+                logger.info(f"Usuwanie pliku podglądu: {preview_path}")
+                os.remove(preview_path)
+            else:
+                logger.warning(
+                    f"Plik podglądu {preview_path} nie istnieje, uznano za usunięty."
+                )
+        except OSError as e:
+            logger.error(f"Błąd podczas usuwania pliku podglądu {preview_path}: {e}")
+            # To jest mniej krytyczny błąd (np. plik sierota), ale odnotowujemy go.
+            # Nie zmieniamy 'success' na False, bo główny plik został usunięty.
+            # Można by to zmienić w zależności od wymagań.
+
+    if success:
+        log_msg = f"Pomyślnie zakończono operację usuwania dla pary: {base_name}"
+        logger.info(log_msg)
+
+    return success
+
+
+def move_file_pair(
+    old_archive_path: str, old_preview_path: str | None, new_target_directory: str
+) -> tuple[str, str | None] | None:
+    """
+    Przenosi parę plików do nowego katalogu.
+
+    Args:
+        old_archive_path, old_preview_path: Aktualne ścieżki.
+        new_target_directory: Ścieżka absolutna do katalogu docelowego.
+
+    Returns:
+        Krotka z nowymi ścieżkami lub None w przypadku błędu.
+    """
+    if not os.path.isdir(new_target_directory):
+        logger.error(f"Katalog docelowy {new_target_directory} nie istnieje.")
+        return None
+
+    archive_filename = os.path.basename(old_archive_path)
+    new_archive_path = os.path.join(new_target_directory, archive_filename)
+
+    new_preview_path = None
+    if old_preview_path:
+        preview_filename = os.path.basename(old_preview_path)
+        new_preview_path = os.path.join(new_target_directory, preview_filename)
+
+    try:
+        # Sprawdzanie konfliktów
+        if os.path.exists(new_archive_path):
+            log_msg = f"Plik {new_archive_path} już istnieje w folderze docelowym."
+            logger.error(log_msg)
+            return None
+        if new_preview_path and os.path.exists(new_preview_path):
+            log_msg = f"Plik {new_preview_path} już istnieje w folderze docelowym."
+            logger.error(log_msg)
+            return None
+
+        # Przenoszenie
+        logger.info(f"Przenoszenie {old_archive_path} -> {new_archive_path}")
+        shutil.move(old_archive_path, new_archive_path)
+
+        if old_preview_path and new_preview_path:
+            logger.info(f"Przenoszenie {old_preview_path} -> {new_preview_path}")
+            shutil.move(old_preview_path, new_preview_path)
+
+        logger.info(f"Pomyślnie przeniesiono parę plików do '{new_target_directory}'")
+        return new_archive_path, new_preview_path
+
+    except (OSError, shutil.Error) as e:
+        log_msg = (
+            f"Błąd podczas przenoszenia plików do " f"'{new_target_directory}': {e}"
+        )
+        logger.error(log_msg)
+        # Prosty rollback - jeśli przenieśliśmy archiwum, a podgląd zawiódł,
+        # przenieś archiwum z powrotem.
+        if os.path.exists(new_archive_path) and not os.path.exists(old_archive_path):
+            shutil.move(new_archive_path, old_archive_path)
+            logger.info(f"Rollback: Przywrócono archiwum do {old_archive_path}")
         return None
 
 

@@ -462,18 +462,18 @@ class MainWindow(QMainWindow):
 
         # 3. Zastosuj metadane do wszystkich sparowanych par
         if self.all_file_pairs:
-            metadata_manager.apply_metadata_to_file_pairs(
-                self.current_working_directory, self.all_file_pairs
-            )
+                metadata_manager.apply_metadata_to_file_pairs(
+                    self.current_working_directory, self.all_file_pairs
+                )
 
         # 4. Zastosuj filtry (początkowo domyślne) i odśwież widok (teraz tylko pokaże/ukryje)
-        self._apply_filters_and_update_view()
+                self._apply_filters_and_update_view()
         self._update_unpaired_files_lists()
 
-        # Pokaż panel filtrów i kontroli rozmiaru
-        self.filter_panel.setVisible(True)
-        is_gallery_populated = bool(self.file_pairs_list)
-        self.size_control_panel.setVisible(is_gallery_populated)
+                # Pokaż panel filtrów i kontroli rozmiaru
+                self.filter_panel.setVisible(True)
+                is_gallery_populated = bool(self.file_pairs_list)
+                self.size_control_panel.setVisible(is_gallery_populated)
         self.tab_widget.setTabVisible(
             1, bool(self.unpaired_archives or self.unpaired_previews)
         )
@@ -510,7 +510,7 @@ class MainWindow(QMainWindow):
         self.select_folder_button.setText("Wybierz Folder Roboczy")
         self.select_folder_button.setEnabled(True)
         # Ukryj panel filtrów
-        self.filter_panel.setVisible(False)
+                self.filter_panel.setVisible(False)
 
     def _apply_filters_and_update_view(self):
         """Zbiera kryteria, filtruje pary i aktualizuje galerię (pokazuje/ukrywa kafelki)."""
@@ -988,9 +988,9 @@ class MainWindow(QMainWindow):
 
         # Załaduj metadane
         if self.all_file_pairs:
-            metadata_manager.apply_metadata_to_file_pairs(
-                self.current_working_directory, self.all_file_pairs
-            )
+        metadata_manager.apply_metadata_to_file_pairs(
+            self.current_working_directory, self.all_file_pairs
+        )
 
         # Zastosuj filtry i zaktualizuj widok
         if current_filters:
@@ -1115,15 +1115,41 @@ class MainWindow(QMainWindow):
         )
 
         if ok and new_name and new_name != old_name:
-            if file_pair.rename(new_name):
+            # Pobieramy ścieżki absolutne dla funkcji operacyjnej
+            old_archive_path = os.path.join(
+                self.current_working_directory, file_pair.get_relative_archive_path()
+            )
+            old_preview_path = None
+            if file_pair.get_relative_preview_path():
+                old_preview_path = os.path.join(
+                    self.current_working_directory,
+                    file_pair.get_relative_preview_path(),
+                )
+
+            result = file_operations.rename_file_pair(
+                old_archive_path, old_preview_path, new_name
+            )
+
+            if result:
+                new_archive_path, new_preview_path = result
                 logging.info(
                     f"Zmieniono nazwę pary plików z '{old_name}' na '{new_name}'"
                 )
 
-                # Zaktualizuj metadane
-                metadata_manager.save_metadata(
-                    self.current_working_directory, self.all_file_pairs
+                # Aktualizujemy obiekt FilePair o nowe dane
+                file_pair.base_name = new_name
+                file_pair.archive_path = os.path.relpath(
+                    new_archive_path, self.current_working_directory
                 )
+                if new_preview_path:
+                    file_pair.preview_path = os.path.relpath(
+                        new_preview_path, self.current_working_directory
+                    )
+                else:
+                    file_pair.preview_path = None
+
+                # Zaktualizuj metadane
+                self._save_metadata()
 
                 # Zaktualizuj widget
                 widget.update_data(file_pair)
@@ -1148,37 +1174,37 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            archive_path_to_delete = file_pair.get_archive_path()
-            if (
-                file_pair.delete()
-            ):  # Ta metoda powinna obsługiwać usuwanie z systemu plików
+            archive_path_to_delete = file_pair.get_archive_path()  # klucz do słownika
+
+            # Pobieramy ścieżki absolutne
+            abs_archive_path = os.path.join(
+                self.current_working_directory, file_pair.get_relative_archive_path()
+            )
+            abs_preview_path = None
+            if file_pair.get_relative_preview_path():
+                abs_preview_path = os.path.join(
+                    self.current_working_directory,
+                    file_pair.get_relative_preview_path(),
+                )
+
+            if file_operations.delete_file_pair(abs_archive_path, abs_preview_path):
                 logging.info(f"Usunięto parę plików: {file_name}")
 
-                # Usuń parę z list głównych
-                if file_pair in self.all_file_pairs:
+                # Usuń parę z listy głównej
                     self.all_file_pairs.remove(file_pair)
-                # file_pairs_list jest aktualizowana przez _apply_filters_and_update_view
 
-                # Zaktualizuj metadane (zanim usuniesz z UI)
-                metadata_manager.save_metadata(
-                    self.current_working_directory,
-                    self.all_file_pairs,
-                    self.unpaired_archives,
-                    self.unpaired_previews,
-                )
+                # Zaktualizuj metadane (przed usunięciem z UI)
+                self._save_metadata()
 
                 # Usuń widget ze słownika i layoutu
                 tile_to_delete = self.gallery_tile_widgets.pop(
                     archive_path_to_delete, None
                 )
                 if tile_to_delete:
-                    if (
-                        self.tiles_layout.indexOf(tile_to_delete) > -1
-                    ):  # Sprawdź czy jest w layoucie
+                    if self.tiles_layout.indexOf(tile_to_delete) > -1:
                         self.tiles_layout.removeWidget(tile_to_delete)
                     tile_to_delete.deleteLater()
 
-                # Odśwież widok galerii, aby usunąć lukę i przefiltrować
                 self._apply_filters_and_update_view()
             else:
                 QMessageBox.warning(
@@ -1204,63 +1230,103 @@ class MainWindow(QMainWindow):
         """
         Obsługa zdarzenia upuszczenia (przeciągnij i upuść).
         """
-        if not event.mimeData().hasText() and not event.mimeData().hasFormat(
-            "application/x-filepair"
-        ):
+        if not event.mimeData().hasFormat("application/x-filepair"):
             event.ignore()
             return
 
         # Pobierz informacje o przeciąganej parze plików
-        if event.mimeData().hasFormat("application/x-filepair"):
-            file_id = bytes(event.mimeData().data("application/x-filepair")).decode(
-                "utf-8"
-            )
-        else:
-            file_id = event.mimeData().text()
+        file_id = bytes(event.mimeData().data("application/x-filepair")).decode("utf-8")
 
-        # Rozdziel identyfikator na ścieżki archiwum i podglądu
         try:
-            archive_path, preview_path = file_id.split("|")
+            # Rozdziel identyfikator na ścieżki archiwum i podglądu
+            archive_rel_path, preview_rel_path = file_id.split("|")
+            # preview_rel_path może być pustym stringiem
+            if not preview_rel_path:
+                preview_rel_path = None
 
-            # Znajdź odpowiedni obiekt FilePair
+            # Znajdź odpowiedni obiekt FilePair na podstawie ścieżki względnej
             target_file_pair = None
             for fp in self.all_file_pairs:
-                if (
-                    fp.get_archive_path() == archive_path
-                    and fp.get_preview_path() == preview_path
-                ):
+                # Normalizujemy ścieżki przed porównaniem
+                fp_archive_rel = fp.get_relative_archive_path().replace("\\\\", "/")
+                if fp_archive_rel == archive_rel_path.replace("\\\\", "/"):
                     target_file_pair = fp
                     break
 
             if not target_file_pair:
+                logging.warning(
+                    f"Nie znaleziono przeciąganego pliku: {archive_rel_path}"
+                )
                 event.ignore()
                 return
 
             # Określ folder docelowy
-            target_folder = self.current_working_directory  # Domyślnie
+            drop_widget = QApplication.widgetAt(event.globalPosition().toPoint())
+            target_folder_path = None
 
-            # Jeśli upuszczono na drzewo katalogów, użyj wybranego folderu
-            if isinstance(event.source(), QTreeView):
-                index = event.source().indexAt(event.position().toPoint())
+            # Sprawdź, czy upuszczono na drzewo folderów
+            if isinstance(drop_widget, QTreeView) or isinstance(
+                drop_widget.parent(), QTreeView
+            ):
+                tree_view = (
+                    drop_widget
+                    if isinstance(drop_widget, QTreeView)
+                    else drop_widget.parent()
+                )
+                pos_in_tree = tree_view.viewport().mapFromGlobal(
+                    event.globalPosition().toPoint()
+                )
+                index = tree_view.indexAt(pos_in_tree)
                 if index.isValid():
-                    target_folder = self.file_system_model.filePath(index)
+                    target_folder_path = self.file_system_model.filePath(index)
 
-            # Przeniesienie plików
-            if target_file_pair.move(target_folder):
+            if not target_folder_path or not os.path.isdir(target_folder_path):
+                logging.debug("Upuszczono poza prawidłowym folderem w drzewie.")
+                event.ignore()
+                return
+
+            # Ścieżki absolutne do przeniesienia
+            old_abs_archive_path = os.path.join(
+                self.current_working_directory,
+                target_file_pair.get_relative_archive_path(),
+            )
+            old_abs_preview_path = None
+            if target_file_pair.get_relative_preview_path():
+                old_abs_preview_path = os.path.join(
+                    self.current_working_directory,
+                    target_file_pair.get_relative_preview_path(),
+                )
+
+            # Przeniesienie plików za pomocą nowej funkcji
+            result = file_operations.move_file_pair(
+                old_abs_archive_path, old_abs_preview_path, target_folder_path
+            )
+
+            if result:
+                new_archive_path, new_preview_path = result
                 logging.info(
-                    f"Przeniesiono parę plików '{target_file_pair.get_base_name()}' do '{target_folder}'"
+                    f"Przeniesiono parę plików '{target_file_pair.get_base_name()}' do '{target_folder_path}'"
                 )
 
-                # Zaktualizuj metadane
-                metadata_manager.save_metadata(
-                    self.current_working_directory, self.all_file_pairs
+                # Aktualizacja obiektu FilePair
+                target_file_pair.archive_path = os.path.relpath(
+                    new_archive_path, self.current_working_directory
                 )
+                if new_preview_path:
+                    target_file_pair.preview_path = os.path.relpath(
+                        new_preview_path, self.current_working_directory
+                    )
+                else:
+                    target_file_pair.preview_path = None
 
-                # Odśwież widok
-                self._refresh_file_pairs_after_folder_operation()
-
+                # Zaktualizuj metadane i odśwież widok
+                self._save_metadata()
+                self._refresh_file_pairs_after_folder_operation()  # Ta metoda powinna przeładować wszystko
                 event.acceptProposedAction()
             else:
+                logging.warning(
+                    f"Przenoszenie pary plików {target_file_pair.get_base_name()} nie powiodło się."
+                )
                 event.ignore()
 
         except Exception as e:
