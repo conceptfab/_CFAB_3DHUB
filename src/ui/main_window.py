@@ -976,10 +976,10 @@ class MainWindow(QMainWindow):
         if not self.current_working_directory:
             return
 
-            # Sprawdź czy to pierwszy wybór folderu roboczego
+        # Sprawdź czy to pierwszy wybór folderu roboczego
         if not hasattr(self, "_main_working_directory"):
-            # Pierwsze uruchomienie - ustaw katalog nadrzędny jako root
-            # żeby główny folder roboczy był WIDOCZNY w drzewie
+            # Pierwsze uruchomienie - ustaw główny folder roboczy jako root
+            # Drzewo pokazuje TYLKO ten folder i jego podfoldery
             self._main_working_directory = self.current_working_directory
 
             # Przeskanuj wszystkie podfoldery z plikami
@@ -987,12 +987,10 @@ class MainWindow(QMainWindow):
                 self._main_working_directory
             )
 
-            # Ustaw katalog nadrzędny jako root, żeby główny folder był widoczny
-            parent_directory = os.path.dirname(self._main_working_directory)
-            if not parent_directory or parent_directory == self._main_working_directory:
-                parent_directory = self._main_working_directory
-
-            root_index = self.file_system_model.setRootPath(parent_directory)
+            # Ustaw główny folder roboczy jako root - pokazuje tylko jego zawartość
+            root_index = self.file_system_model.setRootPath(
+                self._main_working_directory
+            )
             self.folder_tree.setRootIndex(root_index)
 
             # Ukrycie nagłówków (np. 'Name', 'Size', 'Date Modified')
@@ -1015,9 +1013,8 @@ class MainWindow(QMainWindow):
             )
 
             logging.info(
-                "Drzewo katalogów zainicjalizowane - root: %s, główny folder: %s, "
+                "Drzewo katalogów zainicjalizowane - główny folder: %s, "
                 "foldery z plikami: %d",
-                parent_directory,
                 self._main_working_directory,
                 len(folders_with_files),
             )
@@ -1032,12 +1029,10 @@ class MainWindow(QMainWindow):
                 self._main_working_directory
             )
 
-            # Ustaw katalog nadrzędny jako root, żeby główny folder był widoczny
-            parent_directory = os.path.dirname(self._main_working_directory)
-            if not parent_directory or parent_directory == self._main_working_directory:
-                parent_directory = self._main_working_directory
-
-            root_index = self.file_system_model.setRootPath(parent_directory)
+            # Ustaw główny folder roboczy jako root - pokazuje tylko jego zawartość
+            root_index = self.file_system_model.setRootPath(
+                self._main_working_directory
+            )
             self.folder_tree.setRootIndex(root_index)
 
             # Rozwiń automatycznie wszystkie foldery które zawierają pliki
@@ -1046,9 +1041,7 @@ class MainWindow(QMainWindow):
             )
 
             logging.info(
-                "Zmieniono root drzewa - root: %s, główny folder: %s, "
-                "foldery z plikami: %d",
-                parent_directory,
+                "Zmieniono root drzewa - główny folder: %s, " "foldery z plikami: %d",
                 self._main_working_directory,
                 len(folders_with_files),
             )
