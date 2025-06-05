@@ -17,6 +17,17 @@ def run():
     """Uruchamia aplikację z dodatkowymi informacjami diagnostycznymi."""
     # Jeszcze krótszy komunikat
     print(f"Root in path: {_PROJECT_ROOT}")
+
+    # Sprawdź, czy użytkownik chce włączyć tryb debugowania
+    import sys
+
+    if "--debug" in sys.argv:
+        print("TRYB DEBUGOWANIA WŁĄCZONY - szczegółowe logi skanowania folderów")
+        # Ustawienie poziomu logowania na DEBUG dla modułu skanowania
+        import logging
+
+        logging.getLogger("src.logic.scanner").setLevel(logging.DEBUG)
+
     main()
 
 

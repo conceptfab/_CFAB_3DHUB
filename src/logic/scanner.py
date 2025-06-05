@@ -7,20 +7,15 @@ import os
 from collections import defaultdict
 from typing import List, Tuple
 
+from src import app_config  # Importujemy moduł konfiguracji
 from src.models.file_pair import FilePair
+from src.utils.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
 
-# Definicje rozszerzeń są teraz w jednym miejscu, tutaj.
-ARCHIVE_EXTENSIONS = {".rar", ".zip", ".7z"}
-PREVIEW_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
-
-
-def _normalize_path(path: str) -> str:
-    """Normalizuje ścieżkę, zamieniając separatory na '/'."""
-    if not path:
-        return ""
-    return os.path.normpath(path).replace("\\", "/")
+# Używamy definicji rozszerzeń z centralnego pliku konfiguracyjnego
+ARCHIVE_EXTENSIONS = set(app_config.SUPPORTED_ARCHIVE_EXTENSIONS)
+PREVIEW_EXTENSIONS = set(app_config.SUPPORTED_PREVIEW_EXTENSIONS)
 
 
 def scan_folder_for_pairs(
@@ -37,48 +32,77 @@ def scan_folder_for_pairs(
         znalezionych par, listę niesparowanych archiwów i listę niesparowanych
         podglądów.
     """
-    directory = _normalize_path(directory)
+    directory = normalize_path(directory)
     logger.info(f"Rozpoczęto skanowanie katalogu: {directory}")
+    logger.debug(f"Obsługiwane rozszerzenia archiwów: {ARCHIVE_EXTENSIONS}")
+    logger.debug(f"Obsługiwane rozszerzenia podglądów: {PREVIEW_EXTENSIONS}")
+
     found_pairs: List[FilePair] = []
     unpaired_archives: List[str] = []
     unpaired_previews: List[str] = []
     file_map = defaultdict(list)
 
+    total_folders_scanned = 0
+    total_files_found = 0
+
     # Krok 1: Zbieranie wszystkich plików i normalizacja ścieżek od razu
-    for root, _, files in os.walk(directory):
-        normalized_root = _normalize_path(root)
+    for root, dirs, files in os.walk(directory):
+        normalized_root = normalize_path(root)
+        total_folders_scanned += 1
+
+        logger.debug(f"Skanowanie folderu: {normalized_root}")
+        logger.debug(f"  Znalezione podfoldery: {dirs}")
+        logger.debug(f"  Znalezione pliki: {len(files)}")
+
         for name in files:
-            base_name, _ = os.path.splitext(name)
-            full_path = os.path.join(normalized_root, name)
-            # Kluczem mapy jest ścieżka bazowa (folder/nazwa_bez_rozszerzenia)
-            map_key = os.path.join(normalized_root, base_name.lower())
-            file_map[map_key].append(full_path)
+            total_files_found += 1
+            base_name, ext = os.path.splitext(name)
+            ext_lower = ext.lower()
+            if ext_lower in ARCHIVE_EXTENSIONS or ext_lower in PREVIEW_EXTENSIONS:
+                map_key = os.path.join(normalized_root, base_name.lower())
+                full_file_path = normalize_path(os.path.join(normalized_root, name))
+                file_map[map_key].append(full_file_path)
+                logger.debug(f"  Dodano do mapy: {name} (klucz: {map_key})")
+
+    logger.info(
+        f"Przeskanowano {total_folders_scanned} folderów, znaleziono {total_files_found} plików"
+    )
+    logger.info(f"Znaleziono {len(file_map)} unikalnych grup plików do sparowania")
 
     # Krok 2: Przetwarzanie zebranych plików i tworzenie par
-    for _, files in file_map.items():
-        archive_file = None
-        preview_file = None
+    all_files_in_map = {file for files_list in file_map.values() for file in files_list}
+    processed_files = set()
 
-        for file_path in files:
-            _, ext = os.path.splitext(file_path)
-            if ext.lower() in ARCHIVE_EXTENSIONS:
-                archive_file = file_path
-            elif ext.lower() in PREVIEW_EXTENSIONS:
-                preview_file = file_path
+    for files_list in file_map.values():
+        archive_files = [
+            f
+            for f in files_list
+            if os.path.splitext(f)[1].lower() in ARCHIVE_EXTENSIONS
+        ]
+        preview_files = [
+            f
+            for f in files_list
+            if os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS
+        ]
 
-        if archive_file and preview_file:
-            # Znaleziono parę
+        # Tworzenie par
+        if archive_files and preview_files:
             try:
-                pair = FilePair(archive_file, preview_file, directory)
+                # Na razie bierzemy pierwszą znalezioną parę
+                pair = FilePair(archive_files[0], preview_files[0], directory)
                 found_pairs.append(pair)
+                processed_files.add(archive_files[0])
+                processed_files.add(preview_files[0])
             except ValueError as e:
-                logger.error(f"Błąd tworzenia FilePair dla '{archive_file}': {e}")
-        else:
-            # Pliki bez pary
-            if archive_file:
-                unpaired_archives.append(archive_file)
-            if preview_file:
-                unpaired_previews.append(preview_file)
+                logger.error(f"Błąd tworzenia FilePair dla '{archive_files[0]}': {e}")
+
+    # Krok 3: Identyfikacja niesparowanych plików
+    unpaired_files = all_files_in_map - processed_files
+    for f in unpaired_files:
+        if os.path.splitext(f)[1].lower() in ARCHIVE_EXTENSIONS:
+            unpaired_archives.append(f)
+        elif os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS:
+            unpaired_previews.append(f)
 
     logger.info(
         f"Zakończono skanowanie '{directory}'. Znaleziono {len(found_pairs)} par, "

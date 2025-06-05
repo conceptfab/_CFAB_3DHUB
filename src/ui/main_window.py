@@ -40,6 +40,7 @@ from src.logic.scanner import scan_folder_for_pairs
 from src.models.file_pair import FilePair
 from src.ui.widgets.file_tile_widget import FileTileWidget
 from src.ui.widgets.preview_dialog import PreviewDialog
+from src.utils.path_utils import normalize_path
 
 
 class ScanFolderWorker(QObject):
@@ -55,6 +56,7 @@ class ScanFolderWorker(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.directory_to_scan = None
+        self._should_stop = False
 
     def run(self):
         """
@@ -62,6 +64,9 @@ class ScanFolderWorker(QObject):
         """
         if not self.directory_to_scan:
             self.error.emit("Nie określono folderu do skanowania.")
+            return
+
+        if self._should_stop:
             return
 
         try:
@@ -72,14 +77,20 @@ class ScanFolderWorker(QObject):
             found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
                 self.directory_to_scan
             )
-            self.finished.emit(found_pairs, unpaired_archives, unpaired_previews)
+            if not self._should_stop:
+                self.finished.emit(found_pairs, unpaired_archives, unpaired_previews)
         except Exception as e:
-            err_msg = (
-                f"Błąd podczas skanowania folderu "
-                f"'{self.directory_to_scan}' w wątku: {e}"
-            )
-            logging.error(err_msg)
-            self.error.emit(err_msg)
+            if not self._should_stop:
+                err_msg = (
+                    f"Błąd podczas skanowania folderu "
+                    f"'{self.directory_to_scan}' w wątku: {e}"
+                )
+                logging.error(err_msg)
+                self.error.emit(err_msg)
+
+    def stop(self):
+        """Przerywa skanowanie."""
+        self._should_stop = True
 
 
 class DataProcessingWorker(QObject):
@@ -186,6 +197,28 @@ class MainWindow(QMainWindow):
         }
 
         logging.info("Główne okno aplikacji zostało zainicjalizowane")
+
+    def closeEvent(self, event):
+        """Obsługuje zamykanie aplikacji - kończy wszystkie wątki."""
+        # Zakończ wątek skanowania jeśli jest aktywny
+        if self.scan_thread and self.scan_thread.isRunning():
+            logging.info("Kończenie wątku skanowania przy zamykaniu aplikacji...")
+            self.scan_thread.quit()
+            if not self.scan_thread.wait(1000):  # Czekaj max 1 sekundę
+                logging.warning("Wątek skanowania nie zakończył się, wymuszam...")
+                self.scan_thread.terminate()
+                self.scan_thread.wait()
+
+        # Zakończ wątek przetwarzania danych jeśli jest aktywny
+        if self.data_processing_thread and self.data_processing_thread.isRunning():
+            logging.info("Kończenie wątku przetwarzania przy zamykaniu aplikacji...")
+            self.data_processing_thread.quit()
+            if not self.data_processing_thread.wait(1000):
+                logging.warning("Wątek przetwarzania nie zakończył się, wymuszam...")
+                self.data_processing_thread.terminate()
+                self.data_processing_thread.wait()
+
+        event.accept()
 
     def _init_ui(self):
         """
@@ -389,68 +422,95 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.unpaired_files_tab, "Niesparowane Pliki")
         self.tab_widget.setTabVisible(1, False)
 
-    def _select_working_directory(self):
+    def _select_working_directory(self, directory_path=None):
         """
-        Otwiera dialog wyboru folderu i inicjuje asynchroniczne skanowanie.
+        Otwiera dialog wyboru folderu lub używa podanej ścieżki,
+        a następnie inicjalizuje proces skanowania.
         """
-        logging.debug("Dialog wyboru folderu roboczego.")
-        if self.current_working_directory:
-            initial_dir = self.current_working_directory
-        else:
-            initial_dir = os.path.expanduser("~")
-
-        directory = QFileDialog.getExistingDirectory(
-            self, "Wybierz Folder Roboczy", initial_dir
-        )
-        if directory:
-            self.current_working_directory = directory
-            logging.info(f"Wybrano folder: {self.current_working_directory}")
-            base_folder_name = os.path.basename(self.current_working_directory)
-            self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
-
-            # Wyłącz przycisk i zmień tekst na czas skanowania
-            self.select_folder_button.setEnabled(False)
-            self.select_folder_button.setText("Skanowanie...")
-            # Wyczyść poprzednie dane przed nowym skanowaniem
-            self._clear_all_data_and_views()
-
-            # Przygotowanie i uruchomienie wątku skanującego
-            if self.scan_thread and self.scan_thread.isRunning():
-                logging.warning("Poprzedni wątek skanowania wciąż aktywny. Czekanie...")
-                self.select_folder_button.setText("Wybierz Folder Roboczy")
-                self.select_folder_button.setEnabled(True)
-                QMessageBox.warning(
-                    self,
-                    "Skanowanie w toku",
-                    "Poprzednia operacja skanowania folderu jeszcze się nie zakończyła.",
-                )
-                return
-
-            self.scan_thread = QThread(self)
-            self.scan_worker = ScanFolderWorker()
-            self.scan_worker.directory_to_scan = self.current_working_directory
-            self.scan_worker.moveToThread(self.scan_thread)
-
-            # Połączenie sygnałów
-            self.scan_worker.finished.connect(self._handle_scan_finished)
-            self.scan_worker.error.connect(self._handle_scan_error)
-            self.scan_thread.started.connect(self.scan_worker.run)
-            # Sprzątanie po zakończeniu wątku
-            self.scan_worker.finished.connect(self.scan_thread.quit)
-            self.scan_worker.error.connect(self.scan_thread.quit)
-            self.scan_thread.finished.connect(self.scan_thread.deleteLater)
-            self.scan_worker.finished.connect(
-                self.scan_worker.deleteLater
-            )  # Worker też
-            self.scan_worker.error.connect(self.scan_worker.deleteLater)  # Worker też
-
-            self.scan_thread.start()
-            logging.info(
-                f"Uruchomiono wątek skanowania dla: {self.current_working_directory}"
+        # KRYTYCZNA POPRAWKA: Przerwanie poprzedniego skanowania
+        if self.scan_thread and self.scan_thread.isRunning():
+            logging.warning(
+                "Nowe skanowanie żądane, gdy poprzednie jest aktywne. "
+                "Przerywam stary wątek i uruchamiam nowy."
             )
+            # Przerwij worker
+            if self.scan_worker:
+                self.scan_worker.stop()
+            try:
+                # Odłącz sygnały, aby stary wątek nie wpływał na UI
+                self.scan_worker.finished.disconnect()
+                self.scan_worker.error.disconnect()
+            except (TypeError, AttributeError):
+                logging.debug(
+                    "Nie można było odłączyć sygnałów od starego workera "
+                    "(prawdopodobnie już były odłączone)."
+                )
+            # Poproś stary wątek o zakończenie i poczekaj chwilę
+            self.scan_thread.quit()
+            self.scan_thread.wait(500)  # Czekaj maksymalnie 500ms
 
+        if directory_path:
+            # Użyj podanej ścieżki (np. z kliknięcia w drzewo)
+            path = directory_path
         else:
-            logging.info("Anulowano wybór folderu.")
+            # Otwórz dialog, jeśli nie podano ścieżki
+            path = QFileDialog.getExistingDirectory(self, "Wybierz Folder Roboczy")
+
+        if not path:
+            logging.debug("Nie wybrano folderu.")
+            return
+
+        # Ustaw nowy folder roboczy
+        self.current_working_directory = normalize_path(path)
+        base_folder_name = os.path.basename(self.current_working_directory)
+        self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
+        logging.info("Wybrano folder roboczy: %s", self.current_working_directory)
+
+        # 1. Wyczyść wszystkie dane i widoki przed nowym skanowaniem
+        self._clear_all_data_and_views()
+
+        # 2. Zaktualizuj drzewo folderów, aby pokazywało nową lokalizację
+        self._init_directory_tree()
+
+        # 3. Rozpocznij skanowanie w tle
+        self.select_folder_button.setText("Skanowanie...")
+        self.select_folder_button.setEnabled(False)
+
+        # Uruchomienie workera skanowania w osobnym wątku
+        self.scan_thread = QThread()
+        self.scan_worker = ScanFolderWorker()
+        self.scan_worker.directory_to_scan = self.current_working_directory
+        self.scan_worker.moveToThread(self.scan_thread)
+
+        self.scan_thread.started.connect(self.scan_worker.run)
+        self.scan_worker.finished.connect(self._handle_scan_finished)
+        self.scan_worker.finished.connect(self.scan_thread.quit)
+        self.scan_worker.error.connect(self._handle_scan_error)
+        self.scan_worker.error.connect(self.scan_thread.quit)
+        self.scan_thread.finished.connect(self._on_scan_thread_finished)
+
+        self.scan_thread.start()
+        logging.info(
+            f"Uruchomiono wątek skanowania dla: {self.current_working_directory}"
+        )
+
+    def _on_scan_thread_finished(self):
+        """
+        Slot wywoływany po zakończeniu pracy wątku skanującego.
+        Czyści referencje, aby zapobiec błędom typu 'use after free'.
+        """
+        # Przywróć przycisk skanowania
+        self.select_folder_button.setText("Wybierz Folder")
+        self.select_folder_button.setEnabled(True)
+
+        # Wyczyść referencje do wątku
+        if self.scan_thread:
+            self.scan_thread.deleteLater()
+            self.scan_thread = None
+        if self.scan_worker:
+            self.scan_worker.deleteLater()
+            self.scan_worker = None
+        logging.debug("Wątek skanujący i worker zostały bezpiecznie wyczyszczone.")
 
     def _clear_all_data_and_views(self):
         """Czyści wszystkie dane plików i odpowiednie widoki, w tym galerię."""
@@ -468,6 +528,7 @@ class MainWindow(QMainWindow):
         """Czyści listy niesparowanych plików w interfejsie użytkownika."""
         self.unpaired_archives_list_widget.clear()
         self.unpaired_previews_list_widget.clear()
+
         logging.debug("Wyczyszczono listy niesparowanych plików w UI.")
 
     def _update_unpaired_files_lists(self):
@@ -907,8 +968,8 @@ class MainWindow(QMainWindow):
 
             self.folder_tree.clicked.connect(self._folder_tree_item_clicked)
             logging.info(
-                "Drzewo katalogów zainicjalizowane dla: "
-                f"{self.current_working_directory}"
+                "Drzewo katalogów zainicjalizowane dla: %s",
+                self.current_working_directory,
             )
         else:
             logging.warning(
@@ -1104,37 +1165,23 @@ class MainWindow(QMainWindow):
 
     def _folder_tree_item_clicked(self, index):
         """
-        Obsługuje kliknięcie elementu w drzewie folderów, filtrując widok galerii.
+        Obsługuje kliknięcie elementu w drzewie folderów, traktując go jako
+        wybór nowego folderu roboczego.
         """
-        # Pobranie ścieżki do folderu z modelu
         folder_path = self.file_system_model.filePath(index)
-        logging.debug(f"Kliknięto folder w drzewie: {folder_path}")
+        if folder_path and os.path.isdir(folder_path):
+            # Sprawdź, czy nie kliknięto tego samego folderu, aby uniknąć
+            # niepotrzebnego przeładowania.
+            if normalize_path(folder_path) == normalize_path(
+                self.current_working_directory
+            ):
+                logging.debug("Kliknięto ten sam folder. Brak akcji.")
+                return
 
-        # Sprawdzenie, czy ścieżka jest prawidłowa
-        if not folder_path or not os.path.isdir(folder_path):
-            logging.warning(f"Nieprawidłowa ścieżka: {folder_path}")
-            return
-
-        # Normalizacja ścieżek dla spójności
-        normalized_root = os.path.normpath(self.current_working_directory)
-        normalized_clicked = os.path.normpath(folder_path)
-
-        # Jeśli kliknięto główny folder roboczy, pokaż wszystko
-        if normalized_clicked == normalized_root:
-            logging.debug("Wybrano główny folder, resetowanie filtrów ścieżki.")
-            # Resetuj kryteria filtrowania ścieżki i zastosuj ponownie wszystkie filtry
-            if "path_prefix" in self.current_filter_criteria:
-                del self.current_filter_criteria["path_prefix"]
-            self._apply_filters_and_update_view()
-            return
-
-        # Filtrowanie na podstawie podfolderu
-        # Przechowaj ten filtr, aby inne filtry (gwiazdki, ulubione) go uwzględniły
-        logging.debug(
-            f"Filtrowanie galerii, aby pokazać tylko pliki z: " f"{normalized_clicked}"
-        )
-        self.current_filter_criteria["path_prefix"] = normalized_clicked
-        self._apply_filters_and_update_view()
+            logging.info(f"Wybrano nowy folder z drzewa: {folder_path}")
+            # Wywołaj główną logikę wyboru folderu, która zajmie się
+            # skanowaniem, czyszczeniem i aktualizacją UI.
+            self._select_working_directory(folder_path)
 
     def _show_file_context_menu(self, file_pair: FilePair, widget: QWidget, position):
         """

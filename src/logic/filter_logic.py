@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, List
 
 from src.models.file_pair import FilePair
+from src.utils.path_utils import normalize_path
 
 
 def filter_file_pairs(
@@ -37,15 +38,29 @@ def filter_file_pairs(
     show_favorites_only = filter_criteria.get("show_favorites_only", False)
     min_stars = filter_criteria.get("min_stars", 0)
     required_color_tag = filter_criteria.get("required_color_tag", "ALL")
+    path_prefix = filter_criteria.get("path_prefix")
 
     logging.debug(f"Filter run: {len(file_pairs_list)} pairs.")
     logging.debug(
-        f"Crit: Fav={show_favorites_only}, S>={min_stars}, C='{required_color_tag}'"
+        f"Crit: Fav={show_favorites_only}, S>={min_stars}, "
+        f"C='{required_color_tag}', Path='{path_prefix}'"
     )
 
     for i, pair in enumerate(file_pairs_list):
         fp_name = pair.get_base_name()[:20]  # Nazwa dla logów
-        pair_is_fav = pair.is_favorite_file()
+
+        # Sprawdzenie warunku ścieżki (nowy warunek na początku)
+        if path_prefix:
+            # Używamy tej samej, spójnej normalizacji
+            pair_path = normalize_path(pair.get_archive_path())
+            prefix = normalize_path(path_prefix)
+
+            # Sprawdzamy, czy ścieżka pliku zaczyna się od ścieżki folderu.
+            # To jest kluczowe dla poprawnego filtrowania.
+            if not pair_path.startswith(prefix):
+                continue
+
+        pair_is_fav = pair.is_favorite
         pair_stars = pair.get_stars()
         pair_color_tag = pair.get_color_tag()
 
@@ -72,11 +87,13 @@ def filter_file_pairs(
             if not pair_color_tag:  # Pusty string lub None
                 passes_color_filter = True
                 logging.debug(
-                    f"  P#{i}({fp_name}): FilterC='__NONE__', T:'{pair_color_tag}' -> OK"
+                    f"  P#{i}({fp_name}): FilterC='__NONE__', "
+                    f"T:'{pair_color_tag}' -> OK"
                 )
             else:
                 logging.debug(
-                    f"  P#{i}({fp_name}): FilterC='__NONE__', T:'{pair_color_tag}' -> REJ"
+                    f"  P#{i}({fp_name}): FilterC='__NONE__', "
+                    f"T:'{pair_color_tag}' -> REJ"
                 )
         else:  # Konkretny kod hex
             # Porównanie niewrażliwe na wielkość liter i z trimowaniem
@@ -87,11 +104,13 @@ def filter_file_pairs(
             ):
                 passes_color_filter = True
                 logging.debug(
-                    f"  P#{i}({fp_name}): FilterC='{required_color_tag}', T:'{pair_color_tag}' -> OK"
+                    f"  P#{i}({fp_name}): FilterC='{required_color_tag}', "
+                    f"T:'{pair_color_tag}' -> OK"
                 )
             else:
                 logging.debug(
-                    f"  P#{i}({fp_name}): FilterC='{required_color_tag}', T:'{pair_color_tag}' -> REJ"
+                    f"  P#{i}({fp_name}): FilterC='{required_color_tag}', "
+                    f"T:'{pair_color_tag}' -> REJ"
                 )
 
         if not passes_color_filter:
