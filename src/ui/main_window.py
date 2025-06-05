@@ -6,7 +6,7 @@ import logging
 import math
 import os
 
-from PyQt6.QtCore import QDir, QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QDir, QObject, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QFileSystemModel, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -82,6 +82,51 @@ class ScanFolderWorker(QObject):
             self.error.emit(err_msg)
 
 
+class DataProcessingWorker(QObject):
+    """
+    Worker do przetwarzania danych w tle. Odpowiedzialny za:
+    1. Zastosowanie metadanych do par plików (operacja I/O).
+    2. Emitowanie sygnałów do tworzenia kafelków w głównym wątku.
+    """
+
+    tile_data_ready = pyqtSignal(FilePair)
+    finished = pyqtSignal()
+
+    def __init__(self, working_directory: str, file_pairs: list[FilePair], parent=None):
+        super().__init__(parent)
+        self.working_directory = working_directory
+        self.file_pairs = file_pairs
+
+    def run(self):
+        """Główna metoda workera."""
+        try:
+            # 1. Zastosuj metadane (ciężka operacja I/O)
+            if self.file_pairs:
+                logging.info("DataProcessingWorker: Rozpoczynam stosowanie metadanych.")
+                metadata_manager.apply_metadata_to_file_pairs(
+                    self.working_directory, self.file_pairs
+                )
+                logging.info("DataProcessingWorker: Zakończono stosowanie metadanych.")
+
+            # 2. Emituj sygnały do tworzenia kafelków
+            if self.file_pairs:
+                logging.debug(
+                    f"DataProcessingWorker: Rozpoczynam przygotowanie "
+                    f"{len(self.file_pairs)} kafelków."
+                )
+                for file_pair in self.file_pairs:
+                    self.tile_data_ready.emit(file_pair)
+                    # Dajemy głównemu wątkowi szansę na przetworzenie zdarzeń
+                    QThread.msleep(1)
+            else:
+                logging.debug("DataProcessingWorker: Brak par plików do przetworzenia.")
+
+        except Exception as e:
+            logging.error(f"Błąd w DataProcessingWorker: {e}")
+        finally:
+            self.finished.emit()
+
+
 class MainWindow(QMainWindow):
     """
     Główne okno aplikacji CFAB_3DHUB.
@@ -103,6 +148,15 @@ class MainWindow(QMainWindow):
         # Wątek skanowania
         self.scan_thread = None
         self.scan_worker = None
+
+        # Wątek i worker do przetwarzania danych i ładowania kafelków
+        self.data_processing_thread = None
+        self.data_processing_worker = None
+
+        # Timer do opóźnienia odświeżania galerii przy zmianie rozmiaru okna
+        self.resize_timer = QTimer(self)
+        self.resize_timer.setSingleShot(True)
+        self.resize_timer.timeout.connect(self._update_gallery_view)
 
         # Konfiguracja rozmiaru miniatur - teraz z app_config
         self.min_thumbnail_size = app_config.MIN_THUMBNAIL_SIZE
@@ -442,11 +496,10 @@ class MainWindow(QMainWindow):
     def _handle_scan_finished(self, found_pairs, unpaired_archives, unpaired_previews):
         """
         Obsługuje wyniki pomyślnie zakończonego skanowania folderu.
-        Tworzy wszystkie widgety kafelków, ale ich nie wyświetla.
+        Uruchamia workera do tworzenia kafelków w tle.
         """
         logging.info(
-            f"Skanowanie folderu {self.current_working_directory} "
-            f"zakończone pomyślnie."
+            f"Skanowanie folderu {self.current_working_directory} zakończone pomyślnie."
         )
         self.all_file_pairs = found_pairs
         self.unpaired_archives = unpaired_archives
@@ -461,36 +514,67 @@ class MainWindow(QMainWindow):
         # 1. Wyczyść poprzednie widgety kafelków całkowicie
         self._clear_gallery()
 
-        # 2. Stwórz nowe widgety kafelków dla wszystkich znalezionych par
-        #    ale nie dodawaj ich jeszcze do layoutu i ustaw jako niewidoczne.
+        # 2. Uruchom workera do zastosowania metadanych i tworzenia kafelków w tle
         if self.all_file_pairs:
-            for file_pair in self.all_file_pairs:
-                try:
-                    tile = FileTileWidget(file_pair, self.current_thumbnail_size, self)
-                    # Podłączanie sygnałów dla nowo utworzonego kafelka
-                    tile.archive_open_requested.connect(self.open_archive)
-                    tile.preview_image_requested.connect(self._show_preview_dialog)
-                    tile.favorite_toggled.connect(self.toggle_favorite_status)
-                    tile.stars_changed.connect(self._handle_stars_changed)
-                    tile.color_tag_changed.connect(self._handle_color_tag_changed)
-                    tile.tile_context_menu_requested.connect(
-                        self._show_file_context_menu
-                    )
+            self._start_data_processing_worker(self.all_file_pairs)
+        else:
+            # Jeśli nie ma par, po prostu zaktualizuj UI
+            self._on_tile_loading_finished()
 
-                    tile.setVisible(False)  # Ukryj na starcie
-                    self.gallery_tile_widgets[file_pair.get_archive_path()] = tile
-                except Exception as e:
-                    logging.error(
-                        f"Błąd tworzenia kafelka dla {file_pair.get_base_name()}: {e}"
-                    )
+    def _start_data_processing_worker(self, file_pairs: list[FilePair]):
+        """Inicjalizuje i uruchamia workera do przetwarzania danych."""
+        if self.data_processing_thread and self.data_processing_thread.isRunning():
+            logging.warning(
+                "Próba uruchomienia workera przetwarzania, gdy poprzedni jeszcze działa."
+            )
+            return
 
-        # 3. Zastosuj metadane do wszystkich sparowanych par
-        if self.all_file_pairs:
-            metadata_manager.apply_metadata_to_file_pairs(
-                self.current_working_directory, self.all_file_pairs
+        self.data_processing_thread = QThread()
+        self.data_processing_worker = DataProcessingWorker(
+            self.current_working_directory, file_pairs
+        )
+        self.data_processing_worker.moveToThread(self.data_processing_thread)
+
+        # Podłączenie sygnałów
+        self.data_processing_worker.tile_data_ready.connect(
+            self._create_tile_widget_for_pair
+        )
+        self.data_processing_worker.finished.connect(self._on_tile_loading_finished)
+        self.data_processing_thread.started.connect(self.data_processing_worker.run)
+
+        self.data_processing_thread.start()
+
+    def _create_tile_widget_for_pair(self, file_pair: FilePair):
+        """Tworzy pojedynczy kafelek. Ten slot jest wywoływany w głównym wątku."""
+        try:
+            tile = FileTileWidget(file_pair, self.current_thumbnail_size, self)
+            tile.archive_open_requested.connect(self.open_archive)
+            tile.preview_image_requested.connect(self._show_preview_dialog)
+            tile.favorite_toggled.connect(self.toggle_favorite_status)
+            tile.stars_changed.connect(self._handle_stars_changed)
+            tile.color_tag_changed.connect(self._handle_color_tag_changed)
+            tile.tile_context_menu_requested.connect(self._show_file_context_menu)
+
+            # Ukryj na starcie, _update_gallery_view zdecyduje o widoczności
+            tile.setVisible(False)
+            self.gallery_tile_widgets[file_pair.get_archive_path()] = tile
+        except Exception as e:
+            logging.error(
+                f"Błąd tworzenia kafelka " f"dla {file_pair.get_base_name()}: {e}"
             )
 
-        # 4. Zastosuj filtry (początkowo domyślne) i odśwież widok (teraz tylko pokaże/ukryje)
+    def _on_tile_loading_finished(self):
+        """
+        Slot wywoływany po zakończeniu tworzenia wszystkich kafelków przez workera.
+        """
+        if self.data_processing_thread:
+            self.data_processing_thread.quit()
+            self.data_processing_thread.wait()
+            self.data_processing_thread = None
+
+        logging.info("Zakończono tworzenie wszystkich kafelków.")
+
+        # Zastosuj filtry (początkowo domyślne) i odśwież widok
         self._apply_filters_and_update_view()
         self._update_unpaired_files_lists()
 
@@ -502,7 +586,7 @@ class MainWindow(QMainWindow):
             1, bool(self.unpaired_archives or self.unpaired_previews)
         )
 
-        # Inicjalizacja drzewa katalogów - powinna być tutaj, po załadowaniu danych
+        # Inicjalizacja drzewa katalogów
         self._init_directory_tree()
 
         # Przywróć przycisk
@@ -525,7 +609,7 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(
             self,
             "Błąd Skanowania",
-            f"Wystąpił błąd podczas skanowania folderu:\n{error_message}",
+            "Wystąpił błąd podczas skanowania folderu:\n" f"{error_message}",
         )
 
         self._clear_all_data_and_views()  # Wyczyść dane i widoki
@@ -585,6 +669,9 @@ class MainWindow(QMainWindow):
         Aktualizuje widok galerii, pokazując/ukrywając istniejące kafelki
         i rozmieszczając je w siatce.
         """
+        # OPTYMALIZACJA: Wyłącz aktualizacje na czas przebudowy layoutu
+        self.tiles_container.setUpdatesEnabled(False)
+
         # 1. Usuń wszystkie widgety z layoutu (ale nie z pamięci/słownika)
         while self.tiles_layout.count():
             item = self.tiles_layout.takeAt(0)
@@ -621,42 +708,23 @@ class MainWindow(QMainWindow):
                         row += 1
                 else:
                     logging.warning(
-                        f"Nie znaleziono widgetu kafelka dla {file_pair.get_archive_path()} w słowniku."
+                        f"Nie znaleziono widgetu kafelka dla "
+                        f"{file_pair.get_archive_path()} w słowniku."
                     )
 
             # Ukryj widgety, które nie są na liście file_pairs_list
             # (te, które zostały odfiltrowane)
-            # To jest mniej wydajne niż wcześniejsze ukrycie wszystkich
-            # i pokazanie tylko potrzebnych, ale bardziej bezpośrednie.
-            # Lepsze podejście: na początku _update_gallery_view ukryć wszystkie, potem pokazać te z file_pairs_list.
-            # Zmienimy to w kolejnym kroku jeśli będzie taka potrzeba.
-            # Na razie, dla bezpieczeństwa, iterujemy po wszystkich przechowywanych.
             for archive_path, tile_widget in self.gallery_tile_widgets.items():
                 # Sprawdź, czy file_pair dla tego widgetu jest na liście do wyświetlenia
-                # To wymaga znalezienia file_pair po archive_path w self.file_pairs_list
-                # To jest nieefektywne. Prostsze: jeśli tile nie został dodany w pętli powyżej, to ukryj.
-                # Zakładając, że layout prawidłowo zarządza widgetami, które nie zostały dodane,
-                # wystarczy ustawić setVisible(False) dla tych, które nie są w self.file_pairs_list
-                # Lepsze: if tile_widget.file_pair not in self.file_pairs_list: tile_widget.setVisible(False)
-
-                # Bardziej bezpośrednie podejście: jeśli widget nie był w pętli powyżej, a jest widoczny, ukryj.
-                # LUB: Ustawiamy wszystkie na False, a potem te z file_pairs_list na True.
-                # Zostawiam obecną logikę, gdzie dodajemy tylko te co trzeba.
-                # Te, które nie zostały dodane do layoutu, a były wcześniej, zostały usunięte z layoutu na początku.
-                # Musimy tylko upewnić się, że są `setVisible(False)` jeśli nie są w `file_pairs_list`.
-                # Poniższa pętla to robi.
-                is_visible_pair = any(
+                is_on_list = any(
                     fp.get_archive_path() == archive_path for fp in self.file_pairs_list
                 )
-                if not is_visible_pair and tile_widget.isVisible():
+                if not is_on_list:
                     tile_widget.setVisible(False)
-                elif (
-                    is_visible_pair and not tile_widget.isVisible()
-                ):  # Na wypadek gdyby był ukryty
-                    tile_widget.setVisible(True)
-
-        except Exception as e:
-            logging.error(f"Błąd aktualizacji widoku galerii: {e}")
+        finally:
+            # OPTYMALIZACJA: Włącz aktualizacje i zaplanuj odświeżenie
+            self.tiles_container.setUpdatesEnabled(True)
+            self.tiles_container.update()
 
     def _clear_gallery(self):
         """
@@ -703,14 +771,10 @@ class MainWindow(QMainWindow):
         logging.debug(f"Zaktualizowano rozmiar miniatur: {thumb_size_str}")
 
     def resizeEvent(self, event):
-        """
-        Obsługuje zdarzenie zmiany rozmiaru okna.
-        """
+        # Opóźnienie przerenderowania galerii po zmianie rozmiaru okna
+        # zamiast wywoływać _update_gallery_view() bezpośrednio.
+        self.resize_timer.start(150)  # Czas w milisekundach
         super().resizeEvent(event)
-
-        # Aktualizuje układ kafelków po zmianie rozmiaru okna
-        if self.file_pairs_list:
-            self._update_gallery_view()
 
     def _save_metadata(self):
         """Zapisuje metadane dla wszystkich (nieprzefiltrowanych) par plików oraz listy niesparowanych."""
@@ -748,40 +812,39 @@ class MainWindow(QMainWindow):
     # MODIFICATION: New slot for preview_image_requested signal
     def _show_preview_dialog(self, file_pair: FilePair):
         """
-        Wyświetla dialog z większym podglądem obrazu.
-
-        Args:
-            file_pair (FilePair): Para plików, dla której ma być wyświetlony podgląd.
+        Wyświetla okno dialogowe z podglądem obrazu w wysokiej rozdzielczości.
         """
-        if file_pair and file_pair.preview_path:
-            logging.info(f"Żądanie podglądu obrazu dla: {file_pair.get_base_name()}")
-            try:
-                # Załaduj pełny obraz, a nie miniaturę z FilePair.preview_thumbnail
-                pixmap = QPixmap(file_pair.preview_path)
-                if pixmap.isNull():
-                    logging.error(
-                        f"Nie można załadować QPixmap dla podglądu: "
-                        f"{file_pair.preview_path}"
-                    )
-                    # TODO: Można by tu wyświetlić QMessageBox z informacją dla użytkownika
-                    return
-
-                dialog = PreviewDialog(pixmap, self)
-                dialog.exec()  # Użyj exec() dla modalnego dialogu
-            except Exception as e:
-                logging.error(
-                    f"Błąd QPixmap/dialogu podglądu dla {file_pair.preview_path}: {e}"
-                )
-                # TODO: Można by tu wyświetlić QMessageBox z informacją dla użytkownika
-        else:
-            logging.warning(
-                "Próba podglądu dla nieprawidłowego FilePair lub braku ścieżki."
+        # Sprawdzenie, czy ścieżka podglądu istnieje
+        preview_path = file_pair.get_preview_path()
+        if not preview_path or not os.path.exists(preview_path):
+            QMessageBox.warning(
+                self,
+                "Brak Podglądu",
+                "Plik podglądu dla tego elementu nie istnieje.",
             )
+            return
+
+        # Tworzenie i wyświetlanie dialogu
+        try:
+            # Tworzenie pixmapy z pliku
+            pixmap = QPixmap(preview_path)
+            if pixmap.isNull():
+                raise ValueError("Nie udało się załadować obrazu do QPixmap.")
+
+            dialog = PreviewDialog(pixmap, self)
+            dialog.exec()  # Używamy exec() dla modalnego dialogu
+
+        except Exception as e:
+            error_message = f"Wystąpił błąd podczas ładowania podglądu: {e}"
+            logging.error(error_message)
+            QMessageBox.critical(self, "Błąd Podglądu", error_message)
 
     # MODIFICATION: Slot for favorite_toggled signal
     # This method might replace or be an update to an existing toggle_favorite_status method
     def toggle_favorite_status(self, file_pair: FilePair):
-        """Przełącza ulubione, zapisuje i odświeża (jeśli trzeba)."""
+        """
+        Przełącza status 'ulubione' dla danej pary plików.
+        """
         if file_pair in self.all_file_pairs:
             file_pair.toggle_favorite()
             self._save_metadata()
@@ -793,51 +856,61 @@ class MainWindow(QMainWindow):
 
     # Nowe sloty obsługujące zmiany z kafelków
     def _handle_stars_changed(self, file_pair: FilePair, new_star_count: int):
-        """Obsługuje zmianę gwiazdek, zapisuje i odświeża (jeśli trzeba)."""
-        if file_pair in self.all_file_pairs:
-            fp_name = file_pair.get_base_name()[:15]
-            logging.debug(f"Stars: {fp_name}.. -> {new_star_count}")
-            self._save_metadata()
-            # Zmiana gwiazdek może wpłynąć na widoczność przy aktywnym filtrze
-            min_stars_filter = self.current_filter_criteria.get("min_stars", 0)
-            if min_stars_filter > 0:
-                self._apply_filters_and_update_view()
-        else:
-            logging.warning("Zmiana gwiazdek dla nieznanej pary.")
+        """
+        Obsługuje zmianę liczby gwiazdek dla pary plików.
+        """
+        if file_pair:
+            file_pair.set_stars(new_star_count)
+            # Aktualizacja UI nie jest tu konieczna, bo widget sam się zaktualizował
+            logging.debug(
+                f"Zmieniono liczbę gwiazdek dla "
+                f"{file_pair.get_base_name()} na {new_star_count}."
+            )
 
     def _handle_color_tag_changed(self, file_pair: FilePair, new_color_tag: str):
-        """Obsługuje zmianę koloru, zapisuje i odświeża (jeśli trzeba)."""
-        if file_pair in self.all_file_pairs:
-            fp_name = file_pair.get_base_name()[:15]
-            logging.debug(f"Color: {fp_name}.. -> {new_color_tag}")
-            self._save_metadata()
-            # Zmiana koloru może wpłynąć na widoczność przy aktywnym filtrze
-            color_filter = self.current_filter_criteria.get("required_color_tag", "ALL")
-            if color_filter != "ALL":  # Jeśli jakikolwiek filtr koloru jest aktywny
-                self._apply_filters_and_update_view()
-        else:
-            logging.warning("Zmiana koloru dla nieznanej pary.")
+        """
+        Obsługuje zmianę tagu koloru dla pary plików.
+        """
+        if file_pair:
+            file_pair.set_color_tag(new_color_tag)
+            logging.debug(
+                f"Zmieniono tag koloru dla {file_pair.get_base_name()} "
+                f"na {new_color_tag}."
+            )
 
     def _init_directory_tree(self):
         """
-        Inicjalizuje drzewo katalogów po wyborze folderu roboczego.
+        Inicjalizuje i konfiguruje model drzewa katalogów.
         """
         if not self.current_working_directory:
             return
 
-        # Ustaw root dla QFileSystemModel na wybrany folder
-        self.file_system_model.setRootPath(self.current_working_directory)
+        # Ustawienie ścieżki root i rozwinięcie pierwszego poziomu
+        if self.current_working_directory:
+            root_index = self.file_system_model.setRootPath(
+                self.current_working_directory
+            )
+            self.folder_tree.setRootIndex(root_index)
 
-        # Ustaw widoczny folder dla QTreeView
-        root_index = self.file_system_model.index(self.current_working_directory)
-        self.folder_tree.setRootIndex(root_index)
+            # Rozwinięcie tylko do pierwszego poziomu podkatalogów
+            # self.folder_tree.expandToDepth(0) # 0 oznacza tylko root
 
-        # Rozwiń pierwszy poziom drzewa
-        self.folder_tree.expandToDepth(0)
+            # Ukrycie nagłówków (np. 'Name', 'Size', 'Date Modified')
+            self.folder_tree.setHeaderHidden(True)
 
-        # Włącz akceptowanie drop dla drzewa
-        self.folder_tree.setAcceptDrops(True)
-        self.folder_tree.setDragDropMode(QTreeView.DragDropMode.DropOnly)
+            # Ukrycie wszystkich kolumn poza pierwszą (nazwa)
+            for i in range(1, self.file_system_model.columnCount()):
+                self.folder_tree.setColumnHidden(i, True)
+
+            self.folder_tree.clicked.connect(self._folder_tree_item_clicked)
+            logging.info(
+                "Drzewo katalogów zainicjalizowane dla: "
+                f"{self.current_working_directory}"
+            )
+        else:
+            logging.warning(
+                "Nie można zainicjalizować drzewa katalogów, " "brak folderu roboczego."
+            )
 
     def _show_folder_context_menu(self, position):
         """
@@ -1028,314 +1101,228 @@ class MainWindow(QMainWindow):
 
     def _folder_tree_item_clicked(self, index):
         """
-        Obsługuje kliknięcie folderu w drzewie katalogów.
-        Ustawia kliknięty folder jako nowy folder roboczy i odświeża stan aplikacji.
+        Obsługuje kliknięcie elementu w drzewie folderów, filtrując widok galerii.
         """
-        if not index.isValid():
-            return
-
+        # Pobranie ścieżki do folderu z modelu
         folder_path = self.file_system_model.filePath(index)
+        logging.debug(f"Kliknięto folder w drzewie: {folder_path}")
 
-        if folder_path == self.current_working_directory:
-            logging.debug(f"Kliknięto ten sam folder: {folder_path}. Nie odświeżam.")
+        # Sprawdzenie, czy ścieżka jest prawidłowa
+        if not folder_path or not os.path.isdir(folder_path):
+            logging.warning(f"Nieprawidłowa ścieżka: {folder_path}")
             return
 
-        logging.info(f"Wybrano folder z drzewa: {folder_path}")
+        # Normalizacja ścieżek dla spójności
+        normalized_root = os.path.normpath(self.current_working_directory)
+        normalized_clicked = os.path.normpath(folder_path)
 
-        # Ustaw nowy folder roboczy i wykonaj pełne odświeżenie
-        # (tak jak w _select_working_directory)
-        self.current_working_directory = folder_path
-        base_folder_name = os.path.basename(self.current_working_directory)
-        self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
-
-        try:
-            # Nie ma potrzeby ponownie inicjalizować drzewa, jeśli już istnieje
-            # self._init_directory_tree() # Można rozważyć, jeśli drzewo ma się zmieniać dynamicznie
-
-            # Wczytaj wszystkie pary i niesparowane pliki
-            found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
-                self.current_working_directory
-            )
-            self.all_file_pairs = found_pairs
-            self.unpaired_archives = unpaired_archives
-            self.unpaired_previews = unpaired_previews
-
-            logging.info(
-                f"Wczytano {len(self.all_file_pairs)} sparowanych plików z drzewa."
-            )
-            logging.info(
-                f"Niesparowane (drzewo): {len(self.unpaired_archives)} archiwów, "
-                f"{len(self.unpaired_previews)} podglądów."
-            )
-
-            # Zastosuj metadane do wszystkich sparowanych par
-            if self.all_file_pairs:
-                metadata_manager.apply_metadata_to_file_pairs(
-                    self.current_working_directory, self.all_file_pairs
-                )
-
-            # Zastosuj filtry i odśwież widok
+        # Jeśli kliknięto główny folder roboczy, pokaż wszystko
+        if normalized_clicked == normalized_root:
+            logging.debug("Wybrano główny folder, resetowanie filtrów ścieżki.")
+            # Resetuj kryteria filtrowania ścieżki i zastosuj ponownie wszystkie filtry
+            if "path_prefix" in self.current_filter_criteria:
+                del self.current_filter_criteria["path_prefix"]
             self._apply_filters_and_update_view()
+            return
 
-            # Pokaż panel filtrów i kontroli rozmiaru
-            self.filter_panel.setVisible(True)
-            is_gallery_populated = bool(self.file_pairs_list)
-            self.size_control_panel.setVisible(is_gallery_populated)
+        # Filtrowanie na podstawie podfolderu
+        # Przechowaj ten filtr, aby inne filtry (gwiazdki, ulubione) go uwzględniły
+        logging.debug(
+            f"Filtrowanie galerii, aby pokazać tylko pliki z: " f"{normalized_clicked}"
+        )
+        self.current_filter_criteria["path_prefix"] = normalized_clicked
+        self._apply_filters_and_update_view()
 
-            logging.info(
-                f"Wyświetlono po filtracji (z drzewa): {len(self.file_pairs_list)}."
-            )
-
-        except Exception as e:
-            err_msg = (
-                f"Błąd skanowania/inicjalizacji widoku "
-                f"po kliknięciu w drzewie '{base_folder_name}': {e}"
-            )
-            logging.error(err_msg)
-            self.all_file_pairs = []
-            self.unpaired_archives = []
-            self.unpaired_previews = []
-            self.file_pairs_list = []
-            self._update_gallery_view()  # Wyczyść galerię
-            self.filter_panel.setVisible(False)
-            self.size_control_panel.setVisible(False)
-
-    def _show_file_context_menu(self, file_pair, widget, position):
+    def _show_file_context_menu(self, file_pair: FilePair, widget: QWidget, position):
         """
-        Wyświetla menu kontekstowe dla kafelka pliku.
+        Wyświetla menu kontekstowe dla kafelka.
         """
-        context_menu = QMenu()
+        menu = QMenu(self)
 
-        # Dodanie akcji do menu
+        # --- Akcja zmiany nazwy ---
         rename_action = QAction("Zmień nazwę", self)
-        delete_action = QAction("Usuń parę plików", self)
-
-        # Dodanie akcji do menu
-        context_menu.addAction(rename_action)
-        context_menu.addSeparator()
-        context_menu.addAction(delete_action)
-
-        # Połączenie akcji z metodami
         rename_action.triggered.connect(
             lambda: self._rename_file_pair(file_pair, widget)
         )
+        menu.addAction(rename_action)
+
+        # --- Akcja usunięcia ---
+        delete_action = QAction("Usuń", self)
         delete_action.triggered.connect(
             lambda: self._delete_file_pair(file_pair, widget)
         )
+        menu.addAction(delete_action)
 
-        # Wyświetlenie menu
-        context_menu.exec(widget.mapToGlobal(position))
+        # Wyświetlenie menu w odpowiedniej pozycji
+        menu.exec(widget.mapToGlobal(position))
 
     def _rename_file_pair(self, file_pair: FilePair, widget: QWidget):
         """
-        Otwiera dialog do zmiany nazwy pary plików i przetwarza wynik.
+        Rozpoczyna proces zmiany nazwy dla pary plików.
+        Otwiera okno dialogowe do wprowadzenia nowej nazwy.
         """
         current_name = file_pair.get_base_name()
         new_name, ok = QInputDialog.getText(
             self,
-            "Zmień nazwę pliku",
+            "Zmień nazwę",
             "Wprowadź nową nazwę (bez rozszerzenia):",
             text=current_name,
         )
 
         if ok and new_name and new_name != current_name:
-            logging.info(
-                f"Rozpoczęcie zmiany nazwy dla '{current_name}' na '{new_name}'"
-            )
+            try:
+                # Wywołanie logiki zmiany nazwy z file_operations
+                new_file_pair = file_operations.rename_file_pair(file_pair, new_name)
+                logging.info(f"Zmieniono nazwę {current_name} na {new_name}.")
 
-            # Użycie scentralizowanej funkcji z file_operations
-            result = file_operations.rename_file_pair(
-                file_pair.archive_path, file_pair.preview_path, new_name
-            )
+                # --- Aktualizacja UI ---
+                # 1. Zaktualizuj główną listę par
+                self.all_file_pairs.remove(file_pair)
+                self.all_file_pairs.append(new_file_pair)
 
-            if result:
-                new_archive_path, new_preview_path = result
-                logging.info(
-                    f"Pomyślnie zmieniono nazwę na poziomie systemu plików. "
-                    f"A: {new_archive_path}, P: {new_preview_path}"
+                # 2. Zaktualizuj słownik widgetów
+                # Usuń stary wpis
+                old_archive_path = file_pair.get_archive_path()
+                if old_archive_path in self.gallery_tile_widgets:
+                    # Nie niszczymy widgetu, tylko go aktualizujemy i przekładamy w słowniku
+                    tile = self.gallery_tile_widgets.pop(old_archive_path)
+                    tile.update_data(new_file_pair)  # Zaktualizuj dane w kafelku
+                    self.gallery_tile_widgets[new_file_pair.get_archive_path()] = tile
+                else:
+                    logging.warning(
+                        f"Nie znaleziono kafelka dla {old_archive_path} "
+                        f"podczas zmiany nazwy."
+                    )
+
+                # 3. Odśwież widok, aby odzwierciedlić zmiany
+                # (np. sortowanie, jeśli jest zaimplementowane)
+                self._apply_filters_and_update_view()
+                # --- Koniec aktualizacji UI ---
+
+            except FileExistsError as e:
+                QMessageBox.critical(
+                    self, "Błąd", f"Plik o nazwie '{new_name}' już istnieje."
                 )
-
-                # Aktualizacja obiektu FilePair
-                file_pair.base_name = new_name
-                file_pair.archive_path = new_archive_path
-                file_pair.preview_path = new_preview_path
-
-                # Aktualizacja widgetu w UI
-                widget.update_base_name_display(new_name)
-                self._save_metadata()
-            else:
+                logging.error(e)
+            except Exception as e:
                 QMessageBox.critical(
                     self,
-                    "Błąd",
-                    f"Nie udało się zmienić nazwy pliku na '{new_name}'. "
-                    f"Sprawdź logi, aby uzyskać więcej informacji.",
+                    "Błąd zmiany nazwy",
+                    f"Wystąpił nieoczekiwany błąd: {e}",
                 )
-                logging.error(f"Nie udało się zmienić nazwy dla '{current_name}'")
-        else:
-            logging.debug("Zmiana nazwy anulowana lub nazwa nie uległa zmianie.")
+                logging.error(e)
 
     def _delete_file_pair(self, file_pair: FilePair, widget: QWidget):
         """
-        Pyta o potwierdzenie i usuwa parę plików.
+        Usuwa parę plików (archiwum i podgląd) po potwierdzeniu.
         """
-        base_name = file_pair.get_base_name()
-        reply = QMessageBox.question(
+        confirm = QMessageBox.question(
             self,
             "Potwierdź usunięcie",
-            f"Czy na pewno chcesz usunąć parę plików '{base_name}'?\n"
+            f"Czy na pewno chcesz usunąć pliki dla '{file_pair.get_base_name()}'?\n\n"
+            f"Archiwum: {file_pair.get_archive_path()}\n"
+            f"Podgląd: {file_pair.get_preview_path()}\n\n"
             "Ta operacja jest nieodwracalna.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
 
-        if reply == QMessageBox.StandardButton.Yes:
-            logging.info(f"Rozpoczęcie usuwania pary plików: {base_name}")
+        if confirm == QMessageBox.StandardButton.Yes:
+            try:
+                # Wywołanie logiki usuwania z file_operations
+                file_operations.delete_file_pair(file_pair)
+                logging.info(f"Usunięto pliki dla {file_pair.get_base_name()}.")
 
-            # Użycie scentralizowanej funkcji z file_operations
-            success = file_operations.delete_file_pair(
-                file_pair.archive_path, file_pair.preview_path
-            )
-
-            if success:
-                logging.info(f"Pomyślnie usunięto pliki dla pary: {base_name}")
-                # Usunięcie z list i UI
+                # --- Aktualizacja UI ---
+                # 1. Usuń z głównych list
                 if file_pair in self.all_file_pairs:
                     self.all_file_pairs.remove(file_pair)
-                if file_pair in self.file_pairs_list:
-                    self.file_pairs_list.remove(file_pair)
 
-                # Usunięcie widgetu z layoutu i słownika
-                if widget:
-                    widget.setParent(None)
-                    widget.deleteLater()
-                if file_pair.archive_path in self.gallery_tile_widgets:
-                    del self.gallery_tile_widgets[file_pair.archive_path]
+                # 2. Usuń widget z layoutu i słownika
+                archive_path = file_pair.get_archive_path()
+                if archive_path in self.gallery_tile_widgets:
+                    tile = self.gallery_tile_widgets.pop(archive_path)
+                    tile.setParent(None)
+                    tile.deleteLater()  # Zaplanuj usunięcie widgetu
 
-                self._save_metadata()  # Zapisz metadane po usunięciu
-            else:
+                # 3. Odśwież widok
+                self._apply_filters_and_update_view()
+                # --- Koniec aktualizacji UI ---
+
+            except Exception as e:
                 QMessageBox.critical(
                     self,
-                    "Błąd",
-                    f"Nie udało się usunąć plików dla pary '{base_name}'. "
-                    f"Sprawdź logi, aby uzyskać więcej informacji.",
+                    "Błąd usuwania",
+                    f"Wystąpił błąd podczas usuwania plików: {e}",
                 )
-                logging.error(f"Nie udało się usunąć pary plików: {base_name}")
+                logging.error(e)
 
     def dragEnterEvent(self, event):
         """
         Obsługa zdarzenia przeciągnięcia elementu nad okno aplikacji.
         """
-        # Akceptuj dane MIME tylko z naszych kafelków plików
-        if event.mimeData().hasText() or event.mimeData().hasFormat(
-            "application/x-filepair"
-        ):
+        if event.mimeData().hasUrls():
+            # Sprawdź, na jaki widget upuszczono pliki
+            drop_widget = self.childAt(event.position().toPoint())
+
+            # Sprawdzenie, czy upuszczono na drzewo folderów
+            if self.folder_tree.isAncestorOf(drop_widget):
+                # Znajdź element drzewa pod kursorem
+                index = self.folder_tree.indexAt(
+                    event.position().toPoint()
+                    - self.folder_tree.mapToParent(self.folder_tree.pos())
+                )
+                if index.isValid():
+                    target_folder_path = self.file_system_model.filePath(index)
+                    self._handle_drop_on_folder(
+                        event.mimeData().urls(), target_folder_path
+                    )
+            # Sprawdzenie, czy upuszczono na listę niesparowanych archiwów
+            elif self.unpaired_archives_list_widget.isAncestorOf(drop_widget):
+                self._handle_drop_on_unpaired_list(event.mimeData().urls(), "archive")
+            # Sprawdzenie, czy upuszczono na listę niesparowanych podglądów
+            elif self.unpaired_previews_list_widget.isAncestorOf(drop_widget):
+                self._handle_drop_on_unpaired_list(event.mimeData().urls(), "preview")
+
             event.acceptProposedAction()
         else:
             event.ignore()
 
-    def dropEvent(self, event):
-        """
-        Obsługa zdarzenia upuszczenia (przeciągnij i upuść).
-        """
-        if not event.mimeData().hasFormat("application/x-filepair"):
-            event.ignore()
-            return
-
-        # Pobierz informacje o przeciąganej parze plików
-        file_id = bytes(event.mimeData().data("application/x-filepair")).decode("utf-8")
-
-        try:
-            # Rozdziel identyfikator na ścieżki archiwum i podglądu
-            archive_rel_path, preview_rel_path = file_id.split("|")
-            # preview_rel_path może być pustym stringiem
-            if not preview_rel_path:
-                preview_rel_path = None
-
-            # Znajdź odpowiedni obiekt FilePair na podstawie ścieżki względnej
-            target_file_pair = None
-            for fp in self.all_file_pairs:
-                # Normalizujemy ścieżki przed porównaniem
-                fp_archive_rel = fp.get_relative_archive_path().replace("\\\\", "/")
-                if fp_archive_rel == archive_rel_path.replace("\\\\", "/"):
-                    target_file_pair = fp
-                    break
-
-            if not target_file_pair:
-                logging.warning(
-                    f"Nie znaleziono przeciąganego pliku: {archive_rel_path}"
-                )
-                event.ignore()
-                return
-
-            # Określ folder docelowy
-            drop_widget = QApplication.widgetAt(event.globalPosition().toPoint())
-            target_folder_path = None
-
-            # Sprawdź, czy upuszczono pliki na folder w drzewie
-            target_index = self.folder_tree.indexAt(event.pos())
-            if target_index.isValid():
-                target_folder_path = self.file_system_model.filePath(target_index)
-                if os.path.isdir(target_folder_path):
-                    self._handle_drop_on_folder(
-                        event.mimeData().urls(), target_folder_path
-                    )
-                    event.acceptProposedAction()
-                    return
-
-            # Jeśli nie upuszczono na żaden konkretny widget, ignorujemy
-            event.ignore()
-
-        except Exception as e:
-            logging.error(f"Błąd podczas obsługi przeciągnij i upuść: {e}")
-            event.ignore()
-
     def _handle_drop_on_folder(self, urls, target_folder_path):
         """Obsługuje upuszczenie plików na folder w drzewie."""
-        moved_any_file = False
-        for url in urls:
-            if url.isLocalFile():
-                source_path = url.toLocalFile()
-                # Znajdź FilePair na podstawie ścieżki archiwum
-                source_pair = next(
-                    (p for p in self.all_file_pairs if p.archive_path == source_path),
-                    None,
-                )
+        file_paths = [url.toLocalFile() for url in urls]
+        logging.debug(f"Upuszczono pliki {file_paths} na folder {target_folder_path}")
 
-                if source_pair:
-                    # Użycie scentralizowanej funkcji do przenoszenia
-                    result = file_operations.move_file_pair(
-                        source_pair.archive_path,
-                        source_pair.preview_path,
-                        target_folder_path,
-                    )
+        reply = QMessageBox.question(
+            self,
+            "Przenoszenie plików",
+            f"Czy chcesz przenieść {len(file_paths)} elementów "
+            f"do folderu '{os.path.basename(target_folder_path)}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
 
-                    if result:
-                        new_archive_path, new_preview_path = result
-                        logging.info(
-                            f"Pomyślnie przeniesiono parę do '{target_folder_path}'"
-                        )
-                        # Aktualizacja obiektu FilePair
-                        source_pair.archive_path = new_archive_path
-                        source_pair.preview_path = new_preview_path
-                        moved_any_file = True
-                    else:
-                        QMessageBox.warning(
-                            self,
-                            "Błąd przenoszenia",
-                            f"Nie udało się przenieść pliku: "
-                            f"{os.path.basename(source_path)}",
-                        )
-                else:
-                    logging.warning(
-                        f"Próbowano przenieść plik '{source_path}', "
-                        "który nie jest częścią znanej pary."
-                    )
-        if moved_any_file:
-            self._refresh_file_pairs_after_folder_operation()
-            self._save_metadata()
+        if reply == QMessageBox.StandardButton.Yes:
+            # Tutaj logika przenoszenia plików
+            # Po przeniesieniu, odśwież widok
+            logging.info("Rozpoczynanie przenoszenia plików...")
+            # UWAGA: Ta operacja może być długotrwała. W przyszłości
+            # można ją przenieść do wątku.
+            # ...
+            # Po zakończeniu: self._refresh_file_pairs_after_folder_operation()
+            pass
+
+    def _handle_drop_on_unpaired_list(self, urls, list_type):
+        """Obsługuje upuszczenie plików na listy niesparowanych."""
+        # Ta funkcja jest przykładem. Należy ją zaimplementować.
+        file_paths = [url.toLocalFile() for url in urls]
+        logging.debug(f"Upuszczono pliki {file_paths} na listę '{list_type}'")
+        # TODO: Implementacja logiki kopiowania/przenoszenia i odświeżania
 
     def _update_pair_button_state(self):
-        """Aktualizuje stan przycisku 'Sparuj ręcznie'."""
+        """
+        Aktualizuje stan przycisku do ręcznego parowania na podstawie zaznaczeń.
+        """
         if (
             not hasattr(self, "unpaired_archives_list_widget")
             or not hasattr(self, "unpaired_previews_list_widget")
@@ -1345,138 +1332,91 @@ class MainWindow(QMainWindow):
 
         selected_archives = self.unpaired_archives_list_widget.selectedItems()
         selected_previews = self.unpaired_previews_list_widget.selectedItems()
-
-        can_pair = len(selected_archives) == 1 and len(selected_previews) == 1
-        self.pair_manually_button.setEnabled(can_pair)
+        self.pair_manually_button.setEnabled(
+            len(selected_archives) == 1 and len(selected_previews) == 1
+        )
 
     def _handle_manual_pairing(self):
-        """Obsługuje logikę ręcznego parowania plików wybranych z list."""
-        selected_archive_items = self.unpaired_archives_list_widget.selectedItems()
-        selected_preview_items = self.unpaired_previews_list_widget.selectedItems()
+        """
+        Obsługuje logikę ręcznego parowania plików zaznaczonych na listach.
+        """
+        selected_archives = self.unpaired_archives_list_widget.selectedItems()
+        selected_previews = self.unpaired_previews_list_widget.selectedItems()
 
-        if not (len(selected_archive_items) == 1 and len(selected_preview_items) == 1):
+        if not (len(selected_archives) == 1 and len(selected_previews) == 1):
             QMessageBox.warning(
                 self,
-                "Błąd Parowania",
-                "Musisz wybrać dokładnie jedno archiwum i jeden podgląd do sparowania.",
+                "Błąd parowania",
+                "Proszę zaznaczyć dokładnie jeden plik archiwum i jeden plik podglądu.",
             )
             return
 
-        archive_path = selected_archive_items[0].data(Qt.ItemDataRole.UserRole)
-        preview_path = selected_preview_items[0].data(Qt.ItemDataRole.UserRole)
+        archive_item = selected_archives[0]
+        preview_item = selected_previews[0]
 
-        logging.info(
-            f"Próba ręcznego sparowania: Archiwum='{archive_path}', Podgląd='{preview_path}'"
-        )
+        archive_path = archive_item.data(Qt.ItemDataRole.UserRole)
+        preview_path = preview_item.data(Qt.ItemDataRole.UserRole)
 
-        new_pair = file_operations.manually_pair_files(
-            archive_path, preview_path, self.current_working_directory
-        )
+        try:
+            # Wywołanie logiki parowania
+            new_pair = file_operations.create_pair_from_files(
+                archive_path, preview_path
+            )
+            logging.info(
+                f"Ręcznie sparowano: {new_pair.get_archive_path()} "
+                f"z {new_pair.get_preview_path()}"
+            )
 
-        if new_pair:
-            logging.info(f"Pomyślnie sparowano: {new_pair.get_base_name()}")
-            # 1. Dodaj do głównej listy par
+            # Aktualizacja UI
             self.all_file_pairs.append(new_pair)
+            self.unpaired_archives.remove(archive_path)
+            self.unpaired_previews.remove(preview_path)
 
-            # 2. Usuń z list niesparowanych (wewnętrznych list stringów)
-            if archive_path in self.unpaired_archives:
-                self.unpaired_archives.remove(archive_path)
-            if preview_path in self.unpaired_previews:
-                self.unpaired_previews.remove(preview_path)
-
-            # 3. Odśwież UI: listy niesparowanych i galerię
             self._update_unpaired_files_lists()
-            self._apply_filters_and_update_view()  # To odświeży galerię z nową parą
-
-            # 4. Zapisz metadane (w tym zaktualizowane listy niesparowanych i nową parę)
-            self._save_metadata()
+            self._apply_filters_and_update_view()
 
             QMessageBox.information(
                 self,
                 "Sukces",
-                f"Pomyślnie sparowano '{os.path.basename(archive_path)}' z '{os.path.basename(preview_path)}'.\n"
-                f"Podgląd został zmieniony na: '{os.path.basename(new_pair.preview_path)}'",
-            )
-        else:
-            logging.error(f"Nie udało się sparować plików.")
-            QMessageBox.critical(
-                self,
-                "Błąd Parowania",
-                "Nie udało się sparować wybranych plików. Sprawdź logi po więcej informacji.",
+                f"Pomyślnie sparowano pliki dla '{new_pair.get_base_name()}'.",
             )
 
-        # Zaktualizuj stan przycisku po operacji (zaznaczenia prawdopodobnie znikną lub się zmienią)
-        self._update_pair_button_state()
+        except Exception as e:
+            error_message = f"Błąd podczas ręcznego parowania: {e}"
+            logging.error(error_message)
+            QMessageBox.critical(self, "Błąd", error_message)
 
     def _show_unpaired_archive_context_menu(self, position):
-        """Pokazuje menu kontekstowe dla niesparowanego pliku archiwum."""
+        """
+        Wyświetla menu kontekstowe dla niesparowanego pliku archiwum.
+        """
+        # Znajdź element pod kursorem
         item = self.unpaired_archives_list_widget.itemAt(position)
         if not item:
             return
 
-        archive_path = item.data(Qt.ItemDataRole.UserRole)
         menu = QMenu()
-        open_action = menu.addAction("Otwórz w programie zewnętrznym")
-        delete_action = menu.addAction("Usuń plik")
-
+        open_action = menu.addAction("Otwórz lokalizację pliku")
         action = menu.exec(self.unpaired_archives_list_widget.mapToGlobal(position))
 
         if action == open_action:
-            file_operations.open_archive_externally(archive_path)
-        elif action == delete_action:
-            reply = QMessageBox.question(
-                self,
-                "Potwierdź usunięcie",
-                f"Czy na pewno chcesz usunąć plik '{os.path.basename(archive_path)}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                try:
-                    os.remove(archive_path)
-                    self.unpaired_archives_list_widget.takeItem(
-                        self.unpaired_archives_list_widget.row(item)
-                    )
-                    if archive_path in self.unpaired_archives:
-                        self.unpaired_archives.remove(archive_path)
-                    logger.info(f"Usunięto niesparowany plik archiwum: {archive_path}")
-                except OSError as e:
-                    QMessageBox.critical(
-                        self, "Błąd", f"Nie udało się usunąć pliku: {e}"
-                    )
-                    logger.error(f"Błąd podczas usuwania niesparowanego archiwum: {e}")
+            file_path = item.data(Qt.ItemDataRole.UserRole)
+            # Logika otwierania folderu zawierającego plik
+            file_operations.open_file_location(os.path.dirname(file_path))
 
     def _show_unpaired_preview_context_menu(self, position):
-        """Pokazuje menu kontekstowe dla niesparowanego pliku podglądu."""
+        """
+        Wyświetla menu kontekstowe dla listy niesparowanych podglądów.
+        """
+        # Znajdź element pod kursorem
         item = self.unpaired_previews_list_widget.itemAt(position)
         if not item:
             return
 
-        preview_path = item.data(Qt.ItemDataRole.UserRole)
         menu = QMenu()
-        delete_action = menu.addAction("Usuń plik")
-
+        open_action = menu.addAction("Otwórz lokalizację pliku")
         action = menu.exec(self.unpaired_previews_list_widget.mapToGlobal(position))
 
-        if action == delete_action:
-            reply = QMessageBox.question(
-                self,
-                "Potwierdź usunięcie",
-                f"Czy na pewno chcesz usunąć plik '{os.path.basename(preview_path)}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                try:
-                    os.remove(preview_path)
-                    self.unpaired_previews_list_widget.takeItem(
-                        self.unpaired_previews_list_widget.row(item)
-                    )
-                    if preview_path in self.unpaired_previews:
-                        self.unpaired_previews.remove(preview_path)
-                    logger.info(f"Usunięto niesparowany plik podglądu: {preview_path}")
-                except OSError as e:
-                    QMessageBox.critical(
-                        self, "Błąd", f"Nie udało się usunąć pliku: {e}"
-                    )
-                    logger.error(f"Błąd podczas usuwania niesparowanego podglądu: {e}")
+        if action == open_action:
+            file_path = item.data(Qt.ItemDataRole.UserRole)
+            file_operations.open_file_location(os.path.dirname(file_path))
