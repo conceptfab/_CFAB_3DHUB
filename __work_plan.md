@@ -577,7 +577,7 @@ CFAB_3DHUB/
 
 ### Etap 5.B: Interfejs Użytkownika - Widok Drzewa Katalogów, Drag & Drop, Operacje Plikowe
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** `[x] Zakończony`
 - **Cel Etapu:** Dodanie widoku drzewa katalogów, implementacja D&D dla Par Plików do folderów w drzewie, oraz opcji w menu kontekstowym do operacji na plikach/folderach.
 - **Wymagane Funkcjonalności:**
   1.  **`src/ui/main_window.py`**:
@@ -615,16 +615,15 @@ CFAB_3DHUB/
     - Testowanie menu kontekstowego dla folderów:
       - Tworzenie folderu.
       - Zmiana nazwy folderu.
-      - Usuwanie folderu (z potwierdzeniem i bez).
-    - Testowanie menu kontekstowego dla kafelków:
+      - Usuwanie folderu (z potwierdzeniem i bez). - Testowanie menu kontekstowego dla kafelków:
       - Zmiana nazwy pary plików.
       - Usuwanie pary plików (z potwierdzeniem i bez).
     - Sprawdzenie, czy wszystkie operacje poprawnie aktualizują system plików, widok UI i metadane (JSON).
-- **Podsumowanie Testów:** `[ ] Do wykonania`
+- **Podsumowanie Testów:** `[x] Wykonane`
 - **Dokumentacja:**
-  - `[ ] Do uzupełnienia`: Opis implementacji drzewa katalogów, D&D, menu kontekstowych.
-  - `[ ] Do uzupełnienia`: Szczegóły dotyczące aktualizacji metadanych po operacjach plikowych.
-- **Potwierdzenie Zakończenia Etapu:** `[ ] Potwierdzam zakończenie etapu. Można przejść dalej.`
+  - `[x] Uzupełnione`: Opis implementacji drzewa katalogów, D&D, menu kontekstowych.
+  - `[x] Uzupełnione`: Szczegóły dotyczące aktualizacji metadanych po operacjach plikowych.
+- **Potwierdzenie Zakończenia Etapu:** `[x] Potwierdzam zakończenie etapu. Można przejść dalej.`
 
 ---
 
@@ -634,7 +633,7 @@ CFAB_3DHUB/
 
 ### Etap 6.A: Logika Biznesowa - Obsługa Plików Niesparowanych, Ręczne Parowanie
 
-- **Status:** `[ ] Oczekujący`
+- **Status:** `[ ] W kolejce - następny etap do implementacji`
 - **Cel Etapu:** Modyfikacja skanowania folderu w celu identyfikacji plików niesparowanych. Implementacja mechanizmu ręcznego parowania. Wstępna analiza wydajności.
 - **Wymagane Funkcjonalności:**
   1.  **`src/logic/scanner.py`**:

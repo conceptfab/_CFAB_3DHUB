@@ -5,8 +5,10 @@ Kafelek wyświetlający miniaturę podglądu, nazwę i rozmiar pliku archiwum.
 import logging
 from collections import OrderedDict
 
-from PyQt6.QtCore import QEvent, Qt, pyqtSignal
+from PyQt6.QtCore import QByteArray, QEvent, QMimeData, Qt, pyqtSignal
+from PyQt6.QtGui import QDrag
 from PyQt6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -34,6 +36,9 @@ class FileTileWidget(QWidget):
     favorite_toggled = pyqtSignal(FilePair)
     stars_changed = pyqtSignal(FilePair, int)  # file_pair, new_star_count
     color_tag_changed = pyqtSignal(FilePair, str)  # file_pair, new_color_tag_hex
+    tile_context_menu_requested = pyqtSignal(
+        FilePair, QWidget, object
+    )  # file_pair, widget, event
 
     PREDEFINED_COLORS = OrderedDict(
         [
@@ -405,3 +410,44 @@ class FileTileWidget(QWidget):
                     self.archive_open_requested.emit(self.file_pair)
                     return True
         return super().eventFilter(obj, event)
+
+    # MODIFICATION: Add drag support
+    def mousePressEvent(self, event):
+        """
+        Obsługuje zdarzenie naciśnięcia przycisku myszy.
+        Przygotowuje możliwe rozpoczęcie operacji drag & drop.
+        """
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Zapisz pozycję początkową dla porównania przy mouseMoveEvent
+            self.drag_start_position = event.position()
+
+        # Wywołaj domyślną implementację, aby zachować standardową funkcjonalność
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """
+        Obsługuje zdarzenie ruchu myszy.
+        Inicjuje operację drag & drop jeśli spełnione są warunki.
+        """
+        # Sprawdź czy lewy przycisk myszy jest wciśnięty
+        if not (event.buttons() & Qt.MouseButton.LeftButton):
+            return
+
+        # Sprawdź, czy przesunięcie jest wystarczająco duże, aby rozpocząć przeciąganie
+        if not hasattr(self, "drag_start_position"):
+            return
+
+        # Oblicz odległość od początku kliknięcia
+        # Jeśli jest większa niż minimalny dystans, rozpocznij drag
+        distance = (event.position() - self.drag_start_position).manhattanLength()
+        if distance < QApplication.startDragDistance():
+            return
+
+        # Stwórz i skonfiguruj obiekt do przeciągania
+        drag = QDrag(self)
+        mime_data = QMimeData()
+
+        # Serializuj identyfikator obiektu FilePair do formy, która może być przekazana
+        file_id = (
+            f"{self.file_pair.get_archive_path()}|{self.file_pair.get_preview_path()}"
+        )

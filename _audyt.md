@@ -30,6 +30,7 @@ NazwaProjektu/
 Dla każdego pliku określ:
 
 - **Funkcjonalność** - Co robi plik
+- **Wydajność** - Określ wpływ na wydajność aplikacji
 - **Stan obecny** - Główne problemy/potrzeby
 - **Zależności** - Z jakimi plikami jest powiązany
 - **Priorytet poprawek** - Pilność zmian
@@ -59,7 +60,6 @@ Przeanalizuj WSZYSTKIE PLIKI z mapy projektu pod kątem:
 - ❌ **Błędów** - Błędy logiczne, składniowe, runtime
 - 🔧 **Optymalizacji** - Wydajność, czytelność kodu
 - 🗑️ **Nadmiarowego kodu** - Nieużywane funkcje, duplikaty
-- 🌐 **Hardkodowanych tekstów** - Elementy do tłumaczenia
 - 🔗 **Zależności** - Problemy z importami, cykliczne zależności
 
 #### 2.2 Wymagania dotyczące poprawek
