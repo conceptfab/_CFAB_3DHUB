@@ -50,11 +50,27 @@
 ├── unit/
 │ ├── test_unicode_filenames.py 🟢 NISKI PRIORYTET - Testy jednostkowe dla obsługi nazw plików i folderów z znakami Unicode (np. Cyrylica) w operacjach na FilePair, folderach i skanerze. Dobrze zorganizowane. Zależne od pytest, PIL, logiki aplikacji i modeli.
 │ ├── test_file_pair.py 🟡 ŚREDNI PRIORYTET - Testy jednostkowe dla klasy FilePair. Pokrywają podstawową inicjalizację, rozmiar, ładowanie miniatur (z mockowaniem konwersji do QPixmap). Brakuje testów dla metadanych (ulubione, gwiazdki, kolory) i potencjalnych operacji na plikach. Zależne od pytest, PIL, unittest.mock.
-│ ├── test_folder_operations.py 🟢 NISKI PRIORYTET - Testy jednostkowe dla funkcji create_folder, rename_folder, delete_folder z src.logic.file_operations. Kompleksowe, pokrywają różne scenariusze pomyślne i błędne, w tym walidację nazw i błędy uprawnień (mockowane). Zależne od pytest, unittest.mock.
-│ ├── test_file_pair_operations.py 🟢 NISKI PRIORYTET - Testy jednostkowe dla metod rename, delete, move w klasie FilePair. Dobrze zorganizowane, pokrywają scenariusze pomyślne i błędne (konflikty, nieistniejące ścieżki). Zależne od pytest, PIL.
-│ ├── test_image_utils.py 🟡 ŚREDNI PRIORYTET - Testy jednostkowe dla create_placeholder_pixmap i pillow_image_to_qpixmap. Pokrywają podstawowe scenariusze. Brakuje testów dla różnych trybów obrazów, renderowania tekstu/koloru w placeholderze oraz obsługi błędów. Zbędne użycie tempfile w jednym teście. Zależne od pytest, PIL, PyQt6.
-│ ├── test_metadata_manager.py 🟢 NISKI PRIORYTET - Testy jednostkowe dla src.logic.metadata_manager. Pokrywają generowanie ścieżek, konwersje ścieżek, ładowanie (różne scenariusze pliku), zapisywanie i aplikowanie metadanych (głównie is_favorite). Nieużywany import patch. Zależne od pytest, src.models.file_pair.
-│ ├── test_scanner.py 🔴 WYSOKI PRIORYTET - Aktualnie zawiera tylko placeholder (assert True). Brak rzeczywistych testów jednostkowych dla logiki src.logic.scanner.py. Wymaga pilnego uzupełnienia o kompleksowe testy (różne struktury folderów, typy plików, przypadki brzegowe).
+│ ├── test_folder_operations.py 🟢 NISKI PRIORYTET
+│ │ - **Funkcjonalność**: Testy jednostkowe dla funkcji `create_folder`, `rename_folder`, `delete_folder` z `src.logic.file_operations`.
+│ │ - **Wydajność**: Nie dotyczy (plik testowy).
+│ │ - **Stan obecny**: Kompleksowe, pokrywają różne scenariusze pomyślne i błędne, w tym walidację nazw i błędy uprawnień (mockowane).
+│ │ - **Zależności**: `pytest`, `unittest.mock`.
+│ ├── test_file_pair_operations.py 🟢 NISKI PRIORYTET
+│ │ - **Funkcjonalność**: Testy jednostkowe dla metod `rename`, `delete`, `move` w klasie `FilePair`.
+│ │ - **Wydajność**: Nie dotyczy (plik testowy).
+│ │ - **Stan obecny**: Dobrze zorganizowane, pokrywają scenariusze pomyślne i błędne (konflikty, nieistniejące ścieżki).
+│ │ - **Zależności**: `pytest`, PIL.
+│ ├── test_image_utils.py 🟡 ŚREDNI PRIORYTET
+│ │ - **Funkcjonalność**: Testy jednostkowe dla `create_placeholder_pixmap` i `pillow_image_to_qpixmap`.
+│ │ - **Wydajność**: Nie dotyczy (plik testowy).
+│ │ - **Stan obecny**: Pokrywają podstawowe scenariusze. Brakuje testów dla różnych trybów obrazów, renderowania tekstu/koloru w placeholderze oraz obsługi błędów. Zbędne użycie `tempfile` w jednym teście.
+│ │ - **Zależności**: `pytest`, PIL, PyQt6.
+│ ├── test_metadata_manager.py 🟢 NISKI PRIORYTET
+│ │ - **Funkcjonalność**: Testy jednostkowe dla modułu `metadata_manager.py`. Testują generowanie ścieżek, konwersję ścieżek, wczytywanie (brak pliku, pusty plik, uszkodzony plik), zapisywanie oraz aplikowanie metadanych do obiektów `FilePair`, a także pełen cykl zapis-odczyt.
+│ │ - **Wydajność**: Nie dotyczy (plik testowy).
+│ │ - **Stan obecny**: Testy są dobrze zorganizowane i kompleksowo pokrywają testowany moduł. Wykorzystują `pytest`, `tempfile` i `unittest.mock`.
+│ │ - **Zależności**: `pytest`, `json`, `os`, `shutil`, `src.logic.metadata_manager`, `src.models.file_pair`.
+│ ├── test_scanner.py 🟢 WYSOKI PRIORYTET - Plik zawiera jedynie placeholder (assert True). Brak rzeczywistych testów jednostkowych dla krytycznego modułu src.logic.scanner.py. Wymaga pilnego stworzenia kompleksowych testów (puste/zapełnione foldery, różne konwencje nazw, podfoldery, przypadki brzegowe parowania, obsługa błędów). Zależności do testów: pytest, src.logic.scanner, src.models.file_pair, os, tempfile.
 │ ├── test_file_operations.py 🔴 WYSOKI PRIORYTET - Testuje tylko funkcję open_archive_externally z src.logic.file_operations (z użyciem mocków dla OS i Qt). Krytyczny brak testów dla create_folder, rename_folder, delete_folder w tym pliku (są w test_folder_operations.py). Nieużywany import MagicMock. Zależny od pytest, unittest.mock.
 │ ├── test_file_pair_favorite.py 🟢 NISKI PRIORYTET - Testy jednostkowe dla funkcjonalności 'Ulubione' w klasie FilePair (domyślny stan, przełączanie, ustawianie). Dobre, skoncentrowane testy. Zależne od pytest.
 │ └── **init**.py 🟢 NISKI PRIORYTET - Pusty plik **init**.py, oznaczający katalog tests/unit jako subpakiet Pythona. Standardowe i niezbędne dla poprawnego działania Pytest.
