@@ -40,6 +40,7 @@ CFAB_3DHUB/
 ## Wstępna analiza plików
 
 ### run_app.py 🟡 ŚREDNI PRIORYTET
+
 - **Funkcjonalność**: Punkt wejściowy aplikacji, konfiguruje sys.path i uruchamia główną funkcję
 - **Wydajność**: Niski wpływ na wydajność, głównie konfiguracja
 - **Stan obecny**: Nieoptymalna konfiguracja sys.path, redundantne sprawdzanie argumentów
@@ -47,6 +48,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Średni - można zoptymalizować konfigurację uruchomienia
 
 ### requirements.txt 🟢 NISKI PRIORYTET
+
 - **Funkcjonalność**: Lista wymaganych zależności
 - **Wydajność**: Nie wpływa na wydajność, używany tylko w fazie instalacji
 - **Stan obecny**: Może wymagać aktualizacji i weryfikacji wersji
@@ -54,6 +56,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Niski - warto zweryfikować aktualne wersje bibliotek
 
 ### run_tests.bat 🟡 ŚREDNI PRIORYTET
+
 - **Funkcjonalność**: Uruchamia testy automatyczne
 - **Wydajność**: Nie wpływa bezpośrednio na wydajność aplikacji
 - **Stan obecny**: Brak informacji o pokryciu testami, potencjalnie niekompletne testy
@@ -61,6 +64,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Średni - ważne dla zapewnienia jakości
 
 ### src/app_config.py 🔴 WYSOKI PRIORYTET
+
 - **Funkcjonalność**: Zarządza konfiguracją aplikacji
 - **Wydajność**: Krytyczna dla inicjalizacji aplikacji
 - **Stan obecny**: Problemy z obsługą ścieżek, brak kompletnego mechanizmu obsługi błędów
@@ -68,6 +72,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Wysoki - centralna konfiguracja wpływa na całą aplikację
 
 ### src/main.py 🟡 ŚREDNI PRIORYTET
+
 - **Funkcjonalność**: Główna funkcja aplikacji
 - **Wydajność**: Średni wpływ - inicjalizacja aplikacji
 - **Stan obecny**: Wymaga refaktoryzacji logiki uruchomienia, lepszej obsługi błędów
@@ -75,6 +80,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Średni - może zostać zoptymalizowany
 
 ### src/logic/file_operations.py 🔴 WYSOKI PRIORYTET
+
 - **Funkcjonalność**: Operacje na plikach
 - **Wydajność**: Wysoki wpływ - operacje I/O mogą wpływać na szybkość działania
 - **Stan obecny**: Potencjalne błędy, brak obsługi wyjątków, nieefektywny kod
@@ -82,6 +88,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Wysoki - krytyczne operacje I/O
 
 ### src/logic/filter_logic.py 🟡 ŚREDNI PRIORYTET
+
 - **Funkcjonalność**: Logika filtrowania plików
 - **Wydajność**: Średni wpływ - filtrowanie dużych zestawów danych
 - **Stan obecny**: Wymaga optymalizacji algorytmów filtrowania
@@ -89,6 +96,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Średni - możliwa znacząca optymalizacja
 
 ### src/logic/metadata_manager.py 🔴 WYSOKI PRIORYTET
+
 - **Funkcjonalność**: Zarządzanie metadanymi plików
 - **Wydajność**: Wysoki wpływ - operacje na metadanych wpływają na responsywność
 - **Stan obecny**: Problemy z synchronizacją, potencjalne wycieki pamięci
@@ -96,6 +104,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Wysoki - kluczowy dla poprawnego działania aplikacji
 
 ### src/logic/scanner.py 🔴 WYSOKI PRIORYTET
+
 - **Funkcjonalność**: Skanowanie folderów w poszukiwaniu plików
 - **Wydajność**: Krytyczny wpływ - główne wąskie gardło przy obsłudze dużych katalogów
 - **Stan obecny**: Nieefektywny algorytm skanowania, brak buforowania wyników
@@ -103,6 +112,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Wysoki - kluczowy dla wydajności aplikacji
 
 ### src/models/file_pair.py 🟡 ŚREDNI PRIORYTET
+
 - **Funkcjonalność**: Model reprezentujący parę plików (archiwum i podgląd)
 - **Wydajność**: Średni wpływ - używany w całej aplikacji
 - **Stan obecny**: Potrzeba lepszej walidacji danych, potencjalne dublowanie funkcjonalności
@@ -110,6 +120,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Średni - można zwiększyć spójność danych
 
 ### src/ui/main_window.py 🔴 WYSOKI PRIORYTET
+
 - **Funkcjonalność**: Główne okno aplikacji
 - **Wydajność**: Wysoki wpływ - interfejs użytkownika, najczęściej używany komponent
 - **Stan obecny**: Zbyt duży i złożony plik, mieszanie logiki biznesowej z UI, wymaga podziału
@@ -117,6 +128,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Wysoki - refaktoryzacja konieczna dla utrzymywalności
 
 ### src/ui/widgets/file_tile_widget.py 🟡 ŚREDNI PRIORYTET
+
 - **Funkcjonalność**: Widget wyświetlający kafelek pliku
 - **Wydajność**: Średni wpływ - renderowanie wielu kafelków może obciążać UI
 - **Stan obecny**: Problemy z wydajnością renderowania przy dużej liczbie plików
@@ -124,6 +136,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Średni - optymalizacja renderowania poprawi UX
 
 ### src/ui/widgets/preview_dialog.py 🟡 ŚREDNI PRIORYTET
+
 - **Funkcjonalność**: Okno podglądu plików
 - **Wydajność**: Średni wpływ - wyświetlanie dużych obrazów
 - **Stan obecny**: Problemy z obsługą dużych obrazów, potencjalne zamrożenia UI
@@ -131,6 +144,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Średni - istotne dla doświadczenia użytkownika
 
 ### src/utils/image_utils.py 🟡 ŚREDNI PRIORYTET
+
 - **Funkcjonalność**: Funkcje pomocnicze do operacji na obrazach
 - **Wydajność**: Średni wpływ - przetwarzanie obrazów
 - **Stan obecny**: Nieefektywna obsługa dużych plików, brak skalowania
@@ -138,6 +152,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Średni - optymalizacja poprawi wydajność UI
 
 ### src/utils/path_utils.py 🔴 WYSOKI PRIORYTET
+
 - **Funkcjonalność**: Operacje na ścieżkach plików
 - **Wydajność**: Wysoki wpływ - używany w całej aplikacji do operacji na plikach
 - **Stan obecny**: Problemy z kompatybilnością między platformami, niespójne normalizacje ścieżek
@@ -145,6 +160,7 @@ CFAB_3DHUB/
 - **Priorytet poprawek**: Wysoki - kluczowy dla poprawnego działania na różnych systemach
 
 ### src/utils/logging_config.py 🟢 NISKI PRIORYTET
+
 - **Funkcjonalność**: Konfiguracja systemu logowania
 - **Wydajność**: Niski wpływ - jednorazowa konfiguracja
 - **Stan obecny**: Wymaga standaryzacji poziomów logowania
@@ -156,6 +172,7 @@ CFAB_3DHUB/
 ### Kolejność analizy
 
 1. **Wysokie priorytety (🔴):**
+
    - src/app_config.py - centralne zarządzanie konfiguracją
    - src/logic/scanner.py - kluczowe dla wydajności skanowania
    - src/logic/file_operations.py - krytyczne operacje na plikach
@@ -164,6 +181,7 @@ CFAB_3DHUB/
    - src/utils/path_utils.py - kluczowe dla obsługi ścieżek
 
 2. **Średnie priorytety (🟡):**
+
    - run_app.py - punkt wejściowy
    - src/main.py - główna funkcja aplikacji
    - src/logic/filter_logic.py - logika filtrowania
@@ -176,27 +194,31 @@ CFAB_3DHUB/
 3. **Niskie priorytety (🟢):**
    - requirements.txt - zależności
    - src/utils/logging_config.py - konfiguracja logowania
-   - Pozostałe pliki inicjalizacyjne __init__.py
+   - Pozostałe pliki inicjalizacyjne **init**.py
 
 ### Grupowanie plików
 
 1. **Grupa konfiguracyjna:**
+
    - src/app_config.py
    - run_app.py
    - src/main.py
    - requirements.txt
 
 2. **Grupa operacji na plikach:**
+
    - src/logic/file_operations.py
    - src/logic/scanner.py
    - src/utils/path_utils.py
 
 3. **Grupa zarządzania danymi:**
+
    - src/logic/metadata_manager.py
    - src/models/file_pair.py
    - src/logic/filter_logic.py
 
 4. **Grupa interfejsu użytkownika:**
+
    - src/ui/main_window.py
    - src/ui/widgets/file_tile_widget.py
    - src/ui/widgets/preview_dialog.py
@@ -208,15 +230,18 @@ CFAB_3DHUB/
 ### Szacowany zakres zmian
 
 1. **Refaktoryzacja kodu:**
+
    - Podział dużych plików (szczególnie main_window.py)
    - Wydzielenie logiki biznesowej z interfejsu użytkownika
 
 2. **Optymalizacja wydajności:**
+
    - Poprawa algorytmów skanowania i filtrowania
    - Optymalizacja operacji I/O
    - Lepsze zarządzanie pamięcią dla obrazów
 
 3. **Poprawa stabilności:**
+
    - Lepsza obsługa błędów i wyjątków
    - Ujednolicenie obsługi ścieżek między platformami
 
