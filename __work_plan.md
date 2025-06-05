@@ -70,8 +70,9 @@ CFAB_3DHUB/
 └── requirements.txt
 
 Etapy Implementacji (Pozostałe Zadania)
+
 Etap 1: Logika Biznesowa - Obsługa Plików Niesparowanych, Ręczne Parowanie
-Status: [ ] Do wykonania
+Status: [~] Główne funkcje zaimplementowane. Testy dla file_operations.py do ukończenia w Etapie 3.B.
 Cel Etapu: Modyfikacja skanowania folderu w celu identyfikacji plików niesparowanych. Implementacja mechanizmu ręcznego parowania. Wstępna analiza wydajności.
 Wymagane Funkcjonalności:
 src/logic/scanner.py:
@@ -91,14 +92,16 @@ src/logic/metadata_manager.py
 src/logic/file_operations.py
 Zależności Koncepcyjne: Podstawowa logika skanowania i zarządzania metadanymi.
 Wymagane Testy:
-Jednostkowe (tests/unit/test_scanner.py): Sprawdzenie zwracania list plików niesparowanych. (Ukończono)
-Jednostkowe (tests/unit/test_metadata_manager.py): Test zapisu/odczytu list niesparowanych; aktualizacji po ręcznym sparowaniu. (Ukończono)
-Jednostkowe (tests/unit/test_file_operations.py): Test dla manually_pair_files (różne nazwy, zmiana nazwy, błędy).
-Dokumentacja:
-Aktualizacja docstringów i opisów dla zmodyfikowanych/nowych funkcji.
-Notatki z analizy potencjalnych problemów wydajnościowych.
+
+- Jednostkowe (tests/unit/test_scanner.py): Sprawdzenie zwracania list plików niesparowanych. (Ukończono)
+- Jednostkowe (tests/unit/test_metadata_manager.py): Test zapisu/odczytu list niesparowanych; aktualizacji po ręcznym sparowaniu. (Ukończono)
+- Jednostkowe (tests/unit/test_file_operations.py): Test dla manually_pair_files (różne nazwy, zmiana nazwy, błędy). (Do wykonania w Etapie 3.B)
+  Dokumentacja:
+- Aktualizacja docstringów i opisów dla zmodyfikowanych/nowych funkcji. (Do weryfikacji/ukończenia w Etapie 3.F)
+- Notatki z analizy potencjalnych problemów wydajnościowych. (Do wykonania w Etapie 3.C)
+
 Etap 2: Interfejs Użytkownika - Wyświetlanie Niesparowanych, Ręczne Parowanie
-Status: [ ] Do wykonania
+Status: [x] Ukończono (funkcjonalność zintegrowana z implementacją UI dla Etapu 1).
 Cel Etapu: Dodanie widoku/listy plików niesparowanych oraz interfejsu do ich ręcznego parowania.
 Wymagane Funkcjonalności:
 src/ui/main_window.py:
@@ -116,9 +119,11 @@ src/ui/main_window.py
 src/logic/metadata_manager.py (potencjalna modyfikacja sygnatury save_metadata do przyjmowania list niesparowanych).
 Zależności Koncepcyjne: Etap 1 (Logika niesparowanych plików).
 Wymagane Testy:
-Manualne UI: Poprawność wyświetlania panelu, list, działania parowania, aktualizacji UI i metadata.json, obsługi błędów, zmiany folderu.
-Dokumentacja:
-Aktualizacja dokumentacji MainWindow i ewentualnie metadata_manager.py.
+
+- Manualne UI: Poprawność wyświetlania panelu, list, działania parowania, aktualizacji UI i metadata.json, obsługi błędów, zmiany folderu. (Do wykonania w Etapie 3.E)
+  Dokumentacja:
+- Aktualizacja dokumentacji MainWindow i ewentualnie metadata_manager.py. (Do weryfikacji/ukończenia w Etapie 3.F)
+
 Etap 3: Refaktoryzacja, Implementacja Testów, Optymalizacja i Finalizacja
 Status: [ ] Do wykonania
 Cel Etapu: Poprawa jakości kodu, implementacja brakujących testów, optymalizacja wydajności, implementacja zadań z TODO.md, finalne testy i przygotowanie aplikacji.
