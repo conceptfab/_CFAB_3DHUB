@@ -1,0 +1,22 @@
+====================================================== test session starts =======================================================
+platform win32 -- Python 3.13.3, pytest-8.2.0, pluggy-1.6.0
+rootdir: C:\_cloud\_CFAB_3DHUB
+plugins: pyfakefs-5.3.0, cov-6.1.1, mock-3.14.1
+collected 14 items
+
+tests\unit\test_app_config_basic.py ...                                                                                     [ 21%]
+tests\unit\test_app_config_validation.py ..                                                                                 [ 35%]
+tests\unit\test_app_config_properties.py ..                                                                                 [ 50%]
+tests\unit\test_app_config_error_handling.py ..                                                                             [ 64%]
+tests\unit\test_app_config_performance.py ...                                                                               [ 85%]
+tests\integration\test_app_config_integration.py ..                                                                         [100%]
+
+========================================================= tests coverage =========================================================
+________________________________________ coverage: platform win32, python 3.13.3-final-0 _________________________________________
+
+Name                Stmts   Miss  Cover   Missing
+-------------------------------------------------
+src\app_config.py     150     20    87%   103-105, 145-147, 153, 158, 166, 235-241, 258-259, 282-283, 385
+-------------------------------------------------
+TOTAL                 150     20    87%
+======================================================= 14 passed in 0.64s =======================================================
