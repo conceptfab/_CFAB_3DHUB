@@ -237,6 +237,12 @@ class MainWindow(QMainWindow):
         self.select_folder_button.clicked.connect(self._select_working_directory)
         self.top_layout.addWidget(self.select_folder_button)
 
+        # Przycisk "W górę" do katalogu nadrzędnego
+        self.up_button = QPushButton("↑ Góra")
+        self.up_button.setEnabled(False)
+        self.up_button.clicked.connect(self._go_up_directory)
+        self.top_layout.addWidget(self.up_button)
+
         # Panel kontroli rozmiaru
         self.size_control_panel = QWidget()
         self.size_control_panel.setSizePolicy(
@@ -465,6 +471,11 @@ class MainWindow(QMainWindow):
         base_folder_name = os.path.basename(self.current_working_directory)
         self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
         logging.info("Wybrano folder roboczy: %s", self.current_working_directory)
+
+        # Włącz/wyłącz przycisk "Góra" w zależności od tego, czy można iść wyżej
+        parent_dir = os.path.dirname(self.current_working_directory)
+        can_go_up = parent_dir and parent_dir != self.current_working_directory
+        self.up_button.setEnabled(can_go_up)
 
         # 1. Wyczyść wszystkie dane i widoki przed nowym skanowaniem
         self._clear_all_data_and_views()
@@ -949,15 +960,14 @@ class MainWindow(QMainWindow):
         if not self.current_working_directory:
             return
 
-        # Ustawienie ścieżki root i rozwinięcie pierwszego poziomu
-        if self.current_working_directory:
+        # Inicjalizuj drzewo tylko raz z głównym folderem roboczym
+        if not hasattr(self, "_tree_initialized") or not self._tree_initialized:
+            # Pierwsze uruchomienie - ustaw root na główny folder roboczy
+            self._main_working_directory = self.current_working_directory
             root_index = self.file_system_model.setRootPath(
-                self.current_working_directory
+                self._main_working_directory
             )
             self.folder_tree.setRootIndex(root_index)
-
-            # Rozwinięcie tylko do pierwszego poziomu podkatalogów
-            # self.folder_tree.expandToDepth(0) # 0 oznacza tylko root
 
             # Ukrycie nagłówków (np. 'Name', 'Size', 'Date Modified')
             self.folder_tree.setHeaderHidden(True)
@@ -966,15 +976,32 @@ class MainWindow(QMainWindow):
             for i in range(1, self.file_system_model.columnCount()):
                 self.folder_tree.setColumnHidden(i, True)
 
+            # Sprawdź czy sygnał jest już podłączony, aby uniknąć duplikacji
+            try:
+                self.folder_tree.clicked.disconnect(self._folder_tree_item_clicked)
+            except TypeError:
+                pass  # Sygnał nie był podłączony
             self.folder_tree.clicked.connect(self._folder_tree_item_clicked)
+
+            self._tree_initialized = True
             logging.info(
-                "Drzewo katalogów zainicjalizowane dla: %s",
-                self.current_working_directory,
+                "Drzewo katalogów zainicjalizowane dla głównego folderu: %s",
+                self._main_working_directory,
             )
-        else:
-            logging.warning(
-                "Nie można zainicjalizować drzewa katalogów, " "brak folderu roboczego."
-            )
+
+        # Zawsze zaznacz aktualny folder w drzewie
+        current_index = self.file_system_model.index(self.current_working_directory)
+        if current_index.isValid():
+            self.folder_tree.setCurrentIndex(current_index)
+            # Rozwiń ścieżkę do aktualnego folderu
+            parent = current_index.parent()
+            while parent.isValid():
+                self.folder_tree.expand(parent)
+                parent = parent.parent()
+
+        logging.info(
+            "Zaznaczono aktualny folder w drzewie: %s", self.current_working_directory
+        )
 
     def _show_folder_context_menu(self, position):
         """
@@ -1182,6 +1209,18 @@ class MainWindow(QMainWindow):
             # Wywołaj główną logikę wyboru folderu, która zajmie się
             # skanowaniem, czyszczeniem i aktualizacją UI.
             self._select_working_directory(folder_path)
+
+    def _go_up_directory(self):
+        """Przechodzi do katalogu nadrzędnego."""
+        if not self.current_working_directory:
+            return
+
+        parent_dir = os.path.dirname(self.current_working_directory)
+        if parent_dir and parent_dir != self.current_working_directory:
+            logging.info(f"Przechodzenie do katalogu nadrzędnego: {parent_dir}")
+            self._select_working_directory(parent_dir)
+        else:
+            logging.debug("Już jesteś w głównym katalogu dysku")
 
     def _show_file_context_menu(self, file_pair: FilePair, widget: QWidget, position):
         """
