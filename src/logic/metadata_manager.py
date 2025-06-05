@@ -8,7 +8,7 @@ import logging
 import os
 import shutil
 import tempfile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # Stałe związane z metadanymi
 METADATA_DIR_NAME = ".app_metadata"
@@ -87,13 +87,16 @@ def load_metadata(working_directory: str) -> Dict[str, Any]:
         working_directory (str): Ścieżka do folderu roboczego
 
     Returns:
-        Dict[str, Any]: Słownik z metadanymi lub pusty słownik w przypadku błędu
+        Dict[str, Any]: Słownik z metadanymi. Zawsze zawiera klucze
+                        'file_pairs', 'unpaired_archives', 'unpaired_previews'.
     """
     metadata_path = get_metadata_path(working_directory)
 
     # Domyślna struktura metadanych
     default_metadata = {
-        "file_pairs": {}  # Dane par plików, klucz to względna ścieżka archiwum
+        "file_pairs": {},  # Dane par plików, klucz to względna ścieżka archiwum
+        "unpaired_archives": [],  # Lista względnych ścieżek do niesparowanych archiwów
+        "unpaired_previews": [],  # Lista względnych ścieżek do niesparowanych podglądów
     }
 
     # Jeśli plik nie istnieje, zwracamy domyślne metadane
@@ -106,25 +109,44 @@ def load_metadata(working_directory: str) -> Dict[str, Any]:
         with open(metadata_path, "r", encoding="utf-8") as file:
             metadata = json.load(file)
             logging.debug(f"Wczytano metadane z {metadata_path}")
+
+            # Uzupełnienie o brakujące klucze dla niesparowanych plików
+            if "unpaired_archives" not in metadata:
+                metadata["unpaired_archives"] = []
+            if "unpaired_previews" not in metadata:
+                metadata["unpaired_previews"] = []
+
+            # Upewnienie się, że klucz file_pairs istnieje
+            if "file_pairs" not in metadata:
+                metadata["file_pairs"] = {}
+
             return metadata
     except json.JSONDecodeError as e:
         logging.error(f"Błąd parsowania JSON w pliku metadanych {metadata_path}: {e}")
-        return default_metadata
+        return default_metadata  # Zwracamy domyślną strukturę w przypadku błędu
     except Exception as e:
         logging.error(f"Błąd wczytywania metadanych z {metadata_path}: {e}")
-        return default_metadata
+        return default_metadata  # Zwracamy domyślną strukturę w przypadku błędu
 
 
-def save_metadata(working_directory: str, file_pairs_list: List) -> bool:
+def save_metadata(
+    working_directory: str,
+    file_pairs_list: List,
+    unpaired_archives: List[str],
+    unpaired_previews: List[str],
+) -> bool:
     """
     Zapisuje metadane do pliku JSON w podanym folderze roboczym.
+    Obejmuje to dane sparowanych plików oraz listy niesparowanych archiwów i podglądów.
 
     Args:
-        working_directory (str): Ścieżka do folderu roboczego
-        file_pairs_list (List): Lista obiektów FilePair, których metadane mają być zapisane
+        working_directory (str): Ścieżka do folderu roboczego.
+        file_pairs_list (List): Lista obiektów FilePair, których metadane mają być zapisane.
+        unpaired_archives (List[str]): Lista ścieżek absolutnych do niesparowanych archiwów.
+        unpaired_previews (List[str]): Lista ścieżek absolutnych do niesparowanych podglądów.
 
     Returns:
-        bool: True jeśli zapisano pomyślnie, False w przypadku błędu
+        bool: True jeśli zapisano pomyślnie, False w przypadku błędu.
     """
     # Utwórz folder metadanych jeśli nie istnieje
     metadata_dir = os.path.join(working_directory, METADATA_DIR_NAME)
@@ -137,7 +159,11 @@ def save_metadata(working_directory: str, file_pairs_list: List) -> bool:
         # Wczytanie istniejących metadanych, jeśli są dostępne
         current_metadata = load_metadata(working_directory)
 
-        # Przygotowanie danych do zapisu
+        # Zapewnienie, że 'file_pairs' istnieje w current_metadata, nawet jeśli load_metadata zwróciło domyślne
+        if "file_pairs" not in current_metadata:
+            current_metadata["file_pairs"] = {}
+
+        # Przygotowanie danych do zapisu dla sparowanych plików
         for file_pair in file_pairs_list:
             # Konwersja ścieżki absolutnej na względną
             relative_archive_path = get_relative_path(
@@ -153,6 +179,14 @@ def save_metadata(working_directory: str, file_pairs_list: List) -> bool:
 
             # Aktualizujemy istniejące metadane
             current_metadata["file_pairs"][relative_archive_path] = pair_metadata
+
+        # Przygotowanie i zapis list niesparowanych plików (jako ścieżki względne)
+        current_metadata["unpaired_archives"] = [
+            get_relative_path(p, working_directory) for p in unpaired_archives
+        ]
+        current_metadata["unpaired_previews"] = [
+            get_relative_path(p, working_directory) for p in unpaired_previews
+        ]
 
         # Zapisujemy do pliku tymczasowego, a potem zastępujemy docelowy
         # dla bezpieczeństwa (w przypadku przerwania zapisu)

@@ -7,36 +7,13 @@ import math
 import os
 from collections import OrderedDict
 
-from PyQt6.QtCore import QDir, QModelIndex, Qt
-from PyQt6.QtGui import (
-    QAction,
-    QFileSystemModel,
-    QPixmap,
-    QStandardItem,
-    QStandardItemModel,
-)
-from PyQt6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QFileDialog,
-    QFrame,
-    QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QInputDialog,
-    QLabel,
-    QMainWindow,
-    QMenu,
-    QMessageBox,
-    QPushButton,
-    QScrollArea,
-    QSizePolicy,
-    QSlider,
-    QSplitter,
-    QTreeView,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtCore import QDir, Qt
+from PyQt6.QtGui import QAction, QFileSystemModel, QPixmap
+from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFrame,
+                             QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
+                             QLabel, QMainWindow, QMenu, QMessageBox,
+                             QPushButton, QScrollArea, QSizePolicy, QSlider,
+                             QSplitter, QTreeView, QVBoxLayout, QWidget)
 
 from src.logic import file_operations, metadata_manager
 from src.logic.filter_logic import filter_file_pairs
@@ -72,6 +49,8 @@ class MainWindow(QMainWindow):
 
         self.current_working_directory = None
         self.all_file_pairs: list[FilePair] = []
+        self.unpaired_archives: list[str] = []
+        self.unpaired_previews: list[str] = []
         self.file_pairs_list: list[FilePair] = []
         self.file_tile_widgets = []
 
@@ -279,16 +258,25 @@ class MainWindow(QMainWindow):
                 # 1. Inicjalizacja drzewa katalogów
                 self._init_directory_tree()
 
-                # 2. Wczytaj wszystkie pary
-                self.all_file_pairs = scan_folder_for_pairs(
-                    self.current_working_directory
+                # 2. Wczytaj wszystkie pary i niesparowane pliki
+                found_pairs, unpaired_archives, unpaired_previews = (
+                    scan_folder_for_pairs(self.current_working_directory)
                 )
-                logging.info(f"Wczytano {len(self.all_file_pairs)} par.")
+                self.all_file_pairs = found_pairs
+                self.unpaired_archives = unpaired_archives
+                self.unpaired_previews = unpaired_previews
 
-                # 3. Zastosuj metadane do wszystkich par
-                metadata_manager.apply_metadata_to_file_pairs(
-                    self.current_working_directory, self.all_file_pairs
+                logging.info(f"Wczytano {len(self.all_file_pairs)} sparowanych plików.")
+                logging.info(
+                    f"Niesparowane: {len(self.unpaired_archives)} archiwów, "
+                    f"{len(self.unpaired_previews)} podglądów."
                 )
+
+                # 3. Zastosuj metadane do wszystkich sparowanych par
+                if self.all_file_pairs:  # Tylko jeśli są jakieś pary
+                    metadata_manager.apply_metadata_to_file_pairs(
+                        self.current_working_directory, self.all_file_pairs
+                    )
 
                 # 4. Zastosuj filtry (początkowo domyślne) i odśwież widok
                 self._apply_filters_and_update_view()
@@ -306,6 +294,8 @@ class MainWindow(QMainWindow):
                 )
                 logging.error(err_msg)
                 self.all_file_pairs = []
+                self.unpaired_archives = []
+                self.unpaired_previews = []
                 self.file_pairs_list = []
                 self._update_gallery_view()  # Wyczyść galerię
                 self.filter_panel.setVisible(False)
@@ -459,10 +449,15 @@ class MainWindow(QMainWindow):
             self._update_gallery_view()
 
     def _save_metadata(self):
-        """Zapisuje metadane dla wszystkich (nieprzefiltrowanych) par plików."""
-        if self.current_working_directory and self.all_file_pairs:
+        """Zapisuje metadane dla wszystkich (nieprzefiltrowanych) par plików oraz listy niesparowanych."""
+        if (
+            self.current_working_directory
+        ):  # Sprawdzamy tylko folder, bo mogą być tylko niesparowane
             if not metadata_manager.save_metadata(
-                self.current_working_directory, self.all_file_pairs
+                self.current_working_directory,
+                self.all_file_pairs,
+                self.unpaired_archives,
+                self.unpaired_previews,
             ):
                 logging.error("Nie udało się zapisać metadanych.")
         else:
@@ -482,7 +477,8 @@ class MainWindow(QMainWindow):
             file_operations.open_archive_externally(file_pair.archive_path)
         else:
             logging.warning(
-                "Próba otwarcia archiwum dla nieprawidłowego FilePair lub braku ścieżki."
+                "Próba otwarcia archiwum dla nieprawidłowego FilePair "
+                "lub braku ścieżki."
             )
 
     # MODIFICATION: New slot for preview_image_requested signal
@@ -725,6 +721,10 @@ class MainWindow(QMainWindow):
         """
         Odświeża listę par plików po operacjach na folderach.
         """
+        if not self.current_working_directory:
+            logging.warning("Brak bieżącego folderu roboczego do odświeżenia.")
+            return
+
         # Zapisz aktualne ustawienia filtrów
         current_filters = (
             self.current_filter_criteria.copy()
@@ -733,12 +733,24 @@ class MainWindow(QMainWindow):
         )
 
         # Skanuj folder na nowo
-        self.all_file_pairs = scan_folder_for_pairs(self.current_working_directory)
+        found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
+            self.current_working_directory
+        )
+        self.all_file_pairs = found_pairs
+        self.unpaired_archives = unpaired_archives
+        self.unpaired_previews = unpaired_previews
+
+        logging.info(f"Odświeżono: {len(self.all_file_pairs)} sparowanych plików.")
+        logging.info(
+            f"Niesparowane: {len(self.unpaired_archives)} archiwów, "
+            f"{len(self.unpaired_previews)} podglądów."
+        )
 
         # Załaduj metadane
-        metadata_manager.apply_metadata_to_file_pairs(
-            self.current_working_directory, self.all_file_pairs
-        )
+        if self.all_file_pairs:
+            metadata_manager.apply_metadata_to_file_pairs(
+                self.current_working_directory, self.all_file_pairs
+            )
 
         # Zastosuj filtry i zaktualizuj widok
         if current_filters:
@@ -753,42 +765,76 @@ class MainWindow(QMainWindow):
     def _folder_tree_item_clicked(self, index):
         """
         Obsługuje kliknięcie folderu w drzewie katalogów.
-        Skanuje wybrany folder i wyświetla jego zawartość w galerii.
+        Ustawia kliknięty folder jako nowy folder roboczy i odświeża stan aplikacji.
         """
         if not index.isValid():
             return
 
-        # Pobierz ścieżkę do wybranego folderu
         folder_path = self.file_system_model.filePath(index)
-        logging.info(f"Wybrano folder: {folder_path}")
 
-        # Skanuj wybrany folder w poszukiwaniu par plików
-        selected_folder_pairs = scan_folder_for_pairs(folder_path)
+        if folder_path == self.current_working_directory:
+            logging.debug(f"Kliknięto ten sam folder: {folder_path}. Nie odświeżam.")
+            return
 
-        if selected_folder_pairs:
-            # Zastosuj metadane do znalezionych par
-            metadata_manager.apply_metadata_to_file_pairs(
-                self.current_working_directory, selected_folder_pairs
+        logging.info(f"Wybrano folder z drzewa: {folder_path}")
+
+        # Ustaw nowy folder roboczy i wykonaj pełne odświeżenie
+        # (tak jak w _select_working_directory)
+        self.current_working_directory = folder_path
+        base_folder_name = os.path.basename(self.current_working_directory)
+        self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
+
+        try:
+            # Nie ma potrzeby ponownie inicjalizować drzewa, jeśli już istnieje
+            # self._init_directory_tree() # Można rozważyć, jeśli drzewo ma się zmieniać dynamicznie
+
+            # Wczytaj wszystkie pary i niesparowane pliki
+            found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
+                self.current_working_directory
             )
-
-            # Aktualizuj listę par plików do wyświetlenia
-            self.file_pairs_list = selected_folder_pairs
-
-            # Pokaż panel kontroli rozmiaru
-            self.size_control_panel.setVisible(True)
-
-            # Aktualizuj widok galerii
-            self._update_gallery_view()
+            self.all_file_pairs = found_pairs
+            self.unpaired_archives = unpaired_archives
+            self.unpaired_previews = unpaired_previews
 
             logging.info(
-                f"Wyświetlono {len(selected_folder_pairs)} par plików z folderu: {folder_path}"
+                f"Wczytano {len(self.all_file_pairs)} sparowanych plików z drzewa."
             )
-        else:
-            # Wyczyść galerię, jeśli folder nie zawiera par plików
+            logging.info(
+                f"Niesparowane (drzewo): {len(self.unpaired_archives)} archiwów, "
+                f"{len(self.unpaired_previews)} podglądów."
+            )
+
+            # Zastosuj metadane do wszystkich sparowanych par
+            if self.all_file_pairs:
+                metadata_manager.apply_metadata_to_file_pairs(
+                    self.current_working_directory, self.all_file_pairs
+                )
+
+            # Zastosuj filtry i odśwież widok
+            self._apply_filters_and_update_view()
+
+            # Pokaż panel filtrów i kontroli rozmiaru
+            self.filter_panel.setVisible(True)
+            is_gallery_populated = bool(self.file_pairs_list)
+            self.size_control_panel.setVisible(is_gallery_populated)
+
+            logging.info(
+                f"Wyświetlono po filtracji (z drzewa): {len(self.file_pairs_list)}."
+            )
+
+        except Exception as e:
+            err_msg = (
+                f"Błąd skanowania/inicjalizacji widoku "
+                f"po kliknięciu w drzewie '{base_folder_name}': {e}"
+            )
+            logging.error(err_msg)
+            self.all_file_pairs = []
+            self.unpaired_archives = []
+            self.unpaired_previews = []
             self.file_pairs_list = []
-            self._clear_gallery()
+            self._update_gallery_view()  # Wyczyść galerię
+            self.filter_panel.setVisible(False)
             self.size_control_panel.setVisible(False)
-            logging.info(f"Folder {folder_path} nie zawiera par plików")
 
     def _show_file_context_menu(self, file_pair, widget, position):
         """
