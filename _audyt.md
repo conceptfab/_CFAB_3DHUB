@@ -2,7 +2,7 @@
 
 ### Cel pierwszego etapu:
 
-Utworzenie kompletnej mapy projektu z wstępną analizą każdego pliku kodu i przygotowanie planu dla szczegółowej analizy. Mapa ma uwzględnia pliki z kodem i ustawieniami (JSON), bez plików cache i log.
+Utworzenie kompletnej mapy projektu z wstępną analizą każdego pliku kodu i przygotowanie planu dla szczegółowej analizy. Mapa ma uwzględnia pliki z kodem i ustawieniami (JSON), bez plików cache, md, txt i log.
 
 ### Wymagania etapu 1:
 
