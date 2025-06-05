@@ -10,6 +10,8 @@ import shutil
 from PyQt6.QtCore import QStandardPaths, QUrl
 from PyQt6.QtGui import QDesktopServices
 
+from src.models.file_pair import FilePair
+
 logger = logging.getLogger(__name__)
 
 
@@ -139,6 +141,105 @@ def delete_folder(folder_path: str, delete_content: bool = False) -> bool:
     except OSError as e:
         logger.error(f"Nie udało się usunąć folderu '{folder_path}': {e}")
         return False
+
+
+def manually_pair_files(
+    archive_path: str, preview_path: str, working_directory: str
+) -> FilePair | None:
+    """
+    Ręcznie paruje podany plik archiwum z plikiem podglądu.
+
+    Jeśli nazwy bazowe plików (bez rozszerzeń) są różne, zmienia nazwę pliku podglądu,
+    aby pasowała do nazwy bazowej pliku archiwum, zachowując oryginalne rozszerzenie podglądu.
+    Przed zmianą nazwy sprawdza, czy plik o docelowej nazwie nie istnieje.
+
+    Args:
+        archive_path (str): Ścieżka absolutna do pliku archiwum.
+        preview_path (str): Ścieżka absolutna do pliku podglądu.
+        working_directory (str): Ścieżka do katalogu roboczego (używana do tworzenia FilePair).
+
+    Returns:
+        FilePair | None: Obiekt FilePair, jeśli parowanie się powiodło, w przeciwnym razie None.
+    """
+    logger.info(
+        f"Rozpoczęto próbę ręcznego parowania: A='{archive_path}', P='{preview_path}'"
+    )
+
+    if not os.path.exists(archive_path):
+        logger.error(
+            f"Plik archiwum do ręcznego parowania nie istnieje: {archive_path}"
+        )
+        return None
+    if not os.path.exists(preview_path):
+        logger.error(
+            f"Plik podglądu do ręcznego parowania nie istnieje: {preview_path}"
+        )
+        return None
+
+    archive_base_name, _ = os.path.splitext(os.path.basename(archive_path))
+    preview_base_name, preview_extension = os.path.splitext(
+        os.path.basename(preview_path)
+    )
+
+    current_preview_path = preview_path
+
+    if archive_base_name.lower() != preview_base_name.lower():
+        logger.info(
+            f"Nazwy bazowe plików są różne: '{archive_base_name}' vs '{preview_base_name}'. Próba zmiany nazwy podglądu."
+        )
+
+        # Nowa nazwa pliku podglądu to nazwa bazowa archiwum + oryginalne rozszerzenie podglądu
+        new_preview_filename = archive_base_name + preview_extension
+        new_preview_path = os.path.join(
+            os.path.dirname(preview_path), new_preview_filename
+        )
+
+        if os.path.exists(new_preview_path):
+            if new_preview_path.lower() == preview_path.lower():
+                # Przypadek, gdy nazwa różni się tylko wielkością liter, a system plików jest case-insensitive
+                # lub plik o tej samej nazwie (case-sensitive) już istnieje.
+                # W tej sytuacji, jeśli nazwa docelowa jest taka sama jak bieżąca (po normalizacji case), uznajemy to za OK.
+                logger.debug(
+                    f"Plik podglądu '{preview_path}' ma już docelową nazwę (możliwe różnice wielkości liter)."
+                )
+                current_preview_path = (
+                    new_preview_path  # Użyjemy ścieżki z poprawną wielkością liter
+                )
+            else:
+                logger.error(
+                    f"Nie można zmienić nazwy podglądu na '{new_preview_filename}', plik o tej nazwie już istnieje: {new_preview_path}"
+                )
+                return None
+        else:
+            try:
+                os.rename(preview_path, new_preview_path)
+                logger.info(
+                    f"Zmieniono nazwę pliku podglądu z '{os.path.basename(preview_path)}' na '{new_preview_filename}'"
+                )
+                current_preview_path = new_preview_path
+            except OSError as e:
+                logger.error(
+                    f"Nie udało się zmienić nazwy pliku podglądu '{preview_path}' na '{new_preview_path}': {e}"
+                )
+                return None
+    else:
+        logger.info(
+            f"Nazwy bazowe plików są takie same: '{archive_base_name}'. Nie ma potrzeby zmiany nazwy podglądu."
+        )
+
+    try:
+        paired_file = FilePair(
+            archive_path=archive_path,
+            preview_path=current_preview_path,  # Używamy aktualnej ścieżki podglądu
+            working_directory=working_directory,
+        )
+        logger.info(
+            f"Pomyślnie ręcznie sparowano: A='{paired_file.get_relative_archive_path()}', P='{paired_file.get_relative_preview_path()}'"
+        )
+        return paired_file
+    except Exception as e:
+        logger.error(f"Błąd tworzenia obiektu FilePair podczas ręcznego parowania: {e}")
+        return None
 
 
 # ... (reszta pliku, jeśli istnieje) ...
