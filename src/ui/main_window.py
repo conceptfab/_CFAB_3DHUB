@@ -223,7 +223,8 @@ class MainWindow(QMainWindow):
         self.size_slider.setValue(50)  # Domyślna wartość (średnia)
         self.size_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.size_slider.setTickInterval(20)
-        self.size_slider.valueChanged.connect(self._update_thumbnail_size)
+        # OPTYMALIZACJA: Aktualizuj galerię dopiero po puszczeniu suwaka
+        self.size_slider.sliderReleased.connect(self._update_thumbnail_size)
         self.size_control_layout.addWidget(self.size_slider)
 
         # Dodanie do panelu górnego
@@ -547,6 +548,8 @@ class MainWindow(QMainWindow):
     def _create_tile_widget_for_pair(self, file_pair: FilePair):
         """Tworzy pojedynczy kafelek. Ten slot jest wywoływany w głównym wątku."""
         try:
+            # FIX: Przywrócenie `self` jako rodzica, co naprawia problem z ładowaniem galerii.
+            # Reparenting do `tiles_container` nastąpi automatycznie po dodaniu do layoutu.
             tile = FileTileWidget(file_pair, self.current_thumbnail_size, self)
             tile.archive_open_requested.connect(self.open_archive)
             tile.preview_image_requested.connect(self._show_preview_dialog)
@@ -676,9 +679,10 @@ class MainWindow(QMainWindow):
         while self.tiles_layout.count():
             item = self.tiles_layout.takeAt(0)
             widget = item.widget()
-            if widget:  # Widget może być None, jeśli to był QSpacerItem
-                # Nie usuwamy widgetu (deleteLater), tylko zdejmujemy z layoutu
-                widget.setParent(None)
+            if widget:
+                # FIX: Zamiast odrywać widget (setParent(None)), po prostu go ukrywamy.
+                # To eliminuje problem mrugających okien.
+                widget.setVisible(False)
 
         if not self.file_pairs_list:  # file_pairs_list to przefiltrowane pary
             logging.debug("Lista par (po filtracji) pusta, galeria pusta.")
@@ -743,32 +747,31 @@ class MainWindow(QMainWindow):
             tile.deleteLater()
         self.gallery_tile_widgets.clear()
 
-    def _update_thumbnail_size(self, value):
-        """
-        Aktualizuje rozmiar miniatur na podstawie wartości suwaka.
-        """
-        # Użycie MIN_THUMBNAIL_SIZE i MAX_THUMBNAIL_SIZE z app_config
-        # (poprzez self.min_thumbnail_size i self.max_thumbnail_size)
-        width_range = self.max_thumbnail_size[0] - self.min_thumbnail_size[0]
-        height_range = self.max_thumbnail_size[1] - self.min_thumbnail_size[1]
+    def _update_thumbnail_size(self):
+        """Aktualizuje rozmiar miniatur i przerenderowuje galerię. Wywoływane po puszczeniu suwaka."""
+        # Pobierz aktualną wartość z suwaka
+        value = self.size_slider.value()
 
-        new_width = self.min_thumbnail_size[0] + (width_range * value / 100)
-        new_height = self.min_thumbnail_size[1] + (height_range * value / 100)
+        # Obliczenie nowego rozmiaru na podstawie wartości suwaka
+        size_range = self.max_thumbnail_size[0] - self.min_thumbnail_size[0]
+        new_width = self.min_thumbnail_size[0] + int((size_range * value) / 100)
+        new_height = new_width  # Zachowujemy proporcje kwadratowe
+        self.current_thumbnail_size = (new_width, new_height)
 
-        self.current_thumbnail_size = (int(new_width), int(new_height))
-        thumb_size_str = (
-            f"{self.current_thumbnail_size[0]}x{self.current_thumbnail_size[1]}"
+        logging.debug(
+            f"Aktualizacja rozmiaru miniatur na: {self.current_thumbnail_size}"
         )
 
-        # Aktualizacja rozmiaru wszystkich istniejących kafelków
-        # Iterujemy po wartościach słownika gallery_tile_widgets
-        for tile in self.gallery_tile_widgets.values():
-            try:
-                tile.set_thumbnail_size(self.current_thumbnail_size)
-            except Exception as e:
-                logging.error(f"Błąd aktualizacji rozmiaru kafelka: {e}")
+        # 1. Zapisz pozycję suwaka do konfiguracji
+        slider_pos = self.size_slider.value()
+        app_config.set_thumbnail_slider_position(slider_pos)
 
-        logging.debug(f"Zaktualizowano rozmiar miniatur: {thumb_size_str}")
+        # 2. Zaktualizuj rozmiar w kafelkach
+        for tile in self.gallery_tile_widgets.values():
+            tile.set_thumbnail_size(self.current_thumbnail_size)
+
+        # 3. Przerenderuj galerię z nowymi rozmiarami
+        self._update_gallery_view()
 
     def resizeEvent(self, event):
         # Opóźnienie przerenderowania galerii po zmianie rozmiaru okna
