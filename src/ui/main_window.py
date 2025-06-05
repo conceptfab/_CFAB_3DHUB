@@ -5,9 +5,8 @@ Główne okno aplikacji.
 import logging
 import math
 import os
-from collections import OrderedDict
 
-from PyQt6.QtCore import QDir, Qt
+from PyQt6.QtCore import QDir, QObject, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QAction, QFileSystemModel, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -19,6 +18,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src import app_config
 from src.logic import file_operations, metadata_manager
 from src.logic.filter_logic import filter_file_pairs
 from src.logic.scanner import scan_folder_for_pairs
@@ -41,23 +42,50 @@ from src.ui.widgets.file_tile_widget import FileTileWidget
 from src.ui.widgets.preview_dialog import PreviewDialog
 
 
+class ScanFolderWorker(QObject):
+    """
+    Worker do skanowania folderu w osobnym wątku.
+    """
+
+    # Sygnał emitowany po zakończeniu:
+    # found_pairs, unpaired_archives, unpaired_previews
+    finished = pyqtSignal(list, list, list)
+    error = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.directory_to_scan = None
+
+    def run(self):
+        """
+        Wykonuje skanowanie folderu.
+        """
+        if not self.directory_to_scan:
+            self.error.emit("Nie określono folderu do skanowania.")
+            return
+
+        try:
+            logging.debug(
+                f"Rozpoczynanie skanowania folderu: "
+                f"{self.directory_to_scan} w wątku."
+            )
+            found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
+                self.directory_to_scan
+            )
+            self.finished.emit(found_pairs, unpaired_archives, unpaired_previews)
+        except Exception as e:
+            err_msg = (
+                f"Błąd podczas skanowania folderu "
+                f"'{self.directory_to_scan}' w wątku: {e}"
+            )
+            logging.error(err_msg)
+            self.error.emit(err_msg)
+
+
 class MainWindow(QMainWindow):
     """
     Główne okno aplikacji CFAB_3DHUB.
     """
-
-    PREDEFINED_COLORS_FILTER = OrderedDict(
-        [
-            ("Wszystkie kolory", "ALL"),
-            ("Brak koloru", "__NONE__"),
-            ("Czerwony", "#E53935"),
-            ("Zielony", "#43A047"),
-            ("Niebieski", "#1E88E5"),
-            ("Żółty", "#FDD835"),
-            ("Fioletowy", "#8E24AA"),
-            ("Czarny", "#000000"),
-        ]
-    )
 
     def __init__(self):
         """
@@ -70,13 +98,16 @@ class MainWindow(QMainWindow):
         self.unpaired_archives: list[str] = []
         self.unpaired_previews: list[str] = []
         self.file_pairs_list: list[FilePair] = []
-        self.file_tile_widgets = []
+        self.gallery_tile_widgets: dict[str, FileTileWidget] = {}
 
-        # Konfiguracja rozmiaru miniatur
-        self.default_thumbnail_size = (150, 150)  # Domyślny rozmiar (px)
-        self.min_thumbnail_size = (50, 50)  # Minimalny rozmiar (px)
-        self.max_thumbnail_size = (300, 300)  # Maksymalny rozmiar (px)
-        self.current_thumbnail_size = self.default_thumbnail_size  # Aktualny
+        # Wątek skanowania
+        self.scan_thread = None
+        self.scan_worker = None
+
+        # Konfiguracja rozmiaru miniatur - teraz z app_config
+        self.min_thumbnail_size = app_config.MIN_THUMBNAIL_SIZE
+        self.max_thumbnail_size = app_config.MAX_THUMBNAIL_SIZE
+        self.current_thumbnail_size = app_config.DEFAULT_THUMBNAIL_SIZE
 
         # Konfiguracja okna
         self.setWindowTitle("CFAB_3DHUB")
@@ -178,7 +209,8 @@ class MainWindow(QMainWindow):
         self.filter_panel_layout.addWidget(self.filter_color_label)
 
         self.filter_color_combo = QComboBox()
-        for name, value in self.PREDEFINED_COLORS_FILTER.items():
+        # Użycie PREDEFINED_COLORS_FILTER z app_config
+        for name, value in app_config.PREDEFINED_COLORS_FILTER.items():
             self.filter_color_combo.addItem(name, userData=value)
         self.filter_color_combo.currentIndexChanged.connect(
             self._apply_filters_and_update_view
@@ -304,7 +336,7 @@ class MainWindow(QMainWindow):
 
     def _select_working_directory(self):
         """
-        Otwiera dialog wyboru folderu i inicjuje skanowanie.
+        Otwiera dialog wyboru folderu i inicjuje asynchroniczne skanowanie.
         """
         logging.debug("Dialog wyboru folderu roboczego.")
         if self.current_working_directory:
@@ -321,61 +353,184 @@ class MainWindow(QMainWindow):
             base_folder_name = os.path.basename(self.current_working_directory)
             self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
 
-            try:
-                # 1. Inicjalizacja drzewa katalogów
-                self._init_directory_tree()
+            # Wyłącz przycisk i zmień tekst na czas skanowania
+            self.select_folder_button.setEnabled(False)
+            self.select_folder_button.setText("Skanowanie...")
+            # Wyczyść poprzednie dane przed nowym skanowaniem
+            self._clear_all_data_and_views()
 
-                # 2. Wczytaj wszystkie pary i niesparowane pliki
-                found_pairs, unpaired_archives, unpaired_previews = (
-                    scan_folder_for_pairs(self.current_working_directory)
+            # Przygotowanie i uruchomienie wątku skanującego
+            if self.scan_thread and self.scan_thread.isRunning():
+                logging.warning("Poprzedni wątek skanowania wciąż aktywny. Czekanie...")
+                self.select_folder_button.setText("Wybierz Folder Roboczy")
+                self.select_folder_button.setEnabled(True)
+                QMessageBox.warning(
+                    self,
+                    "Skanowanie w toku",
+                    "Poprzednia operacja skanowania folderu jeszcze się nie zakończyła.",
                 )
-                self.all_file_pairs = found_pairs
-                self.unpaired_archives = unpaired_archives
-                self.unpaired_previews = unpaired_previews
+                return
 
-                logging.info(f"Wczytano {len(self.all_file_pairs)} sparowanych plików.")
-                logging.info(
-                    f"Niesparowane: {len(self.unpaired_archives)} archiwów, "
-                    f"{len(self.unpaired_previews)} podglądów."
-                )
+            self.scan_thread = QThread(self)
+            self.scan_worker = ScanFolderWorker()
+            self.scan_worker.directory_to_scan = self.current_working_directory
+            self.scan_worker.moveToThread(self.scan_thread)
 
-                # 3. Zastosuj metadane do wszystkich sparowanych par
-                if self.all_file_pairs:  # Tylko jeśli są jakieś pary
-                    metadata_manager.apply_metadata_to_file_pairs(
-                        self.current_working_directory, self.all_file_pairs
-                    )
+            # Połączenie sygnałów
+            self.scan_worker.finished.connect(self._handle_scan_finished)
+            self.scan_worker.error.connect(self._handle_scan_error)
+            self.scan_thread.started.connect(self.scan_worker.run)
+            # Sprzątanie po zakończeniu wątku
+            self.scan_worker.finished.connect(self.scan_thread.quit)
+            self.scan_worker.error.connect(self.scan_thread.quit)
+            self.scan_thread.finished.connect(self.scan_thread.deleteLater)
+            self.scan_worker.finished.connect(
+                self.scan_worker.deleteLater
+            )  # Worker też
+            self.scan_worker.error.connect(self.scan_worker.deleteLater)  # Worker też
 
-                # 4. Zastosuj filtry (początkowo domyślne) i odśwież widok
-                self._apply_filters_and_update_view()
+            self.scan_thread.start()
+            logging.info(
+                f"Uruchomiono wątek skanowania dla: {self.current_working_directory}"
+            )
 
-                # Pokaż panel filtrów i kontroli rozmiaru
-                self.filter_panel.setVisible(True)
-                is_gallery_populated = bool(self.file_pairs_list)
-                self.size_control_panel.setVisible(is_gallery_populated)
-
-                logging.info(f"Wyświetlono po filtracji: {len(self.file_pairs_list)}.")
-            except Exception as e:
-                err_msg = (
-                    f"Błąd skanowania/inicjalizacji widoku "
-                    f"'{base_folder_name}': {e}"
-                )
-                logging.error(err_msg)
-                self.all_file_pairs = []
-                self.unpaired_archives = []
-                self.unpaired_previews = []
-                self.file_pairs_list = []
-                self._update_gallery_view()  # Wyczyść galerię
-                self.filter_panel.setVisible(False)
         else:
             logging.info("Anulowano wybór folderu.")
 
+    def _clear_all_data_and_views(self):
+        """Czyści wszystkie dane plików i odpowiednie widoki, w tym galerię."""
+        self.all_file_pairs = []
+        self.unpaired_archives = []
+        self.unpaired_previews = []
+        self.file_pairs_list = []
+        self._clear_gallery()
+        self._clear_unpaired_files_lists()
+        self.filter_panel.setVisible(False)
+        self.tab_widget.setTabVisible(1, False)  # Ukryj zakładkę niesparowanych
+        self.setWindowTitle("CFAB_3DHUB")  # Reset tytułu okna
+
+    def _clear_unpaired_files_lists(self):
+        """Czyści listy niesparowanych plików w interfejsie użytkownika."""
+        self.unpaired_archives_list_widget.clear()
+        self.unpaired_previews_list_widget.clear()
+        logging.debug("Wyczyszczono listy niesparowanych plików w UI.")
+
+    def _handle_scan_finished(self, found_pairs, unpaired_archives, unpaired_previews):
+        """
+        Obsługuje wyniki pomyślnie zakończonego skanowania folderu.
+        Tworzy wszystkie widgety kafelków, ale ich nie wyświetla.
+        """
+        logging.info(
+            f"Skanowanie folderu {self.current_working_directory} "
+            f"zakończone pomyślnie."
+        )
+        self.all_file_pairs = found_pairs
+        self.unpaired_archives = unpaired_archives
+        self.unpaired_previews = unpaired_previews
+
+        logging.info(f"Wczytano {len(self.all_file_pairs)} sparowanych plików.")
+        logging.info(
+            f"Niesparowane: {len(self.unpaired_archives)} archiwów, "
+            f"{len(self.unpaired_previews)} podglądów."
+        )
+
+        # 1. Wyczyść poprzednie widgety kafelków całkowicie
+        self._clear_gallery()
+
+        # 2. Stwórz nowe widgety kafelków dla wszystkich znalezionych par
+        #    ale nie dodawaj ich jeszcze do layoutu i ustaw jako niewidoczne.
+        if self.all_file_pairs:
+            for file_pair in self.all_file_pairs:
+                try:
+                    tile = FileTileWidget(file_pair, self.current_thumbnail_size, self)
+                    # Podłączanie sygnałów dla nowo utworzonego kafelka
+                    tile.archive_open_requested.connect(self.open_archive)
+                    tile.preview_image_requested.connect(self._show_preview_dialog)
+                    tile.favorite_toggled.connect(self.toggle_favorite_status)
+                    tile.stars_changed.connect(self._handle_stars_changed)
+                    tile.color_tag_changed.connect(self._handle_color_tag_changed)
+                    tile.tile_context_menu_requested.connect(
+                        self._show_file_context_menu
+                    )
+
+                    tile.setVisible(False)  # Ukryj na starcie
+                    self.gallery_tile_widgets[file_pair.get_archive_path()] = tile
+                except Exception as e:
+                    logging.error(
+                        f"Błąd tworzenia kafelka dla {file_pair.get_base_name()}: {e}"
+                    )
+
+        # 3. Zastosuj metadane do wszystkich sparowanych par
+        if self.all_file_pairs:
+            metadata_manager.apply_metadata_to_file_pairs(
+                self.current_working_directory, self.all_file_pairs
+            )
+
+        # 4. Zastosuj filtry (początkowo domyślne) i odśwież widok (teraz tylko pokaże/ukryje)
+        self._apply_filters_and_update_view()
+        self._update_unpaired_files_lists()
+
+        # Pokaż panel filtrów i kontroli rozmiaru
+        self.filter_panel.setVisible(True)
+        is_gallery_populated = bool(self.file_pairs_list)
+        self.size_control_panel.setVisible(is_gallery_populated)
+        self.tab_widget.setTabVisible(
+            1, bool(self.unpaired_archives or self.unpaired_previews)
+        )
+
+        # Inicjalizacja drzewa katalogów - powinna być tutaj, po załadowaniu danych
+        self._init_directory_tree()
+
+        # Przywróć przycisk
+        self.select_folder_button.setText("Wybierz Folder Roboczy")
+        self.select_folder_button.setEnabled(True)
+
+        # Zapisz metadane
+        self._save_metadata()
+
+        logging.info(
+            f"Widok zaktualizowany. Wyświetlono po filtracji: "
+            f"{len(self.file_pairs_list)}."
+        )
+
+    def _handle_scan_error(self, error_message: str):
+        """
+        Obsługuje błędy występujące podczas skanowania folderu.
+        """
+        logging.error(f"Błąd skanowania: {error_message}")
+        QMessageBox.critical(
+            self,
+            "Błąd Skanowania",
+            f"Wystąpił błąd podczas skanowania folderu:\n{error_message}",
+        )
+
+        self._clear_all_data_and_views()  # Wyczyść dane i widoki
+
+        # Przywróć przycisk
+        self.select_folder_button.setText("Wybierz Folder Roboczy")
+        self.select_folder_button.setEnabled(True)
+        # Ukryj panel filtrów
+        self.filter_panel.setVisible(False)
+
     def _apply_filters_and_update_view(self):
-        """Zbiera kryteria, filtruje pary i aktualizuje galerię."""
-        if not self.all_file_pairs and not self.current_working_directory:
-            # Nic nie rób, jeśli nie ma załadowanego folderu
+        """Zbiera kryteria, filtruje pary i aktualizuje galerię (pokazuje/ukrywa kafelki)."""
+        if not self.current_working_directory:
+            # Jeśli nie ma folderu, upewnij się, że wszystko jest czyste
             self.file_pairs_list = []
-            self._clear_gallery()
+            # _update_gallery_view sobie poradzi z pustą listą
+            self._update_gallery_view()
             self.size_control_panel.setVisible(False)
+            self.filter_panel.setVisible(False)
+            return
+
+        # Jeśli self.all_file_pairs jest puste, ale mamy folder (np. pusty folder)
+        # również chcemy poprawnie zaktualizować UI
+        if not self.all_file_pairs:
+            self.file_pairs_list = []
+            self._update_gallery_view()
+            self.size_control_panel.setVisible(False)
+            # Panel filtrów może pozostać, jeśli jest sens (np. użytkownik wybrał pusty folder)
+            # self.filter_panel.setVisible(True lub False w zależności od logiki)
             return
 
         show_fav = self.filter_fav_checkbox.isChecked()
@@ -403,88 +558,105 @@ class MainWindow(QMainWindow):
 
     def _update_gallery_view(self):
         """
-        Aktualizuje widok galerii, tworząc kafelki dla każdej pary plików.
+        Aktualizuje widok galerii, pokazując/ukrywając istniejące kafelki
+        i rozmieszczając je w siatce.
         """
-        # Wyczyść istniejące kafelki
-        self._clear_gallery()
+        # 1. Usuń wszystkie widgety z layoutu (ale nie z pamięci/słownika)
+        while self.tiles_layout.count():
+            item = self.tiles_layout.takeAt(0)
+            widget = item.widget()
+            if widget:  # Widget może być None, jeśli to był QSpacerItem
+                # Nie usuwamy widgetu (deleteLater), tylko zdejmujemy z layoutu
+                widget.setParent(None)
 
-        if not self.file_pairs_list:
-            logging.debug("Lista par pusta, galeria pusta.")
-            # Ukryj panel kontroli rozmiaru, jeśli nie ma miniatur
+        if not self.file_pairs_list:  # file_pairs_list to przefiltrowane pary
+            logging.debug("Lista par (po filtracji) pusta, galeria pusta.")
             self.size_control_panel.setVisible(False)
             return
 
-        # Pokaż panel kontroli rozmiaru, jeśli są miniatury do wyświetlenia
         self.size_control_panel.setVisible(True)
 
         try:
-            # Zapisujemy szerokość kontenera do obliczeń liczby kolumn
             container_width = self.tiles_container.width()
+            tile_width_with_spacing = (
+                self.current_thumbnail_size[0] + self.tiles_layout.spacing() + 10
+            )  # Dodatkowy bufor
+            cols = max(1, math.floor(container_width / tile_width_with_spacing))
 
-            # Obliczamy liczbę kolumn na podstawie rozmiaru miniatury i szerokości kontenera
-            # Dodajemy margines 30px na kafelek
-            tile_width = self.current_thumbnail_size[0] + 30
-            cols = max(1, math.floor(container_width / tile_width))
-
-            # Tworzymy kafelki dla każdej pary plików i dodajemy je do siatki
-            for idx, file_pair in enumerate(self.file_pairs_list):
-                try:
-                    # Utwórz nowy kafelek
-                    tile = FileTileWidget(file_pair, self.current_thumbnail_size, self)
-
-                    # MODIFICATION: Connect signals from FileTileWidget to MainWindow slots
-                    tile.archive_open_requested.connect(self.open_archive)
-                    tile.preview_image_requested.connect(self._show_preview_dialog)
-                    tile.favorite_toggled.connect(self.toggle_favorite_status)
-                    # Podłączenie nowych sygnałów
-                    tile.stars_changed.connect(self._handle_stars_changed)
-                    tile.color_tag_changed.connect(self._handle_color_tag_changed)
-                    # Podłączenie sygnału menu kontekstowego
-                    tile.tile_context_menu_requested.connect(
-                        self._show_file_context_menu
-                    )
-
-                    # Zapisz referencję do kafelka
-                    self.file_tile_widgets.append(tile)
-
-                    # Oblicz pozycję w siatce (wiersz, kolumna)
-                    row = idx // cols
-                    col = idx % cols
-
-                    # Dodaj kafelek do siatki
+            row, col = 0, 0
+            for (
+                file_pair
+            ) in self.file_pairs_list:  # Iterujemy po przefiltrowanej liście
+                tile = self.gallery_tile_widgets.get(file_pair.get_archive_path())
+                if tile:
+                    tile.setVisible(True)  # Upewnij się, że jest widoczny
                     self.tiles_layout.addWidget(tile, row, col)
-
-                except Exception as e:
-                    logging.error(
-                        f"Błąd tworzenia kafelka dla "
-                        f"{file_pair.get_base_name()[:25]}..: {e}"
+                    col += 1
+                    if col >= cols:
+                        col = 0
+                        row += 1
+                else:
+                    logging.warning(
+                        f"Nie znaleziono widgetu kafelka dla {file_pair.get_archive_path()} w słowniku."
                     )
+
+            # Ukryj widgety, które nie są na liście file_pairs_list
+            # (te, które zostały odfiltrowane)
+            # To jest mniej wydajne niż wcześniejsze ukrycie wszystkich
+            # i pokazanie tylko potrzebnych, ale bardziej bezpośrednie.
+            # Lepsze podejście: na początku _update_gallery_view ukryć wszystkie, potem pokazać te z file_pairs_list.
+            # Zmienimy to w kolejnym kroku jeśli będzie taka potrzeba.
+            # Na razie, dla bezpieczeństwa, iterujemy po wszystkich przechowywanych.
+            for archive_path, tile_widget in self.gallery_tile_widgets.items():
+                # Sprawdź, czy file_pair dla tego widgetu jest na liście do wyświetlenia
+                # To wymaga znalezienia file_pair po archive_path w self.file_pairs_list
+                # To jest nieefektywne. Prostsze: jeśli tile nie został dodany w pętli powyżej, to ukryj.
+                # Zakładając, że layout prawidłowo zarządza widgetami, które nie zostały dodane,
+                # wystarczy ustawić setVisible(False) dla tych, które nie są w self.file_pairs_list
+                # Lepsze: if tile_widget.file_pair not in self.file_pairs_list: tile_widget.setVisible(False)
+
+                # Bardziej bezpośrednie podejście: jeśli widget nie był w pętli powyżej, a jest widoczny, ukryj.
+                # LUB: Ustawiamy wszystkie na False, a potem te z file_pairs_list na True.
+                # Zostawiam obecną logikę, gdzie dodajemy tylko te co trzeba.
+                # Te, które nie zostały dodane do layoutu, a były wcześniej, zostały usunięte z layoutu na początku.
+                # Musimy tylko upewnić się, że są `setVisible(False)` jeśli nie są w `file_pairs_list`.
+                # Poniższa pętla to robi.
+                is_visible_pair = any(
+                    fp.get_archive_path() == archive_path for fp in self.file_pairs_list
+                )
+                if not is_visible_pair and tile_widget.isVisible():
+                    tile_widget.setVisible(False)
+                elif (
+                    is_visible_pair and not tile_widget.isVisible()
+                ):  # Na wypadek gdyby był ukryty
+                    tile_widget.setVisible(True)
 
         except Exception as e:
-            logging.error(f"Błąd aktualizacji galerii: {e}")
+            logging.error(f"Błąd aktualizacji widoku galerii: {e}")
 
     def _clear_gallery(self):
         """
-        Czyści galerię kafelków.
+        Czyści galerię kafelków - usuwa wszystkie widgety z pamięci.
         """
         # Usuń wszystkie widgety z layoutu
         while self.tiles_layout.count():
             item = self.tiles_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)  # Usuń rodzica przed deleteLater
+                widget.deleteLater()
 
-        # Wyczyść listę referencji do kafelków
-        self.file_tile_widgets = []
+        # Usuń pozostałe widgety ze słownika, jeśli jakieś nie były w layoucie
+        for tile in self.gallery_tile_widgets.values():
+            tile.deleteLater()
+        self.gallery_tile_widgets.clear()
 
     def _update_thumbnail_size(self, value):
         """
         Aktualizuje rozmiar miniatur na podstawie wartości suwaka.
-
-        Args:
-            value (int): Wartość suwaka (0-100)
         """
-        # Obliczamy nowy rozmiar miniatury na podstawie wartości suwaka (0-100)
-        # gdzie 0 = minimalny rozmiar, 100 = maksymalny rozmiar
+        # Użycie MIN_THUMBNAIL_SIZE i MAX_THUMBNAIL_SIZE z app_config
+        # (poprzez self.min_thumbnail_size i self.max_thumbnail_size)
         width_range = self.max_thumbnail_size[0] - self.min_thumbnail_size[0]
         height_range = self.max_thumbnail_size[1] - self.min_thumbnail_size[1]
 
@@ -496,8 +668,9 @@ class MainWindow(QMainWindow):
             f"{self.current_thumbnail_size[0]}x{self.current_thumbnail_size[1]}"
         )
 
-        # Aktualizacja rozmiaru wszystkich kafelków
-        for tile in self.file_tile_widgets:
+        # Aktualizacja rozmiaru wszystkich istniejących kafelków
+        # Iterujemy po wartościach słownika gallery_tile_widgets
+        for tile in self.gallery_tile_widgets.values():
             try:
                 tile.set_thumbnail_size(self.current_thumbnail_size)
             except Exception as e:
@@ -975,25 +1148,38 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            if file_pair.delete():
+            archive_path_to_delete = file_pair.get_archive_path()
+            if (
+                file_pair.delete()
+            ):  # Ta metoda powinna obsługiwać usuwanie z systemu plików
                 logging.info(f"Usunięto parę plików: {file_name}")
 
-                # Usuń parę z list
+                # Usuń parę z list głównych
                 if file_pair in self.all_file_pairs:
                     self.all_file_pairs.remove(file_pair)
-                if file_pair in self.file_pairs_list:
-                    self.file_pairs_list.remove(file_pair)
+                # file_pairs_list jest aktualizowana przez _apply_filters_and_update_view
 
-                # Zaktualizuj metadane
+                # Zaktualizuj metadane (zanim usuniesz z UI)
                 metadata_manager.save_metadata(
-                    self.current_working_directory, self.all_file_pairs
+                    self.current_working_directory,
+                    self.all_file_pairs,
+                    self.unpaired_archives,
+                    self.unpaired_previews,
                 )
 
-                # Usuń widget z layoutu
-                self.tiles_layout.removeWidget(widget)
-                widget.deleteLater()
-                if widget in self.file_tile_widgets:
-                    self.file_tile_widgets.remove(widget)
+                # Usuń widget ze słownika i layoutu
+                tile_to_delete = self.gallery_tile_widgets.pop(
+                    archive_path_to_delete, None
+                )
+                if tile_to_delete:
+                    if (
+                        self.tiles_layout.indexOf(tile_to_delete) > -1
+                    ):  # Sprawdź czy jest w layoucie
+                        self.tiles_layout.removeWidget(tile_to_delete)
+                    tile_to_delete.deleteLater()
+
+                # Odśwież widok galerii, aby usunąć lukę i przefiltrować
+                self._apply_filters_and_update_view()
             else:
                 QMessageBox.warning(
                     self,
@@ -1153,4 +1339,28 @@ class MainWindow(QMainWindow):
             )
 
         # Zaktualizuj stan przycisku po operacji (zaznaczenia prawdopodobnie znikną lub się zmienią)
+        self._update_pair_button_state()
+
+    def _update_unpaired_files_lists(self):
+        """Aktualizuje listy niesparowanych plików w interfejsie użytkownika."""
+        if not hasattr(self, "unpaired_archives_list_widget"):
+            return  # UI not ready
+
+        self.unpaired_archives_list_widget.clear()
+        self.unpaired_previews_list_widget.clear()
+
+        for archive_path in self.unpaired_archives:
+            item = QListWidgetItem(os.path.basename(archive_path))
+            item.setData(Qt.ItemDataRole.UserRole, archive_path)
+            self.unpaired_archives_list_widget.addItem(item)
+
+        for preview_path in self.unpaired_previews:
+            item = QListWidgetItem(os.path.basename(preview_path))
+            item.setData(Qt.ItemDataRole.UserRole, preview_path)
+            self.unpaired_previews_list_widget.addItem(item)
+
+        logging.debug(
+            f"Zaktualizowano listy niesparowanych: {len(self.unpaired_archives)} archiwów, "
+            f"{len(self.unpaired_previews)} podglądów."
+        )
         self._update_pair_button_state()

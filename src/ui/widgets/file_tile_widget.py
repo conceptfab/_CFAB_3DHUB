@@ -3,10 +3,12 @@ Kafelek wyświetlający miniaturę podglądu, nazwę i rozmiar pliku archiwum.
 """
 
 import logging
+import os
 from collections import OrderedDict
 
-from PyQt6.QtCore import QByteArray, QEvent, QMimeData, Qt, pyqtSignal
-from PyQt6.QtGui import QDrag
+from PIL import Image, UnidentifiedImageError
+from PyQt6.QtCore import QEvent, QMimeData, QObject, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QDrag, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -20,6 +22,70 @@ from PyQt6.QtWidgets import (
 )
 
 from src.models.file_pair import FilePair
+from src.utils.image_utils import create_placeholder_pixmap, pillow_image_to_qpixmap
+
+
+# Definicja Workera
+class ThumbnailLoaderWorker(QObject):
+    finished = pyqtSignal(QPixmap)
+
+    def __init__(
+        self, file_pair: FilePair, target_width: int, target_height: int, parent=None
+    ):
+        super().__init__(parent)
+        self.file_pair = file_pair
+        self.target_width = target_width
+        self.target_height = target_height
+
+    def run(self):
+        preview_path = self.file_pair.get_preview_path()
+        pixmap = None
+
+        if not preview_path or not os.path.exists(preview_path):
+            log_msg = (
+                f"Asynch. worker: Plik podglądu nie istnieje: {preview_path}. "
+                f"Tworzenie placeholdera."
+            )
+            logging.warning(log_msg)
+            pixmap = create_placeholder_pixmap(
+                self.target_width, self.target_height, text="Brak podglądu"
+            )
+        else:
+            try:
+                with Image.open(preview_path) as img:
+                    thumbnail_img = img.copy()
+                    thumbnail_img.thumbnail(
+                        (self.target_width, self.target_height), Image.LANCZOS
+                    )
+                    pixmap = pillow_image_to_qpixmap(thumbnail_img)
+                    if pixmap.isNull():
+                        # Krótszy komunikat błędu
+                        raise ValueError("Worker: Konwersja QPixmap dała pusty wynik")
+            except FileNotFoundError:
+                logging.error(f"Asynch. worker: Nie znaleziono pliku: {preview_path}")
+                pixmap = create_placeholder_pixmap(
+                    self.target_width, self.target_height, text="Brak pliku"
+                )
+            except UnidentifiedImageError:
+                logging.error(f"Asynch. worker: Nieprawidłowy format: {preview_path}")
+                pixmap = create_placeholder_pixmap(
+                    self.target_width, self.target_height, text="Błąd formatu"
+                )
+            except Exception as e:
+                log_msg = (
+                    f"Asynch. worker: Błąd wczytywania podglądu " f"{preview_path}: {e}"
+                )
+                logging.error(log_msg)
+                pixmap = create_placeholder_pixmap(
+                    self.target_width, self.target_height, text="Błąd"
+                )
+
+        if pixmap is None:  # Ostateczny fallback
+            pixmap = create_placeholder_pixmap(
+                self.target_width, self.target_height, text="Błąd krytyczny"
+            )
+
+        self.finished.emit(pixmap)
 
 
 class FileTileWidget(QWidget):
@@ -67,9 +133,11 @@ class FileTileWidget(QWidget):
         super().__init__(parent)
         self.file_pair = file_pair
         self.thumbnail_size = default_thumbnail_size
+        self.original_thumbnail: QPixmap | None = None
 
-        # Oryg. QPixmap dla wydajnego skalowania
-        self.original_thumbnail = None
+        # Wątek i worker do ładowania miniatur
+        self.thumbnail_thread: QThread | None = None
+        self.thumbnail_worker: ThumbnailLoaderWorker | None = None
 
         # Ustawienie podstawowych właściwości widgetu
         self.setObjectName("FileTileWidget")
@@ -89,6 +157,12 @@ class FileTileWidget(QWidget):
 
         # Inicjalizacja UI
         self._init_ui()
+
+        # Ustawienie danych tekstowych i metadanych (bez ładowania miniatury)
+        self._update_static_data()
+
+        # Asynchroniczne ładowanie miniatury
+        self._load_thumbnail_async()
 
         # MODIFICATION: Install event filters for clickable labels
         self.thumbnail_label.installEventFilter(self)
@@ -221,37 +295,86 @@ class FileTileWidget(QWidget):
             file_pair (FilePair): Obiekt pary plików z nowymi danymi
         """
         self.file_pair = file_pair
+        self._update_static_data()
 
-        try:  # Wczytujemy miniaturę jeśli nie była jeszcze wczytana
-            if not self.original_thumbnail:
-                width, height = self.thumbnail_size
-                thumbnail = self.file_pair.load_preview_thumbnail(width, height)
-                if thumbnail and not thumbnail.isNull():
-                    self.original_thumbnail = thumbnail
-                    self.thumbnail_label.setPixmap(thumbnail)
-
-            # Ustawiamy nazwę (bez rozszerzenia)
-            self.name_label.setText(self.file_pair.get_base_name())
-
-            # Ustawiamy rozmiar pliku
-            self.size_label.setText(self.file_pair.get_formatted_archive_size())
-
-            # MODIFICATION: Update favorite status on data update
-            self.update_favorite_status(self.file_pair.is_favorite_file())
-            # MODIFICATION: Update stars display on data update
-            self.update_stars_display(self.file_pair.get_stars())
-            # MODIFICATION: Update color tag display on data update
-            self.update_color_tag_display(self.file_pair.get_color_tag())
+    def _update_static_data(self):
+        """Aktualizuje statyczne dane kafelka (nazwa, rozmiar, metadane)."""
+        try:
+            if self.file_pair:  # Upewnij się, że file_pair istnieje
+                self.name_label.setText(self.file_pair.get_base_name())
+                self.size_label.setText(self.file_pair.get_formatted_archive_size())
+                self.update_favorite_status(self.file_pair.is_favorite_file())
+                self.update_stars_display(self.file_pair.get_stars())
+                self.update_color_tag_display(self.file_pair.get_color_tag())
+            else:
+                self.name_label.setText("Brak danych")
+                self.size_label.setText("-")
+                # Ustaw domyślne stany dla kontrolek, jeśli file_pair jest None
+                self.update_favorite_status(False)
+                self.update_stars_display(0)
+                self.update_color_tag_display("")
 
         except Exception as e:
-            logging.error(f"Błąd aktualizacji kafelka: {e}")
-            # W przypadku błędu, wyświetlamy przynajmniej nazwę jeśli jest dostępna
-            try:
-                self.name_label.setText(self.file_pair.get_base_name())
-                self.size_label.setText("Błąd danych")
-            except:
-                self.name_label.setText("Błąd")
-                self.size_label.setText("")
+            logging.error(f"Błąd aktualizacji danych statycznych kafelka: {e}")
+            # Fallback UI w przypadku błędu
+            self.name_label.setText("Błąd danych")
+            self.size_label.setText("Błąd")
+
+    def _load_thumbnail_async(self):
+        if self.thumbnail_thread and self.thumbnail_thread.isRunning():
+            logging.debug(
+                f"Ładowanie miniatury dla {self.file_pair.get_base_name()} już w toku."
+            )
+            return
+
+        # Natychmiastowe ustawienie placeholdera
+        placeholder = create_placeholder_pixmap(
+            self.thumbnail_size[0], self.thumbnail_size[1], text="Ładowanie..."
+        )
+        self.thumbnail_label.setPixmap(placeholder)
+
+        self.thumbnail_thread = QThread(self)
+        self.thumbnail_worker = ThumbnailLoaderWorker(
+            self.file_pair, self.thumbnail_size[0], self.thumbnail_size[1]
+        )
+        self.thumbnail_worker.moveToThread(self.thumbnail_thread)
+
+        # Połączenie sygnałów
+        self.thumbnail_worker.finished.connect(self._on_thumbnail_loaded)
+        self.thumbnail_thread.started.connect(self.thumbnail_worker.run)
+
+        # Sprzątanie: Worker emituje finished -> Thread się zatrzymuje (quit)
+        self.thumbnail_worker.finished.connect(self.thumbnail_thread.quit)
+        # Thread emituje finished -> Worker i Thread są usuwane
+        self.thumbnail_thread.finished.connect(self.thumbnail_worker.deleteLater)
+        self.thumbnail_thread.finished.connect(self.thumbnail_thread.deleteLater)
+        # Rozłącz sygnały, aby uniknąć podwójnego wywołania slotów,
+        # jeśli _load_thumbnail_async jest wywoływane wielokrotnie
+        # (chociaż obecna logika na to nie pozwala, jeśli wątek działa).
+        # To bardziej zabezpieczenie na przyszłość.
+        self.thumbnail_thread.finished.connect(
+            lambda: setattr(self, "thumbnail_worker", None)
+        )
+        self.thumbnail_thread.finished.connect(
+            lambda: setattr(self, "thumbnail_thread", None)
+        )
+
+        self.thumbnail_thread.start()
+        logging.debug(
+            f"Rozpoczęto asynch. ładowanie dla {self.file_pair.get_base_name()}"
+        )
+
+    def _on_thumbnail_loaded(self, pixmap: QPixmap):
+        log_msg = (
+            f"Miniatura załadowana dla {self.file_pair.get_base_name()}, "
+            f"isNull: {pixmap.isNull()}"
+        )
+        logging.debug(log_msg)
+        self.original_thumbnail = pixmap
+        self.set_thumbnail_size(self.thumbnail_size)
+
+        # Atrybuty thumbnail_worker i thumbnail_thread zostaną ustawione na None przez
+        # połączenia z self.thumbnail_thread.finished.
 
     def set_thumbnail_size(self, size_wh):
         """

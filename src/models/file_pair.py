@@ -2,10 +2,7 @@ import logging
 import os
 import shutil
 
-from PIL import Image, UnidentifiedImageError
 from PyQt6.QtGui import QPixmap
-
-from src.utils.image_utils import create_placeholder_pixmap, pillow_image_to_qpixmap
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +13,7 @@ class FilePair:
     ):
         self.archive_path = archive_path
         self.preview_path = preview_path
-        self.working_directory = (
-            working_directory  # Przechowujemy dla operacji na ścieżkach względnych
-        )
+        self.working_directory = working_directory  # Przechowujemy dla operacji na ścieżkach względnych
         self.preview_thumbnail: QPixmap | None = None
         self.archive_size_bytes: int | None = None
         self.is_favorite: bool = False
@@ -35,50 +30,6 @@ class FilePair:
     def get_preview_path(self):
         return self.preview_path
 
-    def load_preview_thumbnail(self, target_width: int, target_height: int) -> None:
-        if not self.preview_path or not os.path.exists(self.preview_path):
-            logger.warning(
-                f"Plik podglądu nie istnieje: {self.preview_path}. Tworzenie placeholdera."
-            )
-            self.preview_thumbnail = create_placeholder_pixmap(
-                target_width, target_height, "grey", "Brak podglądu"
-            )
-            return
-
-        try:
-            # Wczytanie obrazu przy użyciu Pillow
-            with Image.open(self.preview_path) as img:
-                # Utworzenie kopii obrazu do skalowania (thumbnail modyfikuje oryginalny obraz)
-                thumbnail = img.copy()
-                # Skalowanie z zachowaniem proporcji
-                thumbnail.thumbnail((target_width, target_height), Image.LANCZOS)
-
-                # Konwersja na QPixmap
-                self.preview_thumbnail = pillow_image_to_qpixmap(thumbnail)
-
-                if self.preview_thumbnail.isNull():
-                    raise ValueError("Konwersja do QPixmap dała pusty wynik")
-
-                return self.preview_thumbnail
-
-        except FileNotFoundError:
-            logger.error(f"Nie znaleziono pliku podglądu: {self.preview_path}")
-            self.preview_thumbnail = create_placeholder_pixmap(
-                target_width, target_height, text="Brak pliku"
-            )
-        except UnidentifiedImageError:
-            logger.error(f"Nieprawidłowy format pliku: {self.preview_path}")
-            self.preview_thumbnail = create_placeholder_pixmap(
-                target_width, target_height, text="Błąd formatu"
-            )
-        except Exception as e:
-            logger.error(f"Błąd wczytywania podglądu {self.preview_path}: {e}")
-            self.preview_thumbnail = create_placeholder_pixmap(
-                target_width, target_height, text="Błąd"
-            )
-
-        return self.preview_thumbnail
-
     def get_archive_size(self) -> int | None:
         """
         Pobiera rozmiar pliku archiwum w bajtach.
@@ -90,10 +41,10 @@ class FilePair:
             self.archive_size_bytes = os.path.getsize(self.archive_path)
             return self.archive_size_bytes
         except FileNotFoundError:
-            logger.error(f"Nie znaleziono pliku archiwum: {self.archive_path}")
+            logger.error(f"Nie znaleziono archiwum: {self.archive_path}")
             self.archive_size_bytes = 0
         except Exception as e:
-            logger.error(f"Błąd pobierania rozmiaru archiwum {self.archive_path}: {e}")
+            logger.error(f"Błąd rozmiaru archiwum {self.archive_path}: {e}")
             self.archive_size_bytes = 0
 
         return self.archive_size_bytes
@@ -111,11 +62,9 @@ class FilePair:
         if self.archive_size_bytes is None:
             self.get_archive_size()
 
-        # Obsługa przypadku, gdy rozmiar nadal jest None lub 0
         if self.archive_size_bytes is None or self.archive_size_bytes == 0:
             return "0 B"
 
-        # Konwersja na czytelny format z odpowiednią jednostką
         units = ["B", "KB", "MB", "GB", "TB"]
         size = float(self.archive_size_bytes)
         unit_index = 0
@@ -128,11 +77,11 @@ class FilePair:
         if size.is_integer():
             formatted_size = str(int(size))
         else:
-            formatted_size = (
-                f"{size:.2f}".rstrip("0").rstrip(".")
-                if "." in f"{size:.2f}"
-                else f"{int(size)}"
-            )
+            size_str = f"{size:.2f}"
+            if "." in size_str:
+                formatted_size = size_str.rstrip("0").rstrip(".")
+            else:
+                formatted_size = str(int(size))  # Fallback, gdyby rstrip usunął za dużo
 
         return f"{formatted_size} {units[unit_index]}"
 
@@ -144,10 +93,11 @@ class FilePair:
             bool: Nowy stan flagi is_favorite
         """
         self.is_favorite = not self.is_favorite
-        logger.debug(
+        log_msg = (
             f"Przełączono status 'ulubiony' dla {self.get_base_name()}: "
             f"{self.is_favorite}"
         )
+        logger.debug(log_msg)
         return self.is_favorite
 
     def is_favorite_file(self):
@@ -184,10 +134,11 @@ class FilePair:
             int: Ustawiona liczba gwiazdek.
         """
         if not isinstance(num_stars, int) or not (0 <= num_stars <= 5):
-            logger.warning(
+            log_msg = (
                 f"Nieprawidłowa liczba gwiazdek ({num_stars}) "
                 f"dla {self.get_base_name()}. Ustawiono 0."
             )
+            logger.warning(log_msg)
             self.stars = 0
         else:
             self.stars = num_stars
@@ -215,10 +166,11 @@ class FilePair:
             str: Ustawiony tag kolorystyczny.
         """
         self.color_tag = str(color) if color is not None else ""
-        logger.debug(
+        log_msg = (
             f"Ustawiono tag koloru dla {self.get_base_name()} na: "
             f"'{self.color_tag}'"
         )
+        logger.debug(log_msg)
         return self.color_tag
 
     def get_color_tag(self) -> str:
