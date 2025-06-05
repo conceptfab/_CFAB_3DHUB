@@ -4,114 +4,87 @@ Moduł odpowiedzialny za skanowanie folderów i parowanie plików.
 
 import logging
 import os
+from collections import defaultdict
+from typing import List, Tuple
 
-from src.app_config import SUPPORTED_ARCHIVE_EXTENSIONS, SUPPORTED_PREVIEW_EXTENSIONS
 from src.models.file_pair import FilePair
+
+logger = logging.getLogger(__name__)
+
+# Definicje rozszerzeń są teraz w jednym miejscu, tutaj.
+ARCHIVE_EXTENSIONS = {".rar", ".zip", ".7z"}
+PREVIEW_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+
+
+def _normalize_path(path: str) -> str:
+    """Normalizuje ścieżkę, zamieniając separatory na '/'."""
+    if not path:
+        return ""
+    return os.path.normpath(path).replace("\\", "/")
 
 
 def scan_folder_for_pairs(
-    directory_path: str,
-) -> tuple[list[FilePair], list[str], list[str]]:
+    directory: str,
+) -> Tuple[List[FilePair], List[str], List[str]]:
     """
-    Rekursywnie przeszukuje podany katalog i jego podfoldery w poszukiwaniu
-    plików archiwów i odpowiadających im plików podglądów.
-
-    Paruje pliki, jeśli mają identyczną nazwę (bez rozszerzenia),
-    ignorując wielkość liter. W przypadku wielu podglądów do jednego
-    archiwum, wybiera pierwszy pasujący.
+    Skanuje podany katalog i jego podkatalogi w poszukiwaniu par plików.
 
     Args:
-        directory_path (str): Ścieżka do folderu do przeskanowania.
+        directory (str): Ścieżka do katalogu do przeskanowania.
 
     Returns:
-        tuple[list[FilePair], list[str], list[str]]: Krotka zawierająca:
-            - listę znalezionych i sparowanych obiektów FilePair.
-            - listę ścieżek do niesparowanych plików archiwów.
-            - listę ścieżek do niesparowanych plików podglądów.
+        Tuple[List[FilePair], List[str], List[str]]: Krotka zawierająca listę
+        znalezionych par, listę niesparowanych archiwów i listę niesparowanych
+        podglądów.
     """
-    logging.info(f"Skanowanie folderu: {directory_path}")
-    found_pairs: list[FilePair] = []
-    unpaired_archives: list[str] = []
-    unpaired_previews: list[str] = []
-    # Słownik do przechowywania plików:
-    # {normalized_base_name: {type: path}}
-    potential_files = {}
+    directory = _normalize_path(directory)
+    logger.info(f"Rozpoczęto skanowanie katalogu: {directory}")
+    found_pairs: List[FilePair] = []
+    unpaired_archives: List[str] = []
+    unpaired_previews: List[str] = []
+    file_map = defaultdict(list)
 
-    for root, _, files in os.walk(directory_path):
-        for file_name in files:
-            # Zapewnienie, że nazwa pliku jest traktowana jako string Unicode
-            if not isinstance(file_name, str):
-                file_name = str(file_name)
+    # Krok 1: Zbieranie wszystkich plików i normalizacja ścieżek od razu
+    for root, _, files in os.walk(directory):
+        normalized_root = _normalize_path(root)
+        for name in files:
+            base_name, _ = os.path.splitext(name)
+            full_path = os.path.join(normalized_root, name)
+            # Kluczem mapy jest ścieżka bazowa (folder/nazwa_bez_rozszerzenia)
+            map_key = os.path.join(normalized_root, base_name.lower())
+            file_map[map_key].append(full_path)
 
-            base_name, extension = os.path.splitext(file_name)
-            # Normalizacja wielkości liter dla nazwy bazowej
-            normalized_base_name = base_name.lower()
-            extension = extension.lower()
-            full_path = os.path.join(root, file_name)
+    # Krok 2: Przetwarzanie zebranych plików i tworzenie par
+    for _, files in file_map.items():
+        archive_file = None
+        preview_file = None
 
-            # Ignoruj pliki bez nazwy (np. ukryte pliki systemowe)
-            # Użycie znormalizowanej nazwy do sprawdzenia
-            if not normalized_base_name:
-                continue
+        for file_path in files:
+            _, ext = os.path.splitext(file_path)
+            if ext.lower() in ARCHIVE_EXTENSIONS:
+                archive_file = file_path
+            elif ext.lower() in PREVIEW_EXTENSIONS:
+                preview_file = file_path
 
-            file_type = None
-            if extension in SUPPORTED_ARCHIVE_EXTENSIONS:
-                file_type = "archive"
-            elif extension in SUPPORTED_PREVIEW_EXTENSIONS:
-                file_type = "preview"
-
-            if file_type:
-                # Użycie znormalizowanej nazwy jako klucza
-                if normalized_base_name not in potential_files:
-                    potential_files[normalized_base_name] = {}
-
-                # Jeśli już istnieje plik tego typu o tej samej nazwie bazowej,
-                # nie nadpisujemy go (bierzemy pierwszy znaleziony)
-                # Użycie znormalizowanej nazwy do sprawdzenia
-                if file_type not in potential_files[normalized_base_name]:
-                    potential_files[normalized_base_name][file_type] = full_path
-                    logging.debug(f"Potencjalny plik: {full_path} ({file_type})")
-                else:
-                    # Logowanie oryginalnej nazwy dla czytelności
-                    log_msg = (
-                        f"Ignorowanie '{file_type}' dla '{base_name}': "
-                        f"{full_path}. Istnieje: "
-                        f"{potential_files[normalized_base_name][file_type]}"
-                    )
-                    logging.debug(log_msg)
-
-    # Parowanie plików
-    # base_name jest tutaj już znormalizowany
-    for base_name, files_data in potential_files.items():
-        if "archive" in files_data and "preview" in files_data:
-            archive_path = files_data["archive"]
-            preview_path = files_data["preview"]
+        if archive_file and preview_file:
+            # Znaleziono parę
             try:
-                pair = FilePair(
-                    archive_path=archive_path,
-                    preview_path=preview_path,
-                    working_directory=directory_path,
-                )
+                pair = FilePair(archive_file, preview_file, directory)
                 found_pairs.append(pair)
-                logging.debug(
-                    f"Sparowano: A={os.path.basename(archive_path)}, "
-                    f"P={os.path.basename(preview_path)}"
-                )
-            except Exception as e:
-                logging.error(f"Błąd FilePair dla {archive_path} i {preview_path}: {e}")
-        elif "archive" in files_data:
-            logging.debug(f"Niesparowane archiwum: {files_data['archive']}")
-            unpaired_archives.append(files_data["archive"])
-        elif "preview" in files_data:
-            logging.debug(f"Niesparowany podgląd: {files_data['preview']}")
-            unpaired_previews.append(files_data["preview"])
+            except ValueError as e:
+                logger.error(f"Błąd tworzenia FilePair dla '{archive_file}': {e}")
+        else:
+            # Pliki bez pary
+            if archive_file:
+                unpaired_archives.append(archive_file)
+            if preview_file:
+                unpaired_previews.append(preview_file)
 
-    log_message = (
-        f"Skanowanie zakończone. Znaleziono {len(found_pairs)} par, "
-        f"{len(unpaired_archives)} niesparowanych archiwów, "
+    logger.info(
+        f"Zakończono skanowanie '{directory}'. Znaleziono {len(found_pairs)} par, "
+        f"{len(unpaired_archives)} niesparowanych archiwów i "
         f"{len(unpaired_previews)} niesparowanych podglądów."
     )
-    logging.info(log_message)
     return found_pairs, unpaired_archives, unpaired_previews
 
 

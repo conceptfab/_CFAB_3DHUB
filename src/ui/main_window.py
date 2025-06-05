@@ -1126,117 +1126,100 @@ class MainWindow(QMainWindow):
         # Wyświetlenie menu
         context_menu.exec(widget.mapToGlobal(position))
 
-    def _rename_file_pair(self, file_pair, widget):
+    def _rename_file_pair(self, file_pair: FilePair, widget: QWidget):
         """
-        Zmienia nazwę pary plików.
+        Otwiera dialog do zmiany nazwy pary plików i przetwarza wynik.
         """
-        old_name = file_pair.get_base_name()
+        current_name = file_pair.get_base_name()
         new_name, ok = QInputDialog.getText(
             self,
             "Zmień nazwę pliku",
-            "Podaj nową nazwę dla pary plików (bez rozszerzenia):",
-            text=old_name,
+            "Wprowadź nową nazwę (bez rozszerzenia):",
+            text=current_name,
         )
 
-        if ok and new_name and new_name != old_name:
-            # Pobieramy ścieżki absolutne dla funkcji operacyjnej
-            old_archive_path = os.path.join(
-                self.current_working_directory, file_pair.get_relative_archive_path()
+        if ok and new_name and new_name != current_name:
+            logging.info(
+                f"Rozpoczęcie zmiany nazwy dla '{current_name}' na '{new_name}'"
             )
-            old_preview_path = None
-            if file_pair.get_relative_preview_path():
-                old_preview_path = os.path.join(
-                    self.current_working_directory,
-                    file_pair.get_relative_preview_path(),
-                )
 
+            # Użycie scentralizowanej funkcji z file_operations
             result = file_operations.rename_file_pair(
-                old_archive_path, old_preview_path, new_name
+                file_pair.archive_path, file_pair.preview_path, new_name
             )
 
             if result:
                 new_archive_path, new_preview_path = result
                 logging.info(
-                    f"Zmieniono nazwę pary plików z '{old_name}' na '{new_name}'"
+                    f"Pomyślnie zmieniono nazwę na poziomie systemu plików. "
+                    f"A: {new_archive_path}, P: {new_preview_path}"
                 )
 
-                # Aktualizujemy obiekt FilePair o nowe dane
+                # Aktualizacja obiektu FilePair
                 file_pair.base_name = new_name
-                file_pair.archive_path = os.path.relpath(
-                    new_archive_path, self.current_working_directory
-                )
-                if new_preview_path:
-                    file_pair.preview_path = os.path.relpath(
-                        new_preview_path, self.current_working_directory
-                    )
-                else:
-                    file_pair.preview_path = None
+                file_pair.archive_path = new_archive_path
+                file_pair.preview_path = new_preview_path
 
-                # Zaktualizuj metadane
+                # Aktualizacja widgetu w UI
+                widget.update_base_name_display(new_name)
                 self._save_metadata()
-
-                # Zaktualizuj widget
-                widget.update_data(file_pair)
             else:
-                QMessageBox.warning(
+                QMessageBox.critical(
                     self,
-                    "Błąd zmiany nazwy",
-                    f"Nie udało się zmienić nazwy pary plików '{old_name}' na '{new_name}'.",
-                    QMessageBox.StandardButton.Ok,
+                    "Błąd",
+                    f"Nie udało się zmienić nazwy pliku na '{new_name}'. "
+                    f"Sprawdź logi, aby uzyskać więcej informacji.",
                 )
+                logging.error(f"Nie udało się zmienić nazwy dla '{current_name}'")
+        else:
+            logging.debug("Zmiana nazwy anulowana lub nazwa nie uległa zmianie.")
 
-    def _delete_file_pair(self, file_pair, widget):
+    def _delete_file_pair(self, file_pair: FilePair, widget: QWidget):
         """
-        Usuwa parę plików po potwierdzeniu przez użytkownika.
+        Pyta o potwierdzenie i usuwa parę plików.
         """
-        file_name = file_pair.get_base_name()
+        base_name = file_pair.get_base_name()
         reply = QMessageBox.question(
             self,
             "Potwierdź usunięcie",
-            f"Czy na pewno chcesz usunąć parę plików '{file_name}'?\nTa operacja jest nieodwracalna!",
+            f"Czy na pewno chcesz usunąć parę plików '{base_name}'?\n"
+            "Ta operacja jest nieodwracalna.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            archive_path_to_delete = file_pair.get_archive_path()  # klucz do słownika
+            logging.info(f"Rozpoczęcie usuwania pary plików: {base_name}")
 
-            # Pobieramy ścieżki absolutne
-            abs_archive_path = os.path.join(
-                self.current_working_directory, file_pair.get_relative_archive_path()
+            # Użycie scentralizowanej funkcji z file_operations
+            success = file_operations.delete_file_pair(
+                file_pair.archive_path, file_pair.preview_path
             )
-            abs_preview_path = None
-            if file_pair.get_relative_preview_path():
-                abs_preview_path = os.path.join(
-                    self.current_working_directory,
-                    file_pair.get_relative_preview_path(),
-                )
 
-            if file_operations.delete_file_pair(abs_archive_path, abs_preview_path):
-                logging.info(f"Usunięto parę plików: {file_name}")
+            if success:
+                logging.info(f"Pomyślnie usunięto pliki dla pary: {base_name}")
+                # Usunięcie z list i UI
+                if file_pair in self.all_file_pairs:
+                    self.all_file_pairs.remove(file_pair)
+                if file_pair in self.file_pairs_list:
+                    self.file_pairs_list.remove(file_pair)
 
-                # Usuń parę z listy głównej
-                self.all_file_pairs.remove(file_pair)
+                # Usunięcie widgetu z layoutu i słownika
+                if widget:
+                    widget.setParent(None)
+                    widget.deleteLater()
+                if file_pair.archive_path in self.gallery_tile_widgets:
+                    del self.gallery_tile_widgets[file_pair.archive_path]
 
-                # Zaktualizuj metadane (przed usunięciem z UI)
-                self._save_metadata()
-
-                # Usuń widget ze słownika i layoutu
-                tile_to_delete = self.gallery_tile_widgets.pop(
-                    archive_path_to_delete, None
-                )
-                if tile_to_delete:
-                    if self.tiles_layout.indexOf(tile_to_delete) > -1:
-                        self.tiles_layout.removeWidget(tile_to_delete)
-                    tile_to_delete.deleteLater()
-
-                self._apply_filters_and_update_view()
+                self._save_metadata()  # Zapisz metadane po usunięciu
             else:
-                QMessageBox.warning(
+                QMessageBox.critical(
                     self,
-                    "Błąd usuwania plików",
-                    f"Nie udało się usunąć pary plików '{file_name}'.",
-                    QMessageBox.StandardButton.Ok,
+                    "Błąd",
+                    f"Nie udało się usunąć plików dla pary '{base_name}'. "
+                    f"Sprawdź logi, aby uzyskać więcej informacji.",
                 )
+                logging.error(f"Nie udało się usunąć pary plików: {base_name}")
 
     def dragEnterEvent(self, event):
         """
@@ -1288,77 +1271,71 @@ class MainWindow(QMainWindow):
             drop_widget = QApplication.widgetAt(event.globalPosition().toPoint())
             target_folder_path = None
 
-            # Sprawdź, czy upuszczono na drzewo folderów
-            if isinstance(drop_widget, QTreeView) or isinstance(
-                drop_widget.parent(), QTreeView
-            ):
-                tree_view = (
-                    drop_widget
-                    if isinstance(drop_widget, QTreeView)
-                    else drop_widget.parent()
-                )
-                pos_in_tree = tree_view.viewport().mapFromGlobal(
-                    event.globalPosition().toPoint()
-                )
-                index = tree_view.indexAt(pos_in_tree)
-                if index.isValid():
-                    target_folder_path = self.file_system_model.filePath(index)
-
-            if not target_folder_path or not os.path.isdir(target_folder_path):
-                logging.debug("Upuszczono poza prawidłowym folderem w drzewie.")
-                event.ignore()
-                return
-
-            # Ścieżki absolutne do przeniesienia
-            old_abs_archive_path = os.path.join(
-                self.current_working_directory,
-                target_file_pair.get_relative_archive_path(),
-            )
-            old_abs_preview_path = None
-            if target_file_pair.get_relative_preview_path():
-                old_abs_preview_path = os.path.join(
-                    self.current_working_directory,
-                    target_file_pair.get_relative_preview_path(),
-                )
-
-            # Przeniesienie plików za pomocą nowej funkcji
-            result = file_operations.move_file_pair(
-                old_abs_archive_path, old_abs_preview_path, target_folder_path
-            )
-
-            if result:
-                new_archive_path, new_preview_path = result
-                logging.info(
-                    f"Przeniesiono parę plików '{target_file_pair.get_base_name()}' do '{target_folder_path}'"
-                )
-
-                # Aktualizacja obiektu FilePair
-                target_file_pair.archive_path = os.path.relpath(
-                    new_archive_path, self.current_working_directory
-                )
-                if new_preview_path:
-                    target_file_pair.preview_path = os.path.relpath(
-                        new_preview_path, self.current_working_directory
+            # Sprawdź, czy upuszczono pliki na folder w drzewie
+            target_index = self.folder_tree.indexAt(event.pos())
+            if target_index.isValid():
+                target_folder_path = self.file_system_model.filePath(target_index)
+                if os.path.isdir(target_folder_path):
+                    self._handle_drop_on_folder(
+                        event.mimeData().urls(), target_folder_path
                     )
-                else:
-                    target_file_pair.preview_path = None
+                    event.acceptProposedAction()
+                    return
 
-                # Zaktualizuj metadane i odśwież widok
-                self._save_metadata()
-                self._refresh_file_pairs_after_folder_operation()  # Ta metoda powinna przeładować wszystko
-                event.acceptProposedAction()
-            else:
-                logging.warning(
-                    f"Przenoszenie pary plików {target_file_pair.get_base_name()} nie powiodło się."
-                )
-                event.ignore()
+            # Jeśli nie upuszczono na żaden konkretny widget, ignorujemy
+            event.ignore()
 
         except Exception as e:
             logging.error(f"Błąd podczas obsługi przeciągnij i upuść: {e}")
             event.ignore()
 
+    def _handle_drop_on_folder(self, urls, target_folder_path):
+        """Obsługuje upuszczenie plików na folder w drzewie."""
+        moved_any_file = False
+        for url in urls:
+            if url.isLocalFile():
+                source_path = url.toLocalFile()
+                # Znajdź FilePair na podstawie ścieżki archiwum
+                source_pair = next(
+                    (p for p in self.all_file_pairs if p.archive_path == source_path),
+                    None,
+                )
+
+                if source_pair:
+                    # Użycie scentralizowanej funkcji do przenoszenia
+                    result = file_operations.move_file_pair(
+                        source_pair.archive_path,
+                        source_pair.preview_path,
+                        target_folder_path,
+                    )
+
+                    if result:
+                        new_archive_path, new_preview_path = result
+                        logging.info(
+                            f"Pomyślnie przeniesiono parę do '{target_folder_path}'"
+                        )
+                        # Aktualizacja obiektu FilePair
+                        source_pair.archive_path = new_archive_path
+                        source_pair.preview_path = new_preview_path
+                        moved_any_file = True
+                    else:
+                        QMessageBox.warning(
+                            self,
+                            "Błąd przenoszenia",
+                            f"Nie udało się przenieść pliku: "
+                            f"{os.path.basename(source_path)}",
+                        )
+                else:
+                    logging.warning(
+                        f"Próbowano przenieść plik '{source_path}', "
+                        "który nie jest częścią znanej pary."
+                    )
+        if moved_any_file:
+            self._refresh_file_pairs_after_folder_operation()
+            self._save_metadata()
+
     def _update_pair_button_state(self):
-        """Aktualizuje stan przycisku 'Sparuj Wybrane' na podstawie zaznaczeń na listach."""
+        """Aktualizuje stan przycisku 'Sparuj ręcznie'."""
         if (
             not hasattr(self, "unpaired_archives_list_widget")
             or not hasattr(self, "unpaired_previews_list_widget")
@@ -1430,3 +1407,76 @@ class MainWindow(QMainWindow):
 
         # Zaktualizuj stan przycisku po operacji (zaznaczenia prawdopodobnie znikną lub się zmienią)
         self._update_pair_button_state()
+
+    def _show_unpaired_archive_context_menu(self, position):
+        """Pokazuje menu kontekstowe dla niesparowanego pliku archiwum."""
+        item = self.unpaired_archives_list_widget.itemAt(position)
+        if not item:
+            return
+
+        archive_path = item.data(Qt.ItemDataRole.UserRole)
+        menu = QMenu()
+        open_action = menu.addAction("Otwórz w programie zewnętrznym")
+        delete_action = menu.addAction("Usuń plik")
+
+        action = menu.exec(self.unpaired_archives_list_widget.mapToGlobal(position))
+
+        if action == open_action:
+            file_operations.open_archive_externally(archive_path)
+        elif action == delete_action:
+            reply = QMessageBox.question(
+                self,
+                "Potwierdź usunięcie",
+                f"Czy na pewno chcesz usunąć plik '{os.path.basename(archive_path)}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                try:
+                    os.remove(archive_path)
+                    self.unpaired_archives_list_widget.takeItem(
+                        self.unpaired_archives_list_widget.row(item)
+                    )
+                    if archive_path in self.unpaired_archives:
+                        self.unpaired_archives.remove(archive_path)
+                    logger.info(f"Usunięto niesparowany plik archiwum: {archive_path}")
+                except OSError as e:
+                    QMessageBox.critical(
+                        self, "Błąd", f"Nie udało się usunąć pliku: {e}"
+                    )
+                    logger.error(f"Błąd podczas usuwania niesparowanego archiwum: {e}")
+
+    def _show_unpaired_preview_context_menu(self, position):
+        """Pokazuje menu kontekstowe dla niesparowanego pliku podglądu."""
+        item = self.unpaired_previews_list_widget.itemAt(position)
+        if not item:
+            return
+
+        preview_path = item.data(Qt.ItemDataRole.UserRole)
+        menu = QMenu()
+        delete_action = menu.addAction("Usuń plik")
+
+        action = menu.exec(self.unpaired_previews_list_widget.mapToGlobal(position))
+
+        if action == delete_action:
+            reply = QMessageBox.question(
+                self,
+                "Potwierdź usunięcie",
+                f"Czy na pewno chcesz usunąć plik '{os.path.basename(preview_path)}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                try:
+                    os.remove(preview_path)
+                    self.unpaired_previews_list_widget.takeItem(
+                        self.unpaired_previews_list_widget.row(item)
+                    )
+                    if preview_path in self.unpaired_previews:
+                        self.unpaired_previews.remove(preview_path)
+                    logger.info(f"Usunięto niesparowany plik podglądu: {preview_path}")
+                except OSError as e:
+                    QMessageBox.critical(
+                        self, "Błąd", f"Nie udało się usunąć pliku: {e}"
+                    )
+                    logger.error(f"Błąd podczas usuwania niesparowanego podglądu: {e}")

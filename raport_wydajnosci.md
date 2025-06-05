@@ -137,6 +137,7 @@ Na podstawie analizy kodu oraz dostępnej dokumentacji (w tym `TODO.md`, `correc
 2.  **Krok 2: Kluczowe Refaktoryzacje Strukturalne:**
 
     - **Priorytet:** Wysoki.
+    - **Status:** ✅ **Zakończone**
     - **Cel:** Poprawa struktury kodu i usunięcie długu technicznego przed dalszymi optymalizacjami.
     - **Zadania:**
       - **Refaktoryzacja `FilePair` (SRP):** Przeniesienie logiki operacji plikowych (`rename`, `delete`, `move`) z modelu do modułu `file_operations`.

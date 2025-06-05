@@ -1,90 +1,159 @@
 import logging
 import os
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 
 logger = logging.getLogger(__name__)
 
 
+def _normalize_path(path: str) -> str:
+    """Normalizuje ścieżkę, zamieniając separatory na '/'."""
+    if not path:
+        return ""
+    return os.path.normpath(path).replace("\\", "/")
+
+
 class FilePair:
+    """
+    Reprezentuje parę plików: archiwum i jego podgląd.
+    Przechowuje także metadane związane z tą parą.
+    """
+
     def __init__(
         self, archive_path: str, preview_path: str | None, working_directory: str
     ):
-        self.archive_path = archive_path
-        self.preview_path = preview_path
-        self.working_directory = (
-            working_directory  # Przechowujemy dla operacji na ścieżkach względnych
-        )
+        """
+        Inicjalizuje obiekt pary plików.
+
+        Args:
+            archive_path (str): Absolutna ścieżka do pliku archiwum.
+            preview_path (str | None): Absolutna ścieżka do pliku podglądu.
+            working_directory (str): Absolutna ścieżka do katalogu roboczego.
+        """
+        norm_wd = _normalize_path(working_directory)
+        norm_archive = _normalize_path(archive_path)
+        norm_preview = _normalize_path(preview_path) if preview_path else None
+
+        if not os.path.isabs(norm_archive):
+            raise ValueError("Ścieżka do archiwum musi być absolutna.")
+        if norm_preview and not os.path.isabs(norm_preview):
+            raise ValueError("Ścieżka do podglądu musi być absolutna.")
+        if not os.path.isabs(norm_wd):
+            raise ValueError("Ścieżka do katalogu roboczego musi być absolutna.")
+
+        self.working_directory = norm_wd
+        self.archive_path: str = norm_archive
+        self.preview_path: str | None = norm_preview
+
+        # Nazwa bazowa jest pobierana z pliku archiwum
+        self.base_name: str = os.path.splitext(os.path.basename(self.archive_path))[0]
+
+        # Inicjalizacja metadanych z domyślnymi wartościami
         self.preview_thumbnail: QPixmap | None = None
         self.archive_size_bytes: int | None = None
         self.is_favorite: bool = False
         self.stars: int = 0
         self.color_tag: str | None = None
-        self.base_name = os.path.splitext(os.path.basename(archive_path))[0]
 
-    def get_base_name(self) -> str:
-        return self.base_name
+    def __repr__(self) -> str:
+        return (
+            f"FilePair(base='{self.base_name}', "
+            f"archive='{self.get_relative_archive_path()}', "
+            f"preview='{self.get_relative_preview_path()}')"
+        )
 
-    def get_archive_path(self):
+    def get_archive_path(self) -> str:
+        """Zwraca absolutną, znormalizowaną ścieżkę do pliku archiwum."""
         return self.archive_path
 
-    def get_preview_path(self):
+    def get_preview_path(self) -> str | None:
+        """Zwraca absolutną, znormalizowaną ścieżkę do pliku podglądu lub None."""
         return self.preview_path
 
+    def get_relative_archive_path(self) -> str:
+        """Zwraca względną, znormalizowaną ścieżkę do pliku archiwum."""
+        return os.path.relpath(self.archive_path, self.working_directory).replace(
+            "\\", "/"
+        )
+
+    def get_relative_preview_path(self) -> str | None:
+        """Zwraca względną, znormalizowaną ścieżkę do pliku podglądu lub None."""
+        if not self.preview_path:
+            return None
+        return os.path.relpath(self.preview_path, self.working_directory).replace(
+            "\\", "/"
+        )
+
+    def get_base_name(self) -> str:
+        """Zwraca nazwę bazową pary plików."""
+        return self.base_name
+
+    def load_preview_thumbnail(self, size: int) -> None:
+        """
+        Ładuje miniaturę pliku podglądu.
+        Jeśli plik podglądu nie istnieje, tworzy placeholder.
+        """
+        if self.preview_path and os.path.exists(self.preview_path):
+            try:
+                pixmap = QPixmap(self.preview_path)
+                if not pixmap.isNull():
+                    self.preview_thumbnail = pixmap.scaled(
+                        size,
+                        size,
+                        aspectRatioMode=Qt.AspectRatioMode.KeepAspectRatio,
+                        transformMode=Qt.TransformationMode.SmoothTransformation,
+                    )
+                    return
+                else:
+                    logger.warning(
+                        f"Nie udało się załadować QPixmap dla: {self.preview_path}"
+                    )
+            except Exception as e:
+                logger.error(f"Błąd ładowania miniatury z {self.preview_path}: {e}")
+        else:
+            logger.debug(
+                f"Brak pliku podglądu dla {self.base_name}, tworzenie placeholdera."
+            )
+
+        # Tworzenie placeholdera, jeśli nie udało się załadować obrazka
+        self.preview_thumbnail = QPixmap(size, size)
+        self.preview_thumbnail.fill(Qt.GlobalColor.gray)
+
+    def get_preview_thumbnail(self) -> QPixmap | None:
+        """Zwraca załadowaną miniaturę."""
+        return self.preview_thumbnail
+
     def get_archive_size(self) -> int | None:
-        """
-        Pobiera rozmiar pliku archiwum w bajtach.
-
-        Returns:
-            int: Rozmiar pliku archiwum w bajtach lub 0 w przypadku błędu
-        """
-        try:
-            self.archive_size_bytes = os.path.getsize(self.archive_path)
-            return self.archive_size_bytes
-        except FileNotFoundError:
-            logger.error(f"Nie znaleziono archiwum: {self.archive_path}")
-            self.archive_size_bytes = 0
-        except Exception as e:
-            logger.error(f"Błąd rozmiaru archiwum {self.archive_path}: {e}")
-            self.archive_size_bytes = 0
-
+        """Pobiera i zwraca rozmiar pliku archiwum w bajtach."""
+        if self.archive_size_bytes is None:
+            try:
+                if os.path.exists(self.archive_path):
+                    self.archive_size_bytes = os.path.getsize(self.archive_path)
+                else:
+                    logger.warning(
+                        f"Plik archiwum nie istnieje, nie można pobrać rozmiaru: "
+                        f"{self.archive_path}"
+                    )
+                    self.archive_size_bytes = 0  # lub inna wartość oznaczająca błąd
+            except OSError as e:
+                logger.error(f"Błąd odczytu rozmiaru pliku {self.archive_path}: {e}")
+                self.archive_size_bytes = 0
         return self.archive_size_bytes
 
     def get_formatted_archive_size(self) -> str:
-        """
-        Zwraca sformatowany rozmiar pliku archiwum w czytelnej postaci
-        (B, KB, MB, GB).
-
-        Jeśli rozmiar nie został jeszcze pobrany, wywołuje get_archive_size().
-
-        Returns:
-            str: Sformatowany rozmiar pliku z jednostką
-        """
-        if self.archive_size_bytes is None:
-            self.get_archive_size()
-
-        if self.archive_size_bytes is None or self.archive_size_bytes == 0:
-            return "0 B"
-
-        units = ["B", "KB", "MB", "GB", "TB"]
-        size = float(self.archive_size_bytes)
-        unit_index = 0
-
-        while size >= 1024.0 and unit_index < len(units) - 1:
-            size /= 1024.0
-            unit_index += 1
-
-        # Formatowanie liczby: do 2 miejsc po przecinku, usunięcie końcowych zer
-        if size.is_integer():
-            formatted_size = str(int(size))
+        """Zwraca sformatowany rozmiar pliku archiwum (np. KB, MB)."""
+        size_bytes = self.get_archive_size()
+        if size_bytes is None or size_bytes == 0:
+            return "N/A"
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024**2:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024**3:
+            return f"{size_bytes / 1024**2:.1f} MB"
         else:
-            size_str = f"{size:.2f}"
-            if "." in size_str:
-                formatted_size = size_str.rstrip("0").rstrip(".")
-            else:
-                formatted_size = str(int(size))  # Fallback, gdyby rstrip usunął za dużo
-
-        return f"{formatted_size} {units[unit_index]}"
+            return f"{size_bytes / 1024**3:.1f} GB"
 
     def toggle_favorite(self) -> None:
         """
@@ -182,15 +251,3 @@ class FilePair:
             str: Tag kolorystyczny (może być pusty).
         """
         return self.color_tag
-
-    def get_relative_archive_path(self) -> str:
-        """Zwraca względną ścieżkę pliku archiwum względem folderu roboczego."""
-        if os.path.isabs(self.archive_path):
-            return os.path.relpath(self.archive_path, self.working_directory)
-        return self.archive_path  # Już jest względna
-
-    def get_relative_preview_path(self) -> str | None:
-        """Zwraca względną ścieżkę pliku podglądu względem folderu roboczego, jeśli istnieje."""
-        if self.preview_path and os.path.isabs(self.preview_path):
-            return os.path.relpath(self.preview_path, self.working_directory)
-        return self.preview_path  # Już jest względna lub None
