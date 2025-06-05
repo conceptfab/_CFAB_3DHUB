@@ -10,7 +10,7 @@ if _PROJECT_ROOT not in sys.path:
 # --- Koniec modyfikacji sys.path ---
 
 # Import głównej funkcji aplikacji teraz, gdy sys.path jest ustawione.
-from src.main import main
+from src.main import main  # noqa: E402
 
 
 def run():
