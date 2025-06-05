@@ -9,11 +9,29 @@ from collections import OrderedDict
 
 from PyQt6.QtCore import QDir, Qt
 from PyQt6.QtGui import QAction, QFileSystemModel, QPixmap
-from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFrame,
-                             QGridLayout, QGroupBox, QHBoxLayout, QInputDialog,
-                             QLabel, QMainWindow, QMenu, QMessageBox,
-                             QPushButton, QScrollArea, QSizePolicy, QSlider,
-                             QSplitter, QTreeView, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QListWidget,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSlider,
+    QSplitter,
+    QTabWidget,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src.logic import file_operations, metadata_manager
 from src.logic.filter_logic import filter_file_pairs
@@ -87,7 +105,8 @@ class MainWindow(QMainWindow):
     def _init_ui(self):
         """
         Inicjalizuje elementy interfejsu użytkownika.
-        """  # Panel górny
+        """
+        # Panel górny
         self.top_panel = QWidget()
         self.top_panel.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
@@ -98,7 +117,9 @@ class MainWindow(QMainWindow):
         # Przycisk wyboru folderu
         self.select_folder_button = QPushButton("Wybierz Folder Roboczy")
         self.select_folder_button.clicked.connect(self._select_working_directory)
-        self.top_layout.addWidget(self.select_folder_button)  # Panel kontroli rozmiaru
+        self.top_layout.addWidget(self.select_folder_button)
+
+        # Panel kontroli rozmiaru
         self.size_control_panel = QWidget()
         self.size_control_panel.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
@@ -169,40 +190,37 @@ class MainWindow(QMainWindow):
         self.filter_panel.setVisible(False)  # Ukryty na starcie
         # --- Koniec Panelu Filtrowania ---
 
-        # Separator poziomy
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        self.main_layout.addWidget(
-            separator
-        )  # Dodajemy splitter do podziału na drzewo katalogów i kafelki
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        # --- TabWidget jako główny kontener widoków ---
+        self.tab_widget = QTabWidget()
+        self.main_layout.addWidget(self.tab_widget)
 
-        # Drzewo katalogów po lewej stronie
+        # === Zakładka 1: Galeria ===
+        self.gallery_tab = QWidget()
+        self.gallery_tab_layout = QVBoxLayout(self.gallery_tab)
+        self.gallery_tab_layout.setContentsMargins(
+            0, 0, 0, 0
+        )  # Bez marginesów wew. zakładki
+
+        # Istniejący splitter dla drzewa i kafelków
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.folder_tree = QTreeView()
         self.folder_tree.setHeaderHidden(True)
         self.folder_tree.setMinimumWidth(200)
         self.folder_tree.setSizePolicy(
             QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
         )
-        # Ustawienie kontekstowego menu dla drzewa
         self.folder_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.folder_tree.customContextMenuRequested.connect(
             self._show_folder_context_menu
         )
-        # Model systemu plików zostanie ustawiony po wyborze folderu roboczego
         self.file_system_model = QFileSystemModel()
         self.file_system_model.setFilter(QDir.Filter.Dirs | QDir.Filter.NoDotAndDotDot)
         self.folder_tree.setModel(self.file_system_model)
         self.folder_tree.clicked.connect(self._folder_tree_item_clicked)
-
-        # Chowamy kolumny, które nie są potrzebne (rozmiar, typ, data)
         for col in range(1, 4):
             self.folder_tree.setColumnHidden(col, True)
-
         self.splitter.addWidget(self.folder_tree)
 
-        # Panel przewijany dla kafelków po prawej stronie
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(
@@ -211,8 +229,6 @@ class MainWindow(QMainWindow):
         self.scroll_area.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
-
-        # Kontener dla kafelków
         self.tiles_container = QWidget()
         self.tiles_layout = QGridLayout(self.tiles_container)
         self.tiles_layout.setContentsMargins(10, 10, 10, 10)
@@ -220,20 +236,71 @@ class MainWindow(QMainWindow):
         self.tiles_layout.setAlignment(
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
         )
-
-        # Dodanie kontenera do obszaru przewijanego
         self.scroll_area.setWidget(self.tiles_container)
-
         self.splitter.addWidget(self.scroll_area)
-
-        # Ustaw początkowe proporcje splittera (30% drzewo, 70% kafelki)
         self.splitter.setSizes([300, 700])
 
-        # Dodanie splittera do głównego layoutu
-        self.main_layout.addWidget(self.splitter)
+        self.gallery_tab_layout.addWidget(
+            self.splitter
+        )  # Dodanie splittera do layoutu zakładki
+        self.tab_widget.addTab(self.gallery_tab, "Galeria")
 
-        # Na początku ukrywamy panel kontroli rozmiaru (nie ma miniatur)
-        self.size_control_panel.setVisible(False)
+        # === Zakładka 2: Niesparowane Pliki ===
+        self.unpaired_files_tab = QWidget()
+        self.unpaired_files_layout = QVBoxLayout(self.unpaired_files_tab)
+        self.unpaired_files_layout.setContentsMargins(5, 5, 5, 5)
+
+        # Splitter dla dwóch list
+        self.unpaired_splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Panel dla listy niesparowanych archiwów
+        self.unpaired_archives_panel = QWidget()
+        self.unpaired_archives_panel_layout = QVBoxLayout(self.unpaired_archives_panel)
+        self.unpaired_archives_label = QLabel("Niesparowane Archiwa:")
+        self.unpaired_archives_list_widget = QListWidget()
+        self.unpaired_archives_list_widget.setSelectionMode(
+            QListWidget.SelectionMode.SingleSelection
+        )
+        self.unpaired_archives_panel_layout.addWidget(self.unpaired_archives_label)
+        self.unpaired_archives_panel_layout.addWidget(
+            self.unpaired_archives_list_widget
+        )
+        self.unpaired_splitter.addWidget(self.unpaired_archives_panel)
+
+        # Panel dla listy niesparowanych podglądów
+        self.unpaired_previews_panel = QWidget()
+        self.unpaired_previews_panel_layout = QVBoxLayout(self.unpaired_previews_panel)
+        self.unpaired_previews_label = QLabel("Niesparowane Podglądy:")
+        self.unpaired_previews_list_widget = QListWidget()
+        self.unpaired_previews_list_widget.setSelectionMode(
+            QListWidget.SelectionMode.SingleSelection
+        )
+        self.unpaired_previews_panel_layout.addWidget(self.unpaired_previews_label)
+        self.unpaired_previews_panel_layout.addWidget(
+            self.unpaired_previews_list_widget
+        )
+        self.unpaired_splitter.addWidget(self.unpaired_previews_panel)
+
+        self.unpaired_files_layout.addWidget(self.unpaired_splitter)
+
+        # Przycisk do ręcznego parowania
+        self.pair_manually_button = QPushButton("Sparuj Wybrane")
+        self.pair_manually_button.clicked.connect(self._handle_manual_pairing)
+        self.pair_manually_button.setEnabled(False)
+        self.unpaired_files_layout.addWidget(
+            self.pair_manually_button, alignment=Qt.AlignmentFlag.AlignCenter
+        )
+
+        # Podłączenie sygnałów zmiany zaznaczenia na listach
+        self.unpaired_archives_list_widget.itemSelectionChanged.connect(
+            self._update_pair_button_state
+        )
+        self.unpaired_previews_list_widget.itemSelectionChanged.connect(
+            self._update_pair_button_state
+        )
+
+        self.tab_widget.addTab(self.unpaired_files_tab, "Niesparowane Pliki")
+        self.tab_widget.setTabVisible(1, False)
 
     def _select_working_directory(self):
         """
@@ -1013,3 +1080,77 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logging.error(f"Błąd podczas obsługi przeciągnij i upuść: {e}")
             event.ignore()
+
+    def _update_pair_button_state(self):
+        """Aktualizuje stan przycisku 'Sparuj Wybrane' na podstawie zaznaczeń na listach."""
+        if (
+            not hasattr(self, "unpaired_archives_list_widget")
+            or not hasattr(self, "unpaired_previews_list_widget")
+            or not hasattr(self, "pair_manually_button")
+        ):
+            return  # Widgety mogły jeszcze nie zostać zainicjowane
+
+        selected_archives = self.unpaired_archives_list_widget.selectedItems()
+        selected_previews = self.unpaired_previews_list_widget.selectedItems()
+
+        can_pair = len(selected_archives) == 1 and len(selected_previews) == 1
+        self.pair_manually_button.setEnabled(can_pair)
+
+    def _handle_manual_pairing(self):
+        """Obsługuje logikę ręcznego parowania plików wybranych z list."""
+        selected_archive_items = self.unpaired_archives_list_widget.selectedItems()
+        selected_preview_items = self.unpaired_previews_list_widget.selectedItems()
+
+        if not (len(selected_archive_items) == 1 and len(selected_preview_items) == 1):
+            QMessageBox.warning(
+                self,
+                "Błąd Parowania",
+                "Musisz wybrać dokładnie jedno archiwum i jeden podgląd do sparowania.",
+            )
+            return
+
+        archive_path = selected_archive_items[0].data(Qt.ItemDataRole.UserRole)
+        preview_path = selected_preview_items[0].data(Qt.ItemDataRole.UserRole)
+
+        logging.info(
+            f"Próba ręcznego sparowania: Archiwum='{archive_path}', Podgląd='{preview_path}'"
+        )
+
+        new_pair = file_operations.manually_pair_files(
+            archive_path, preview_path, self.current_working_directory
+        )
+
+        if new_pair:
+            logging.info(f"Pomyślnie sparowano: {new_pair.get_base_name()}")
+            # 1. Dodaj do głównej listy par
+            self.all_file_pairs.append(new_pair)
+
+            # 2. Usuń z list niesparowanych (wewnętrznych list stringów)
+            if archive_path in self.unpaired_archives:
+                self.unpaired_archives.remove(archive_path)
+            if preview_path in self.unpaired_previews:
+                self.unpaired_previews.remove(preview_path)
+
+            # 3. Odśwież UI: listy niesparowanych i galerię
+            self._update_unpaired_files_lists()
+            self._apply_filters_and_update_view()  # To odświeży galerię z nową parą
+
+            # 4. Zapisz metadane (w tym zaktualizowane listy niesparowanych i nową parę)
+            self._save_metadata()
+
+            QMessageBox.information(
+                self,
+                "Sukces",
+                f"Pomyślnie sparowano '{os.path.basename(archive_path)}' z '{os.path.basename(preview_path)}'.\n"
+                f"Podgląd został zmieniony na: '{os.path.basename(new_pair.preview_path)}'",
+            )
+        else:
+            logging.error(f"Nie udało się sparować plików.")
+            QMessageBox.critical(
+                self,
+                "Błąd Parowania",
+                "Nie udało się sparować wybranych plików. Sprawdź logi po więcej informacji.",
+            )
+
+        # Zaktualizuj stan przycisku po operacji (zaznaczenia prawdopodobnie znikną lub się zmienią)
+        self._update_pair_button_state()

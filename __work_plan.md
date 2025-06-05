@@ -91,8 +91,8 @@ src/logic/metadata_manager.py
 src/logic/file_operations.py
 Zależności Koncepcyjne: Podstawowa logika skanowania i zarządzania metadanymi.
 Wymagane Testy:
-Jednostkowe (tests/unit/test_scanner.py): Sprawdzenie zwracania list plików niesparowanych.
-Jednostkowe (tests/unit/test_metadata_manager.py): Test zapisu/odczytu list niesparowanych; aktualizacji po ręcznym sparowaniu.
+Jednostkowe (tests/unit/test_scanner.py): Sprawdzenie zwracania list plików niesparowanych. (Ukończono)
+Jednostkowe (tests/unit/test_metadata_manager.py): Test zapisu/odczytu list niesparowanych; aktualizacji po ręcznym sparowaniu. (Ukończono)
 Jednostkowe (tests/unit/test_file_operations.py): Test dla manually_pair_files (różne nazwy, zmiana nazwy, błędy).
 Dokumentacja:
 Aktualizacja docstringów i opisów dla zmodyfikowanych/nowych funkcji.
