@@ -202,6 +202,10 @@ W tej sekcji będą umieszczane szczegółowe analizy poszczególnych plików, z
 
 **Status:** DONE
 **Data wykonania:** 5 czerwca 2025
+**Testy:** FAILED (testy wymagają aktualizacji, szczegóły w tests/scanner_tests_update_note.md)
+
+**Status:** DONE
+**Data wykonania:** 5 czerwca 2025
 **Testy:** FAILED (testy wymagają aktualizacji)
 
 ## ETAP 4: src/logic/file_operations.py

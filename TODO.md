@@ -5,3 +5,4 @@ Preferencje - zapisywanie folderu roboczego
 Stylowanie UI
 Pasek postepu na dole main_window
 Funkcjonalność - ulubione do usunięcia
+Przy starcie aplikacji nie moze być widoczyny żaden folder czy dysk jeśli nie został wcześniej wybrany jako folder roboczy
