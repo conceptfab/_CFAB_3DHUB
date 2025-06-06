@@ -146,15 +146,18 @@ class FileTileWidget(QWidget):
             """
             #FileTileWidget {
                 background-color: #f5f5f5;
-                border: 3px solid #cccccc;
+                border: 2px solid #cccccc;
                 border-radius: 5px;
-                padding: 2px;
+                padding: 0px;
             }
             #FileTileWidget:hover {
-                border: 3px solid #aaaaaa;
+                border: 2px solid #aaaaaa;
             }
         """
         )
+        
+        # Ustaw stały rozmiar całego kafelka
+        self.setFixedSize(self.thumbnail_size[0], self.thumbnail_size[1])
 
         # Inicjalizacja UI
         self._init_ui()
@@ -177,107 +180,85 @@ class FileTileWidget(QWidget):
     def set_thumbnail_size(self, new_size: tuple[int, int]):
         """
         Ustawia nowy rozmiar całego kafelka i dostosowuje jego zawartość.
-
+        
         Args:
             new_size (tuple): Nowy rozmiar kafelka (szerokość, wysokość) w pikselach.
         """
         if self.thumbnail_size != new_size:
             old_size = self.thumbnail_size
             self.thumbnail_size = new_size
-
+            
             # Ustaw stały rozmiar całego widgetu kafelka
             self.setFixedSize(new_size[0], new_size[1])
-
-            # Oblicz nowy rozmiar dla samej miniatury (thumbnail_label)
-            # Uwzględnij wysokość pasków kolorów, etykiety nazwy, kontrolek metadanych i marginesów
-
-            # Najpierw ustal margines całkowity z layoutu
-            total_vertical_margin = (
-                self.layout.contentsMargins().top()
-                + self.layout.contentsMargins().bottom()
-            )
-
-            # Wysokości innych elementów UI
-            color_bar_height = self.color_indicator_bar.height()
-            filename_label_height = self.filename_label.sizeHint().height()
-            metadata_controls_height = self.metadata_controls.sizeHint().height()
-            spacing = (
-                self.layout.spacing() * 3
-            )  # Spacing między każdymi dwoma kolejnymi elementami (x3 dla 4 elementów)
-
-            # Obliczamy dostępną wysokość dla miniatury
-            available_height = new_size[1] - (
-                color_bar_height
-                + filename_label_height
-                + metadata_controls_height
-                + spacing
-                + total_vertical_margin
-            )
-
-            # Dzięki temu layout wie, że thumbnail_label powinien zajmować całą dostępną przestrzeń
-            self.thumbnail_label.setFixedHeight(
-                max(50, available_height)
-            )  # Minimum 50px na miniaturę
-
+            
+            # Oblicz kwadratowy rozmiar dla samej miniatury
+            # Ustaw taką samą szerokość i wysokość dla zachowania kwadratowych proporcji
+            thumb_dimension = min(new_size[0] - 10, new_size[1] - 50)  # Kwadrat
+            
+            # Ustaw rozmiar etykiety miniatury
+            self.thumbnail_label.setFixedSize(thumb_dimension, thumb_dimension)
+            
             # Wymuś ponowne załadowanie miniatury
-            self._current_worker_id += 1
+            self._current_worker_id += 1 
             self._load_thumbnail_async()
-
+            
             # Poinformuj layout, że rozmiar preferowany widgetu się zmienił
             self.updateGeometry()
-
-            logging.debug(
-                f"Kafelek zmienił rozmiar z {old_size} na {new_size}, miniatura: {self.thumbnail_label.size()}"
-            )
+            
+            logging.debug(f"Kafelek zmienił rozmiar z {old_size} na {new_size}, miniatura: {self.thumbnail_label.size()}")
 
     def _init_ui(self):
         """
         Inicjalizuje elementy interfejsu użytkownika kafelka.
         """
-        # Główny layout - pionowy
+        # Główny layout - pionowy, z minimalnymi marginesami
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(5, 5, 5, 5)
-        self.layout.setSpacing(
-            2
-        )  # Zmniejsz spacing aby zmaksymalizować miejsce na miniaturę
+        self.layout.setContentsMargins(2, 2, 2, 2)  # Zminimalizowane marginesy
+        self.layout.setSpacing(1)  # Minimalne odstępy między elementami
 
         # --- Pasek wskaźnika koloru ---
-        self.color_indicator_bar = QFrame()
-        self.color_indicator_bar.setFixedHeight(5)  # Stała wysokość paska
-        self.color_indicator_bar.setAutoFillBackground(True)  # Aby tło było widoczne
-        # Początkowo ukryty/transparentny, aż kolor zostanie ustawiony
-        self.color_indicator_bar.setStyleSheet("background-color: transparent;")
-        self.layout.addWidget(self.color_indicator_bar)  # Dodajemy na górze
-        # --- Koniec paska wskaźnika koloru ---
-
-        # Label na miniaturę - teraz bezpośrednio w głównym layoucie
+        # Usunięty osobny pasek kolorów - będziemy używać ramki wokół miniatury
+        
+        # --- Frame - kontener na miniaturę z kolorową obwódką ---
+        self.thumbnail_frame = QFrame(self)
+        self.thumbnail_frame.setStyleSheet("""
+            QFrame {
+                border: 3px solid transparent;
+                border-radius: 2px;
+                padding: 0px;
+            }
+        """)
+        
+        # Ustawienie layoutu dla thumbnail_frame
+        thumbnail_frame_layout = QVBoxLayout(self.thumbnail_frame)
+        thumbnail_frame_layout.setContentsMargins(0, 0, 0, 0)  # Bez marginesów
+        thumbnail_frame_layout.setSpacing(0)  # Bez odstępów
+        
+        # Label na miniaturę - umieszczona wewnątrz ramki
         self.thumbnail_label = QLabel(self)
         self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # Konfiguracja rozmiaru i polityki dla thumbnail_label
-        # Ustaw właściwości zarządzania rozmiarem tak, aby miniatura mogła się kurczyć i rozciągać
-        self.thumbnail_label.setSizePolicy(
-            QSizePolicy.Policy.Ignored,
-            QSizePolicy.Policy.Ignored,  # Może być skalowany w obu kierunkach
-        )
-        self.thumbnail_label.setScaledContents(
-            True
-        )  # Skaluj zawartość do rozmiaru widgetu
-        self.thumbnail_label.setFrameShape(QFrame.Shape.StyledPanel)  # Dodaje ramkę
-
-        # Obliczenie początkowej dostępnej wysokości dla miniatury
-        available_height = self.height() - 40  # Szacunkowa wartość na początku
-        self.thumbnail_label.setMinimumSize(50, 50)  # Minimum dla miniatury
-
-        self.layout.addWidget(
-            self.thumbnail_label, 1
-        )  # Stretch factor 1 - zajmie dostępną przestrzeń
+        
+        # Konfiguracja miniatury aby była kwadratowa i skalowała się poprawnie
+        self.thumbnail_label.setMinimumSize(80, 80)  # Minimum dla miniatury
+        
+        # Obliczenie wymiarów dla miniatury kwadratowej
+        thumb_size = min(self.thumbnail_size[0] - 10, self.thumbnail_size[1] - 50)  # Kwadrat
+        self.thumbnail_label.setFixedSize(thumb_size, thumb_size)
+        
+        self.thumbnail_label.setScaledContents(True)  # Skaluj zawartość do rozmiaru widgetu
+        self.thumbnail_label.setFrameShape(QFrame.Shape.NoFrame)  # Bez wewnętrznej ramki
+        
+        # Dodanie thumbnail_label do thumbnail_frame
+        thumbnail_frame_layout.addWidget(self.thumbnail_label)
+        
+        # Dodanie ramki z miniaturą do głównego layoutu
+        self.layout.addWidget(self.thumbnail_frame, 0, Qt.AlignmentFlag.AlignHCenter)
 
         # Etykieta na nazwę pliku
         self.filename_label = QLabel("Ładowanie...", self)
         self.filename_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.filename_label.setWordWrap(True)  # Zawijanie tekstu
-        self.filename_label.setMaximumHeight(40)  # Ograniczenie wysokości
+        self.filename_label.setMaximumHeight(20)  # Zmniejszona wysokość
         self.filename_label.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
@@ -288,17 +269,13 @@ class FileTileWidget(QWidget):
         self.metadata_controls.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
-        self.metadata_controls.setMaximumHeight(40)  # Ograniczenie wysokości
+        self.metadata_controls.setMaximumHeight(30)  # Zmniejszona wysokość
         self.layout.addWidget(self.metadata_controls)
 
         # Połączenie sygnałów z MetadataControlsWidget
-        self.metadata_controls.favorite_status_changed.connect(
-            self._on_favorite_changed
-        )
+        self.metadata_controls.favorite_status_changed.connect(self._on_favorite_changed)
         self.metadata_controls.stars_value_changed.connect(self._on_stars_changed)
-        self.metadata_controls.color_tag_value_changed.connect(
-            self._on_color_tag_changed
-        )
+        self.metadata_controls.color_tag_value_changed.connect(self._on_color_tag_changed)
 
         self._current_worker_id = 0  # ID ostatnio uruchomionego workera
         self._thumbnail_worker: ThumbnailLoaderWorker | None = None
@@ -327,9 +304,11 @@ class FileTileWidget(QWidget):
                     self.file_pair.is_favorite_file()
                 )
                 self.metadata_controls.update_stars_display(self.file_pair.get_stars())
-                self.metadata_controls.update_color_tag_display(
-                    self.file_pair.get_color_tag()
-                )
+                
+                # Aktualizacja koloru obwódki miniatury
+                color_tag = self.file_pair.get_color_tag()
+                self.metadata_controls.update_color_tag_display(color_tag)
+                self._update_thumbnail_border_color(color_tag)
             else:
                 self.filename_label.setText("Brak danych")
                 # Ustaw domyślne stany dla kontrolek, jeśli file_pair jest None
@@ -337,11 +316,32 @@ class FileTileWidget(QWidget):
                 self.metadata_controls.update_favorite_display(False)
                 self.metadata_controls.update_stars_display(0)
                 self.metadata_controls.update_color_tag_display("")
+                self._update_thumbnail_border_color("")  # Usuń kolor obwódki
 
         except Exception as e:
             logging.error(f"Błąd aktualizacji danych statycznych kafelka: {e}")
             # Fallback UI w przypadku błędu
             self.filename_label.setText("Błąd danych")
+            
+    def _update_thumbnail_border_color(self, color_hex: str):
+        """Aktualizuje kolor obwódki wokół miniatury."""
+        if color_hex and color_hex.strip():
+            self.thumbnail_frame.setStyleSheet(f"""
+                QFrame {{
+                    border: 3px solid {color_hex};
+                    border-radius: 2px;
+                    padding: 0px;
+                }}
+            """)
+        else:
+            # Przezroczysta/neutralna ramka gdy brak koloru
+            self.thumbnail_frame.setStyleSheet("""
+                QFrame {
+                    border: 3px solid transparent;
+                    border-radius: 2px;
+                    padding: 0px;
+                }
+            """)
 
     def set_file_pair(self, file_pair: FilePair | None):
         """Ustawia parę plików dla kafelka i odświeża UI."""
@@ -370,33 +370,24 @@ class FileTileWidget(QWidget):
             )
             # Ustawienie placeholdera błędu jeśli ścieżka jest nieprawidłowa
             error_placeholder = ThumbnailCache.get_error_icon(
-                self.thumbnail_label.width(),
-                self.thumbnail_label.height(),  # Używamy aktualnego rozmiaru etykiety
+                self.thumbnail_label.width(), self.thumbnail_label.height()
             )
             if not error_placeholder:  # Jeśli get_error_icon zwróci None
                 error_placeholder = create_placeholder_pixmap(
-                    self.thumbnail_label.width(),
-                    self.thumbnail_label.height(),
-                    text="Brak pliku",
+                    self.thumbnail_label.width(), self.thumbnail_label.height(), text="Brak pliku"
                 )
             self.thumbnail_label.setPixmap(error_placeholder)
-            self.original_thumbnail = (
-                error_placeholder  # Zapisz jako oryginalną, aby uniknąć ponownych prób
-            )
+            self.original_thumbnail = error_placeholder  # Zapisz jako oryginalną, aby uniknąć ponownych prób
             return
 
         preview_path = self.file_pair.get_preview_path()
-        # Używamy rozmiaru thumbnail_label zamiast thumbnail_size
-        width, height = self.thumbnail_label.width(), self.thumbnail_label.height()
-
+        # Używamy rozmiaru etykiety miniatury - zawsze będzie kwadratem
+        width = height = self.thumbnail_label.width()  # Kwadratowe proporcje
+        
         # Zabezpieczenie przed zerowymi lub ujemnymi wymiarami
         if width <= 0 or height <= 0:
-            width, height = max(50, self.thumbnail_size[0] // 2), max(
-                50, self.thumbnail_size[1] // 2
-            )
-            logging.warning(
-                f"Nieprawidłowe wymiary miniatury ({width}x{height}), używam domyślnych 50x50"
-            )
+            width = height = 80  # Minimalne wymiary awaryjne
+            logging.warning(f"Nieprawidłowe wymiary miniatury, używam domyślnych {width}x{height}")
 
         # 1. Sprawdź cache
         cache = ThumbnailCache.get_instance()
@@ -554,11 +545,10 @@ class FileTileWidget(QWidget):
     def _on_color_tag_changed(self, color_hex: str):
         if self._file_pair:
             self._file_pair.set_color_tag(color_hex)
-            # Odśwież tylko kontrolki metadanych
-            self.metadata_controls.update_color_tag_display(
-                color_hex
-            )  # Upewnijmy się, że to jest wywoływane
-            # self.file_pair_updated.emit(self._file_pair) # Zakładając, że ten sygnał istnieje i jest potrzebny
+            # Odśwież kontrolki metadanych i ramkę miniatury
+            self.metadata_controls.update_color_tag_display(color_hex)
+            self._update_thumbnail_border_color(color_hex)
+            
             logging.debug(
                 f"FileTileWidget: Zmieniono tag koloru dla {self._file_pair.get_display_name()} na {color_hex}"
             )
