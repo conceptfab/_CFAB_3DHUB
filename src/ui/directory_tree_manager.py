@@ -107,7 +107,7 @@ class DirectoryTreeManager:
             )
         else:
             logging.warning(
-                "Nie można zaznaczić folderu w drzewie - " "nieprawidłowy indeks: %s",
+                "Nie można zaznaczyć folderu w drzewie - " "nieprawidłowy indeks: %s",
                 current_working_directory,
             )
 
@@ -307,7 +307,7 @@ class DirectoryTreeManager:
 
         # Skanuj folder na nowo
         found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
-            current_working_directory, max_depth=0, pair_all=False
+            current_working_directory, max_depth=0, pair_strategy="first_match"
         )
 
         logging.info(f"Odświeżono: {len(found_pairs)} sparowanych plików.")
