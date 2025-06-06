@@ -8,7 +8,7 @@ Utworzenie kompletnej mapy projektu z wstępną analizą każdego pliku kodu i p
 
 #### 1.1 Stworzenie mapy projektu
 
-**KLUCZOWE:** Przygotuj DOKŁADNĄ mapę projektu w formacie tekstowym/ASCII ze strukturą folderów i plików.
+**KLUCZOWE:** Przygotuj DOKŁADNĄ mapę projektu w formacie markdown ze strukturą folderów i plików.
 
 **Format mapy projektu:**
 NazwaProjektu/
