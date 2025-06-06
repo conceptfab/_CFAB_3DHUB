@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 ARCHIVE_EXTENSIONS = set(app_config.SUPPORTED_ARCHIVE_EXTENSIONS)
 PREVIEW_EXTENSIONS = set(app_config.SUPPORTED_PREVIEW_EXTENSIONS)
 
+MAX_CACHE_ENTRIES = 100  # Konfigurowalne
+MAX_CACHE_AGE_SECONDS = 3600  # 1 godzina
+
 # Cache dla wyników skanowania, klucz: ścieżka katalogu, wartość: wynik skanowania
 _scan_cache: Dict[str, Tuple[List[FilePair], List[str], List[str]]] = {}
 # Cache dla listy plików, klucz: ścieżka katalogu, wartość: (czas_modyfikacji, lista_plików)
@@ -33,6 +36,35 @@ class ScanningInterrupted(Exception):
     """Wyjątek rzucany, gdy skanowanie zostało przerwane przez użytkownika."""
 
     pass
+
+
+def _cleanup_old_cache_entries():
+    """Usuwa stare wpisy z _files_cache na podstawie wieku i liczby."""
+    current_time = time.time()
+    to_remove_by_age = []
+
+    # Usuwanie na podstawie wieku
+    for key, (timestamp, _) in list(
+        _files_cache.items()
+    ):  # Iteracja po kopii dla bezpiecznego usuwania
+        if current_time - timestamp > MAX_CACHE_AGE_SECONDS:
+            to_remove_by_age.append(key)
+
+    for key in to_remove_by_age:
+        if key in _files_cache:  # Sprawdź czy klucz nadal istnieje
+            del _files_cache[key]
+            logger.debug(f"Usunięto stary wpis z _files_cache (wiek): {key}")
+
+    # Usuwanie na podstawie liczby, jeśli nadal za dużo wpisów
+    if len(_files_cache) > MAX_CACHE_ENTRIES:
+        # Sortuj od najstarszego do najnowszego
+        sorted_items = sorted(list(_files_cache.items()), key=lambda x: x[1][0])
+        num_to_remove = len(_files_cache) - MAX_CACHE_ENTRIES
+
+        for key, _ in sorted_items[:num_to_remove]:
+            if key in _files_cache:  # Sprawdź czy klucz nadal istnieje
+                del _files_cache[key]
+                logger.debug(f"Usunięto stary wpis z _files_cache (liczba): {key}")
 
 
 def clear_cache() -> None:
@@ -107,6 +139,7 @@ def collect_files(
     directory: str,
     max_depth: int = -1,
     interrupt_check: Optional[Callable[[], bool]] = None,
+    force_refresh: bool = False,  # Dodany parametr
 ) -> Dict[str, List[str]]:
     """
     Zbiera wszystkie pliki w katalogu zgodnie z obsługiwanymi rozszerzeniami.
@@ -115,6 +148,7 @@ def collect_files(
         directory: Ścieżka do katalogu do przeskanowania
         max_depth: Maksymalna głębokość rekursji, -1 oznacza brak limitu
         interrupt_check: Opcjonalna funkcja sprawdzająca czy przerwać skanowanie
+        force_refresh: Czy wymusić odświeżenie cache (ignoruje is_cache_valid)
 
     Returns:
         Słownik zmapowanych plików, gdzie kluczem jest nazwa bazowa (bez rozszerzenia),
@@ -125,11 +159,17 @@ def collect_files(
     """
     normalized_dir = normalize_path(directory)
 
-    # Sprawdź czy mamy w buforze (bez sprawdzania czasu modyfikacji dla wydajności)
-    if normalized_dir in _files_cache:
-        logger.debug(f"Używam buforowanych plików dla katalogu {normalized_dir}")
-        _, file_map = _files_cache[normalized_dir]
-        return file_map
+    # Sprawdź czy mamy w buforze
+    if not force_refresh and normalized_dir in _files_cache:  # Zmodyfikowany warunek
+        if is_cache_valid(normalized_dir):  # Użycie is_cache_valid
+            logger.debug(
+                f"Cache jest aktualny dla {normalized_dir}, używam buforowanych plików"
+            )
+            _, file_map = _files_cache[normalized_dir]
+            return file_map
+        else:
+            logger.debug(f"Cache nieaktualny dla {normalized_dir}, usuwam wpis.")
+            del _files_cache[normalized_dir]  # Usuń nieaktualny wpis
 
     # Jeśli katalog nie istnieje lub nie jest katalogiem, zwróć pusty słownik
     if not path_exists(normalized_dir) or not os.path.isdir(normalized_dir):
@@ -208,6 +248,7 @@ def collect_files(
 
     # Zapisujemy wynik do bufora
     _files_cache[normalized_dir] = (time.time(), dict(file_map))
+    _cleanup_old_cache_entries()  # Wywołanie funkcji czyszczącej po dodaniu nowego wpisu
 
     return dict(file_map)
 
@@ -215,7 +256,8 @@ def collect_files(
 def create_file_pairs(
     file_map: Dict[str, List[str]],
     base_directory: str,
-    pair_all: bool = True,
+    # pair_all: bool = True, # Usunięty parametr
+    pair_strategy: str = "first_match",  # Dodany parametr: "first_match", "all_combinations", "best_match"
 ) -> Tuple[List[FilePair], Set[str]]:
     """
     Tworzy pary plików na podstawie zebranych danych.
@@ -223,7 +265,10 @@ def create_file_pairs(
     Args:
         file_map: Słownik zmapowanych plików
         base_directory: Katalog bazowy dla względnych ścieżek w FilePair
-        pair_all: Czy parować wszystkie możliwe kombinacje (True) czy tylko pierwsze znalezione (False)
+        pair_strategy: Strategia parowania plików.
+                         "first_match": tylko pierwsza znaleziona para.
+                         "all_combinations": wszystkie możliwe kombinacje archiwum-podgląd.
+                         "best_match": inteligentne parowanie po nazwach (TODO: implementacja).
 
     Returns:
         Krotka zawierająca listę utworzonych par oraz zbiór przetworzonych plików
@@ -232,24 +277,29 @@ def create_file_pairs(
     processed_files: Set[str] = set()
 
     for base_path, files_list in file_map.items():
-        # Dzielimy pliki na archiwa i podglądy
-        archive_files = [
-            f
-            for f in files_list
-            if os.path.splitext(f)[1].lower() in ARCHIVE_EXTENSIONS
-        ]
-        preview_files = [
-            f
-            for f in files_list
-            if os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS
-        ]
+        # Pre-compute rozszerzeń dla optymalizacji
+        files_with_ext = [(f, os.path.splitext(f)[1].lower()) for f in files_list]
 
-        # Jeśli nie ma zarówno archiwów jak i podglądów, pomijamy
+        archive_files = [f for f, ext in files_with_ext if ext in ARCHIVE_EXTENSIONS]
+        preview_files = [f for f, ext in files_with_ext if ext in PREVIEW_EXTENSIONS]
+
         if not archive_files or not preview_files:
             continue
 
-        # Tworzenie par - albo wszystkie kombinacje, albo tylko pierwszą
-        if pair_all:
+        if pair_strategy == "first_match":
+            # Tylko pierwsza para (odpowiednik pair_all=False)
+            try:
+                pair = FilePair(archive_files[0], preview_files[0], base_directory)
+                found_pairs.append(pair)
+                processed_files.add(archive_files[0])
+                processed_files.add(preview_files[0])
+            except ValueError as e:
+                logger.error(
+                    f"Błąd tworzenia FilePair dla '{archive_files[0]}' i '{preview_files[0]}': {e}"
+                )
+
+        elif pair_strategy == "all_combinations":
+            # Wszystkie kombinacje (odpowiednik pair_all=True)
             for archive in archive_files:
                 for preview in preview_files:
                     try:
@@ -261,15 +311,24 @@ def create_file_pairs(
                         logger.error(
                             f"Błąd tworzenia FilePair dla '{archive}' i '{preview}': {e}"
                         )
+        elif pair_strategy == "best_match":
+            # TODO: Implementacja inteligentnego parowania po nazwach
+            # Na razie działa jak "first_match"
+            logger.warning(
+                "Strategia 'best_match' nie jest jeszcze w pełni zaimplementowana, używam 'first_match'."
+            )
+            if archive_files and preview_files:
+                try:
+                    pair = FilePair(archive_files[0], preview_files[0], base_directory)
+                    found_pairs.append(pair)
+                    processed_files.add(archive_files[0])
+                    processed_files.add(preview_files[0])
+                except ValueError as e:
+                    logger.error(
+                        f"Błąd tworzenia FilePair dla '{archive_files[0]}' i '{preview_files[0]}': {e}"
+                    )
         else:
-            # Tylko pierwsza para
-            try:
-                pair = FilePair(archive_files[0], preview_files[0], base_directory)
-                found_pairs.append(pair)
-                processed_files.add(archive_files[0])
-                processed_files.add(preview_files[0])
-            except ValueError as e:
-                logger.error(f"Błąd tworzenia FilePair dla '{archive_files[0]}': {e}")
+            logger.error(f"Nieznana strategia parowania: {pair_strategy}")
 
     return found_pairs, processed_files
 
@@ -309,8 +368,10 @@ def scan_folder_for_pairs(
     directory: str,
     max_depth: int = -1,
     use_cache: bool = True,
-    pair_all: bool = True,
+    # pair_all: bool = True, # Usunięty parametr
+    pair_strategy: str = "first_match",  # Dodany parametr
     interrupt_check: Optional[Callable[[], bool]] = None,
+    force_refresh_cache: bool = False,  # Dodany parametr
 ) -> Tuple[List[FilePair], List[str], List[str]]:
     """
     Skanuje podany katalog i jego podkatalogi w poszukiwaniu par plików.
@@ -319,8 +380,9 @@ def scan_folder_for_pairs(
         directory: Ścieżka do katalogu do przeskanowania
         max_depth: Maksymalna głębokość rekursji, -1 oznacza brak limitu
         use_cache: Czy używać buforowanych wyników jeśli są dostępne
-        pair_all: Czy parować wszystkie możliwe kombinacje plików
+        pair_strategy: Strategia parowania plików (zastępuje pair_all)
         interrupt_check: Opcjonalna funkcja sprawdzająca czy przerwać skanowanie
+        force_refresh_cache: Czy wymusić odświeżenie cache plików (przekazywane do collect_files)
 
     Returns:
         Krotka zawierająca listę znalezionych par, listę niesparowanych archiwów
@@ -331,27 +393,41 @@ def scan_folder_for_pairs(
     """
     normalized_dir = normalize_path(directory)
 
-    # Sprawdź czy katalog istnieje
     if not path_exists(normalized_dir):
         logger.error(f"Katalog {normalized_dir} nie istnieje")
         return [], [], []
 
-    # Sprawdź czy mamy w buforze (wyłączono sprawdzanie czasu dla wydajności)
-    cache_key = f"{normalized_dir}_{max_depth}_{pair_all}"
-    if use_cache and cache_key in _scan_cache:
-        logger.info(f"CACHE HIT: Używam buforowanych wyników dla {normalized_dir}")
+    cache_key = (
+        f"{normalized_dir}_{max_depth}_{pair_strategy}"  # Zaktualizowany klucz cache
+    )
+    if use_cache and not force_refresh_cache and cache_key in _scan_cache:
+        # Dodatkowe sprawdzenie force_refresh_cache dla _scan_cache
+        # Jeśli force_refresh_cache jest True, chcemy odświeżyć _files_cache,
+        # a to może wpłynąć na wynik _scan_cache, więc też go odświeżamy.
+        logger.info(
+            f"CACHE HIT: Używam buforowanych wyników dla {normalized_dir} ze strategią {pair_strategy}"
+        )
         return _scan_cache[cache_key]
 
-    logger.info(f"Rozpoczęto skanowanie katalogu: {normalized_dir}")
+    logger.info(
+        f"Rozpoczęto skanowanie katalogu: {normalized_dir} ze strategią {pair_strategy}"
+    )
     start_time = time.time()
 
     try:
         # Krok 1: Zbieranie wszystkich plików
-        file_map = collect_files(normalized_dir, max_depth, interrupt_check)
+        file_map = collect_files(
+            normalized_dir,
+            max_depth,
+            interrupt_check,
+            force_refresh=force_refresh_cache,
+        )
 
         # Krok 2: Tworzenie par plików
         found_pairs, processed_files = create_file_pairs(
-            file_map, normalized_dir, pair_all
+            file_map,
+            normalized_dir,
+            pair_strategy=pair_strategy,  # Użycie nowej strategii
         )
 
         # Krok 3: Identyfikacja niesparowanych plików

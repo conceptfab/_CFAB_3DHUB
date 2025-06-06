@@ -43,7 +43,7 @@ class ScanFolderWorker(QObject):
                 f"{self.directory_to_scan} w wątku."
             )
             result = scan_folder_for_pairs(
-                self.directory_to_scan, max_depth=0, pair_all=False
+                self.directory_to_scan, max_depth=0, pair_strategy="first_match"
             )
             found_pairs, unpaired_archives, unpaired_previews = result
             if not self._should_stop:

@@ -78,6 +78,8 @@ _Dokument aktualizowany progressywnie podczas analizy - ETAP 2_
 
 #### POPRAWKA 1: Optymalizacja cache validation
 
+**Status:** ✅ WPROWADZONA
+
 ```python
 def collect_files(
     directory: str,
@@ -100,6 +102,8 @@ def collect_files(
 ```
 
 #### POPRAWKA 2: Optymalizacja parowania plików
+
+**Status:** ✅ WPROWADZONA
 
 ```python
 def create_file_pairs(
@@ -125,6 +129,8 @@ def create_file_pairs(
 ```
 
 #### POPRAWKA 3: Ograniczenie rozmiaru cache
+
+**Status:** ✅ WPROWADZONA
 
 ```python
 # Dodaj na górę pliku
