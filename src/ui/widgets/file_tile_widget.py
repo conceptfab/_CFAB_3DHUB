@@ -105,6 +105,7 @@ class FileTileWidget(QWidget):
     tile_context_menu_requested = pyqtSignal(
         FilePair, QWidget, object
     )  # file_pair, widget, event
+    file_pair_updated = pyqtSignal(FilePair)  # sygnał do aktualizacji danych file_pair
 
     PREDEFINED_COLORS = OrderedDict(
         [
@@ -132,6 +133,7 @@ class FileTileWidget(QWidget):
         """
         super().__init__(parent)
         self.file_pair = file_pair
+        self._file_pair = file_pair  # Dodanie _file_pair jako alias dla file_pair
         self.thumbnail_size = default_thumbnail_size
         self.original_thumbnail: QPixmap | None = None
 
@@ -145,13 +147,16 @@ class FileTileWidget(QWidget):
         self.setStyleSheet(
             """
             #FileTileWidget {
-                background-color: #f5f5f5;
+                background-color: #f8f8f8;
                 border: 2px solid #cccccc;
                 border-radius: 5px;
                 padding: 0px;
+                transition: all 0.3s ease;
             }
             #FileTileWidget:hover {
-                border: 2px solid #aaaaaa;
+                background-color: #f0f7ff;
+                border: 2px solid #4a90e2;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
             }
         """
         )
@@ -248,13 +253,25 @@ class FileTileWidget(QWidget):
         self.thumbnail_label.setScaledContents(True)  # Skaluj zawartość do rozmiaru widgetu
         self.thumbnail_label.setFrameShape(QFrame.Shape.NoFrame)  # Bez wewnętrznej ramki
         
+        # Dodanie efektu hover dla miniatury
+        self.thumbnail_label.setStyleSheet("""
+            QLabel {
+                cursor: pointer;
+                transition: transform 0.2s;
+            }
+            QLabel:hover {
+                transform: scale(1.03);
+                opacity: 0.9;
+            }
+        """)
+        
         # Dodanie thumbnail_label do thumbnail_frame
         thumbnail_frame_layout.addWidget(self.thumbnail_label)
         
         # Dodanie ramki z miniaturą do głównego layoutu
         self.layout.addWidget(self.thumbnail_frame, 0, Qt.AlignmentFlag.AlignHCenter)
 
-        # Etykieta na nazwę pliku
+        # Etykieta na nazwę pliku z efektem hover
         self.filename_label = QLabel("Ładowanie...", self)
         self.filename_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.filename_label.setWordWrap(True)  # Zawijanie tekstu
@@ -262,6 +279,20 @@ class FileTileWidget(QWidget):
         self.filename_label.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
+        # Dodanie stylu dla efektu hover
+        self.filename_label.setStyleSheet("""
+            QLabel {
+                color: #333333;
+                padding: 2px;
+                border-radius: 2px;
+                cursor: pointer;
+            }
+            QLabel:hover {
+                color: #0066cc;
+                text-decoration: underline;
+                background-color: rgba(200, 230, 255, 0.3);
+            }
+        """)
         self.layout.addWidget(self.filename_label)
 
         # --- Kontrolki metadanych ---
@@ -292,7 +323,13 @@ class FileTileWidget(QWidget):
             file_pair (FilePair): Obiekt pary plików z nowymi danymi
         """
         self.file_pair = file_pair
+        self._file_pair = file_pair  # Ujednolicenie self._file_pair i self.file_pair
         self._update_static_data()
+        
+        # Dodatkowo upewnij się, że kolor obwódki jest zaktualizowany
+        if file_pair:
+            color_tag = file_pair.get_color_tag()
+            self._update_thumbnail_border_color(color_tag)
 
     def _update_static_data(self):
         """Aktualizuje statyczne dane kafelka (nazwa, rozmiar, metadane)."""
@@ -328,24 +365,33 @@ class FileTileWidget(QWidget):
         if color_hex and color_hex.strip():
             self.thumbnail_frame.setStyleSheet(f"""
                 QFrame {{
-                    border: 3px solid {color_hex};
-                    border-radius: 2px;
+                    border: 4px solid {color_hex};
+                    border-radius: 4px;
                     padding: 0px;
+                    background-color: transparent;
+                    box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
                 }}
             """)
+            logging.debug(f"Ustawiono kolor obwódki na: {color_hex}")
         else:
             # Przezroczysta/neutralna ramka gdy brak koloru
             self.thumbnail_frame.setStyleSheet("""
                 QFrame {
-                    border: 3px solid transparent;
-                    border-radius: 2px;
+                    border: 2px solid #cccccc;
+                    border-radius: 4px;
                     padding: 0px;
+                    background-color: transparent;
+                }
+                QFrame:hover {
+                    border: 2px solid #aaaaaa;
                 }
             """)
+            logging.debug("Ustawiono przezroczystą obwódkę")
 
     def set_file_pair(self, file_pair: FilePair | None):
         """Ustawia parę plików dla kafelka i odświeża UI."""
         self._file_pair = file_pair
+        self.file_pair = file_pair  # Ujednolicenie self.file_pair i self._file_pair
         self._current_worker_id += 1  # Inkrementacja ID dla nowego zadania ładowania
 
         if self._file_pair:
@@ -354,7 +400,10 @@ class FileTileWidget(QWidget):
             self._load_thumbnail_async()
             self.metadata_controls.set_file_pair(self._file_pair)  # Przekaż FilePair
             self.metadata_controls.setEnabled(True)
-
+            
+            # Aktualizacja koloru obwódki miniatury
+            color_tag = self._file_pair.get_color_tag()
+            self._update_thumbnail_border_color(color_tag)
         else:
             self.filename_label.setText("Brak pliku")
             self.thumbnail_label.clear()  # Wyczyść miniaturę
@@ -362,6 +411,9 @@ class FileTileWidget(QWidget):
             self.setToolTip("")
             self.metadata_controls.set_file_pair(None)  # Wyczyść FilePair
             self.metadata_controls.setEnabled(False)
+            
+            # Usuń kolor obwódki
+            self._update_thumbnail_border_color("")
 
     def _load_thumbnail_async(self):
         if not self.file_pair or not self.file_pair.get_preview_path():
@@ -507,6 +559,10 @@ class FileTileWidget(QWidget):
                     self.thumbnail_size[1],
                     pixmap,
                 )
+                
+                # Upewnij się, że obwódka jest poprawnie ustawiona po załadowaniu miniatury
+                color_tag = self.file_pair.get_color_tag()
+                self._update_thumbnail_border_color(color_tag)
         else:
             # Jeśli pixmap jest None lub isNull(), użyj obrazka błędu z cache
             # logging.warning(f"FileTileWidget: Nie udało się załadować miniatury dla {self.file_pair.get_display_name() if self.file_pair else 'N/A'}. Używanie obrazka błędu.")
@@ -548,6 +604,10 @@ class FileTileWidget(QWidget):
             # Odśwież kontrolki metadanych i ramkę miniatury
             self.metadata_controls.update_color_tag_display(color_hex)
             self._update_thumbnail_border_color(color_hex)
+            
+            # Emituj sygnał, że tag koloru został zmieniony
+            self.color_tag_changed.emit(self._file_pair, color_hex)
+            self.file_pair_updated.emit(self._file_pair)
             
             logging.debug(
                 f"FileTileWidget: Zmieniono tag koloru dla {self._file_pair.get_display_name()} na {color_hex}"

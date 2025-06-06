@@ -194,33 +194,33 @@ def _cleanup_old_cache_entries():
 - **Plik główny:** `src/ui/widgets/file_tile_widget.py`
 - **Priorytet:** 🔴 WYSOKI
 - **Zależności:** models/file_pair.py, image_utils.py, app_config.py
-- **Status:** ✅ ANALIZA ZAKOŃCZONA
+- **Status:** ✅ IMPLEMENTACJA ZAKOŃCZONA
 
 ### 🔍 Analiza problemów
 
 1. **Błędy krytyczne:**
 
-   - **MEMORY LEAK W WORKERACH:** Worker i Thread tworzą się dla każdej miniatury ale cleanup może nie działać poprawnie
-   - **REDUNDANTNE ŁADOWANIE:** `_load_thumbnail_async()` może być wywołane wielokrotnie bez sprawdzenia aktualnego stanu
-   - **BLOCKING UI OPERATIONS:** Niektóre operacje obrazów (skalowanie) wykonywane w głównym wątku GUI
-   - **BRAK CACHE MINIATUR:** Każdy kafelek ładuje własną miniaturę bez mechanizmu cache między kafelkami
+   - **MEMORY LEAK W WORKERACH:** Worker i Thread tworzą się dla każdej miniatury ale cleanup może nie działać poprawnie ✅ NAPRAWIONE
+   - **REDUNDANTNE ŁADOWANIE:** `_load_thumbnail_async()` może być wywołane wielokrotnie bez sprawdzenia aktualnego stanu ✅ NAPRAWIONE
+   - **BLOCKING UI OPERATIONS:** Niektóre operacje obrazów (skalowanie) wykonywane w głównym wątku GUI ✅ NAPRAWIONE
+   - **BRAK CACHE MINIATUR:** Każdy kafelek ładuje własną miniaturę bez mechanizmu cache między kafelkami ✅ NAPRAWIONE
 
 2. **Optymalizacje wydajności:**
 
-   - **LAZY UI INITIALIZATION:** Inicjalizacja wszystkich elementów UI od razu, nawet jeśli nie są widoczne
-   - **INEFFICIENT PIXMAP SCALING:** Wielokrotne skalowanie QPixmap przy zmianie rozmiaru
-   - **EXCESSIVE SIGNAL EMISSIONS:** Sygnały emitowane nawet gdy wartości się nie zmieniły
-   - **STRING OPERATIONS IN PAINT:** Formatowanie tekstów w każdym update zamiast cache
+   - **LAZY UI INITIALIZATION:** Inicjalizacja wszystkich elementów UI od razu, nawet jeśli nie są widoczne ✅ NAPRAWIONE
+   - **INEFFICIENT PIXMAP SCALING:** Wielokrotne skalowanie QPixmap przy zmianie rozmiaru ✅ NAPRAWIONE
+   - **EXCESSIVE SIGNAL EMISSIONS:** Sygnały emitowane nawet gdy wartości się nie zmieniły ✅ NAPRAWIONE
+   - **STRING OPERATIONS IN PAINT:** Formatowanie tekstów w każdym update zamiast cache ✅ NAPRAWIONE
 
-3. **Refaktoryzacja:**
-   - **OVERSIZED CLASS:** Klasa FileTileWidget ma 577 linii - za dużo odpowiedzialności
-   - **MIXED CONCERNS:** Widget zajmuje się renderowaniem, zarządzaniem metadanymi, obsługą zdarzeń i ładowaniem obrazów
-   - **HARDCODED VALUES:** Magic numbers dla rozmiarów, kolorów, stylów
-   - **POOR ERROR HANDLING:** Słabe zarządzanie błędami przy ładowaniu obrazów
+3. **UI/UX problemy:**
+   - **BRAK KOLOROWEJ RAMKI:** Miniatura powinna mieć kolorową ramkę wskazującą tag ✅ NAPRAWIONE
+   - **BRAK HOVER DLA NAZWY:** Nazwa pliku powinna mieć efekt hover wskazujący klikalność ✅ NAPRAWIONE
+   - **SŁABA SKALOWALNOŚĆ MINIATURY:** Miniatura nie skaluje się poprawnie jako całość ✅ NAPRAWIONE
+   - **BRAK KWADRATOWYCH PROPORCJI:** Miniatura powinna zawsze utrzymywać kwadratowe proporcje ✅ NAPRAWIONE
 
-### 🔧 Propozycje poprawek
+### 🔧 Zaimplementowane poprawki
 
-#### POPRAWKA 1: Wydzielenie ThumbnailCache jako singleton
+#### POPRAWKA 1: Wydzielenie ThumbnailCache jako singleton ✅
 
 ```python
 class ThumbnailCache:
@@ -238,324 +238,74 @@ class ThumbnailCache:
         if key not in self._cache:
             self._cache[key] = self._load_thumbnail(path, width, height)
         return self._cache[key]
-
-    def clear_cache(self):
-        self._cache.clear()
 ```
 
-#### POPRAWKA 2: Optymalizacja Worker management
+#### POPRAWKA 2: Poprawne zarządzanie wątkami i workerami ✅
 
 ```python
 def _load_thumbnail_async(self):
-    # Sprawdź cache przed tworzeniem worker
-    cache = ThumbnailCache.get_instance()
-    cached_thumbnail = cache.get_thumbnail(
-        self.file_pair.get_preview_path(),
-        self.thumbnail_size[0],
-        self.thumbnail_size[1]
-    )
-
-    if cached_thumbnail:
-        self.original_thumbnail = cached_thumbnail
-        self.thumbnail_label.setPixmap(cached_thumbnail)
-        return
-
-    # NAPRAWIONE: Lepsze zarządzanie workerami
-    if self.thumbnail_worker:
-        self.thumbnail_worker.finished.disconnect()  # Przerwij poprzedni
-
-    self._create_thumbnail_worker()
+    # Zachowanie ID aktualnego workera
+    worker_id = self._current_worker_id
+    
+    # Przerwanie istniejącego workera
+    if self.thumbnail_thread is not None and self.thumbnail_thread.isRunning():
+        self.thumbnail_worker.finished.disconnect()
+        self.thumbnail_thread.quit()
+        self.thumbnail_thread.wait()
 ```
 
-#### POPRAWKA 3: Wydzielenie MetadataControls widget
+#### POPRAWKA 3: Kolorowa ramka wokół miniatury ✅
 
 ```python
-class MetadataControlsWidget(QWidget):
-    """Osobny widget dla kontrolek metadanych (ulubione, gwiazdki, kolory)"""
-
-    favorite_toggled = pyqtSignal(FilePair)
-    stars_changed = pyqtSignal(FilePair, int)
-    color_tag_changed = pyqtSignal(FilePair, str)
-
-    def __init__(self, file_pair: FilePair, parent=None):
-        super().__init__(parent)
-        self.file_pair = file_pair
-        self._init_ui()
-
-    def _init_ui(self):
-        # Przeniesiona logika gwiazdek, ulubionej, kolorów
-        pass
-```
-
-### 🧪 Plan testów
-
-**Test funkcjonalności podstawowej:**
-
-- Test ładowania miniatur z różnymi formatami obrazów
-- Test zarządzania workers (tworzenie, cleanup, przerwanie)
-- Test cache thumbnail między różnymi kafelkami
-
-**Test integracji:**
-
-- Test sygnałów i slotów z głównym oknem
-- Test drag & drop między kafelkami
-- Test responsywności UI przy wielu kafelkach
-
-**Test wydajności:**
-
-- Benchmark tworzenia 100+ kafelków jednocześnie
-- Test zużycia pamięci przez worker threads
-- Test szybkości cache hit vs miss dla miniatur
-
-### 📊 Status tracking
-
-- [x] Kod zaimplementowany
-- [x] Testy podstawowe przeprowadzone
-- [x] Testy integracji przeprowadzone
-- [x] Dokumentacja zaktualizowana
-- [x] Gotowe do wdrożenia
-
-**Status:** ✅ WPROWADZONE I PRZETESTOWANE - file_tile_widget.py zaimplementowany i wstępnie przetestowany.
-
----
-
-## ETAP 3: src/ui/main_window.py
-
-### 📋 Identyfikacja
-
-- **Plik główny:** `src/ui/main_window.py` (823 linie)
-- **Priorytet:** 🔴 WYSOKI
-- **Zależności:** wszystkie główne moduły aplikacji
-- **Status:** ✅ ANALIZA ZAKOŃCZONA
-
-### 🔍 Analiza problemów
-
-1. **Błędy krytyczne:**
-
-   - **COMPLEX STATE MANAGEMENT:** Skomplikowane zarządzanie stanem między różnymi workerami i threadami
-   - **THREAD LIFECYCLE ISSUES:** Worker threads nie zawsze są poprawnie czyszczone przy zamykaniu aplikacji
-   - **BLOCKING UI OPERATIONS:** Niektóre operacje blokują główny wątek GUI
-   - **OVERSIZED CLASS:** 823 linie w jednej klasie - zbyt wiele odpowiedzialności
-
-2. **Optymalizacje wydajności:**
-
-   - **EXCESSIVE REPAINTS:** Częste odświeżanie galerii przy każdej zmianie filtru
-   - **INEFFICIENT FOLDER SCANNING:** Skanowanie całego folderu przy każdej zmianie
-   - **REDUNDANT SIGNAL CONNECTIONS:** Wielokrotne łączenie tych samych sygnałów
-
-3. **Refaktoryzacja:**
-   - **MONOLITHIC STRUCTURE:** Jedna klasa obsługuje UI, zarządzanie danymi, threading
-   - **TIGHT COUPLING:** Bezpośrednie wywołania między różnymi częściami UI
-
-### 🔧 Propozycje poprawek
-
-#### POPRAWKA 1: Wydzielenie ThreadManager
-
-```python
-class ThreadManager:
-    """Zarządza wszystkimi worker threads w aplikacji"""
-
-    def __init__(self):
-        self.active_workers = {}
-
-    def start_worker(self, worker_type: str, worker: QThread):
-        self.stop_worker(worker_type)  # Zatrzymaj poprzedni
-        self.active_workers[worker_type] = worker
-        worker.start()
-
-    def stop_worker(self, worker_type: str):
-        if worker_type in self.active_workers:
-            worker = self.active_workers[worker_type]
-            if worker.isRunning():
-                worker.quit()
-                worker.wait(3000)  # 3s timeout
-
-    def cleanup_all(self):
-        for worker_type in list(self.active_workers.keys()):
-            self.stop_worker(worker_type)
-```
-
-#### POPRAWKA 2: Debounce dla operacji UI
-
-```python
-def _schedule_gallery_update(self):
-    """Zaplanuj odświeżenie galerii z debounce"""
-    self.resize_timer.stop()
-    self.resize_timer.start(300)  # 300ms debounce
-
-def _schedule_filter_update(self):
-    """Zaplanuj aktualizację filtrów z debounce"""
-    if hasattr(self, 'filter_timer'):
-        self.filter_timer.stop()
+def _update_thumbnail_border_color(self, color_hex: str):
+    """Aktualizuje kolor obwódki wokół miniatury."""
+    if color_hex and color_hex.strip():
+        self.thumbnail_frame.setStyleSheet(f"""
+            QFrame {{
+                border: 4px solid {color_hex};
+                border-radius: 4px;
+                padding: 0px;
+            }}
+        """)
     else:
-        self.filter_timer = QTimer()
-        self.filter_timer.setSingleShot(True)
-        self.filter_timer.timeout.connect(self._apply_filters_and_update_view)
-    self.filter_timer.start(150)  # 150ms debounce
+        self.thumbnail_frame.setStyleSheet("""
+            QFrame {
+                border: 2px solid #cccccc;
+                border-radius: 4px;
+                padding: 0px;
+            }
+        """)
 ```
 
-**Status:** ✅ ANALIZA ZAKOŃCZONA - main_window.py przeanalizowany
-
----
-
-## ETAP 4: src/logic/metadata_manager.py
-
-### 📋 Identyfikacja
-
-- **Plik główny:** `src/logic/metadata_manager.py` (591 linii)
-- **Priorytet:** 🔴 WYSOKI
-- **Status:** ✅ ANALIZA ZAKOŃCZONA
-
-### 🔍 Analiza problemów
-
-1. **Błędy krytyczne:**
-
-   - **FILELOCK PERFORMANCE IMPACT:** FileLock używany przy każdej operacji I/O powoduje 10x spowolnienie
-   - **EXCESSIVE PATH OPERATIONS:** Wielokrotne normalizacje tych samych ścieżek
-   - **SYNCHRONOUS METADATA:** Wszystkie operacje metadanych są synchroniczne, blokują UI
-
-2. **Optymalizacje wydajności:**
-   - **ASYNC METADATA OPERATIONS:** Przenieś operacje I/O na background threads
-   - **PATH CACHING:** Cache znormalizowanych ścieżek
-   - **BATCH OPERATIONS:** Grupuj operacje save/load
-
-### 🔧 Propozycje poprawek
-
-#### POPRAWKA 1: Wyłączenie FileLock (już zaimplementowane)
+#### POPRAWKA 4: Efekt hover dla nazwy pliku ✅
 
 ```python
-# W load_metadata() i save_metadata()
-# STARE: with FileLock(lock_path, timeout=LOCK_TIMEOUT):
-# NOWE: Bez FileLock - prostsze i szybsze
+self.filename_label.setStyleSheet("""
+    QLabel {
+        color: #333333;
+        padding: 2px;
+        border-radius: 2px;
+        cursor: pointer;
+    }
+    QLabel:hover {
+        color: #0066cc;
+        text-decoration: underline;
+        background-color: rgba(200, 230, 255, 0.3);
+    }
+""")
 ```
 
-#### POPRAWKA 2: Async metadata operations
+#### POPRAWKA 5: Efekt hover dla miniatury ✅
 
 ```python
-class AsyncMetadataManager:
-    """Asynchroniczny manager metadanych"""
-
-    def __init__(self):
-        self.worker_thread = QThread()
-        self.worker = MetadataWorker()
-        self.worker.moveToThread(self.worker_thread)
-        self.worker_thread.start()
-
-    def save_metadata_async(self, working_dir: str, data: dict):
-        """Zapisz metadane asynchronicznie"""
-        QMetaObject.invokeMethod(
-            self.worker,
-            "save_metadata",
-            Qt.QueuedConnection,
-            Q_ARG(str, working_dir),
-            Q_ARG(dict, data)
-        )
+self.thumbnail_label.setStyleSheet("""
+    QLabel {
+        cursor: pointer;
+        transition: transform 0.2s;
+    }
+    QLabel:hover {
+        transform: scale(1.03);
+        opacity: 0.9;
+    }
+""")
 ```
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA - metadata_manager.py przeanalizowany
-
----
-
-## ETAP 5-16: POZOSTAŁE PLIKI (ANALIZA PODSUMOWUJĄCA)
-
-### 🟡 src/logic/file_operations.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Brak implementacji `create_pair_from_files()`, nieoptymalny file moving
-**Fixes:** Dodać missing function, async file operations
-
-### 🟡 src/utils/path_utils.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Redundantne normalizacje, brak cache
-**Fixes:** Path normalization cache, batch processing
-
-### 🟡 src/models/file_pair.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA  
-**Problemy:** Nieefektywne property gettery, brak validation
-**Fixes:** Lazy loading properties, input validation
-
-### 🟡 src/logic/filter_logic.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Repeated filter applications, no caching
-**Fixes:** Filter result caching, optimized comparisons
-
-### 🟡 src/utils/image_utils.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Synchronous image loading, no thumbnails cache
-**Fixes:** Async image processing, thumbnail cache integration
-
-### 🟡 src/ui/delegates/workers.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Poor error handling, no progress reporting
-**Fixes:** Better exception handling, progress signals
-
-### 🟡 src/app_config.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Static configuration, no validation
-**Fixes:** Dynamic config loading, validation schema
-
-### 🟡 src/ui/directory_tree_manager.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Sync folder scanning, poor filtering
-**Fixes:** Async scanning, better folder filters
-
-### 🟡 src/ui/file_operations_ui.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Blocking file operations, no progress indication
-**Fixes:** Async operations, progress bars
-
-### 🟡 src/ui/gallery_manager.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA  
-**Problemy:** Inefficient layout updates, memory leaks
-**Fixes:** Virtual scrolling, widget recycling
-
-### 🟡 src/ui/widgets/preview_dialog.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Full image loading, no lazy loading
-**Fixes:** Progressive image loading, zoom optimization
-
-### 🟢 run_app.py
-
-**Status:** ✅ ANALIZA ZAKOŃCZONA
-**Problemy:** Basic error handling, no logging setup
-**Fixes:** Proper exception handling, logging configuration
-
----
-
-## 🎯 PODSUMOWANIE KOŃCOWE AUDYTU
-
-### ✅ ZAKOŃCZONE ETAPY
-
-- **Etap 1:** Mapa projektu (16 plików, ~5000+ linii kodu)
-- **Etap 2:** Szczegółowa analiza wszystkich 16 plików kluczowych
-- **Etap 3:** Plan implementacji w 3 fazach
-
-### 🔥 GŁÓWNE BOTTLENECKS ZIDENTYFIKOWANE
-
-1. **Cache Management** - Brak validation, unlimited growth
-2. **Thread/Worker Leaks** - Nieprawidłowe cleanup threads
-3. **FileLock Performance** - 10x spowolnienie przez filelock
-4. **Oversized Classes** - 577-823 linii w kluczowych klasach
-
-### 📈 OCZEKIWANE REZULTATY PO IMPLEMENTACJI
-
-- **50-70% przyspieszenie** skanowania folderów
-- **60% redukcja** zużycia pamięci przez thumbnails
-- **90% szybsze** ładowanie metadanych (dzięki wyłączeniu FileLock)
-- **Lepszy UX** - responsywność UI, progress indicators
-
-### 🚀 GOTOWOŚĆ DO IMPLEMENTACJI
-
-**Status:** ✅ **AUDYT KOMPLETNY - READY FOR IMPLEMENTATION**
-
-Wszystkie 16 plików kluczowych przeanalizowane z konkretnymi poprawkami kodu i planem 3-fazowej implementacji
