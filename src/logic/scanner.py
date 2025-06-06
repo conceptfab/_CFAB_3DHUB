@@ -10,11 +10,11 @@ import os
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Callable
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from src import app_config  # Importujemy moduł konfiguracji
 from src.models.file_pair import FilePair
-from src.utils.path_utils import normalize_path, is_path_valid, path_exists
+from src.utils.path_utils import is_path_valid, normalize_path, path_exists
 
 # Konfiguracja loggera
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ _files_cache: Dict[str, Tuple[float, Dict[str, List[str]]]] = {}
 
 class ScanningInterrupted(Exception):
     """Wyjątek rzucany, gdy skanowanie zostało przerwane przez użytkownika."""
+
     pass
 
 
@@ -48,18 +49,18 @@ def clear_cache() -> None:
 def get_directory_modification_time(directory: str) -> float:
     """
     Pobiera maksymalny czas modyfikacji dla katalogu i jego zawartości.
-    
+
     Args:
         directory: Ścieżka do katalogu
-        
+
     Returns:
         Znacznik czasu ostatniej modyfikacji (timestamp)
     """
     if not path_exists(directory):
         return 0
-        
+
     max_mtime = os.path.getmtime(directory)
-    
+
     # Sprawdzamy wszystkie pliki i podfoldery w katalogu (tylko 1 poziom w głąb)
     try:
         with os.scandir(directory) as entries:
@@ -69,65 +70,67 @@ def get_directory_modification_time(directory: str) -> float:
                     if current_mtime > max_mtime:
                         max_mtime = current_mtime
                 except (PermissionError, OSError) as e:
-                    logger.warning(f"Nie można uzyskać czasu modyfikacji dla {entry.path}: {e}")
+                    logger.warning(
+                        f"Nie można uzyskać czasu modyfikacji dla {entry.path}: {e}"
+                    )
     except (PermissionError, OSError) as e:
         logger.warning(f"Nie można odczytać zawartości katalogu {directory}: {e}")
-        
+
     return max_mtime
 
 
 def is_cache_valid(directory: str) -> bool:
     """
     Sprawdza, czy bufor dla danego katalogu jest aktualny.
-    
+
     Args:
         directory: Ścieżka do katalogu
-        
+
     Returns:
         True jeśli bufor jest aktualny, False w przeciwnym razie
     """
     normalized_dir = normalize_path(directory)
-    
+
     # Jeśli nie ma w buforze, to nie jest aktualny
     if normalized_dir not in _files_cache:
         return False
-        
+
     # Pobieramy czas ostatniej modyfikacji katalogu
     current_mtime = get_directory_modification_time(normalized_dir)
     cached_mtime, _ = _files_cache[normalized_dir]
-    
+
     # Jeśli czas modyfikacji jest nowszy niż czas z bufora, bufor jest nieaktualny
     return current_mtime <= cached_mtime
 
 
 def collect_files(
-    directory: str, 
+    directory: str,
     max_depth: int = -1,
     interrupt_check: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, List[str]]:
     """
     Zbiera wszystkie pliki w katalogu zgodnie z obsługiwanymi rozszerzeniami.
-    
+
     Args:
         directory: Ścieżka do katalogu do przeskanowania
         max_depth: Maksymalna głębokość rekursji, -1 oznacza brak limitu
         interrupt_check: Opcjonalna funkcja sprawdzająca czy przerwać skanowanie
-        
+
     Returns:
         Słownik zmapowanych plików, gdzie kluczem jest nazwa bazowa (bez rozszerzenia),
         a wartością lista pełnych ścieżek do plików.
-        
+
     Raises:
         ScanningInterrupted: Jeśli skanowanie zostało przerwane
     """
     normalized_dir = normalize_path(directory)
-    
-    # Sprawdź czy mamy w buforze i czy jest aktualny
-    if normalized_dir in _files_cache and is_cache_valid(normalized_dir):
+
+    # Sprawdź czy mamy w buforze (bez sprawdzania czasu modyfikacji dla wydajności)
+    if normalized_dir in _files_cache:
         logger.debug(f"Używam buforowanych plików dla katalogu {normalized_dir}")
         _, file_map = _files_cache[normalized_dir]
         return file_map
-    
+
     # Jeśli katalog nie istnieje lub nie jest katalogiem, zwróć pusty słownik
     if not path_exists(normalized_dir) or not os.path.isdir(normalized_dir):
         logger.warning(f"Katalog {normalized_dir} nie istnieje lub nie jest katalogiem")
@@ -141,31 +144,31 @@ def collect_files(
 
     # Zestaw odwiedzonych katalogów (do obsługi pętli symbolicznych)
     visited_dirs = set()
-    
+
     def _walk_directory(current_dir: str, depth: int = 0):
         nonlocal total_folders_scanned, total_files_found
-        
+
         # Sprawdzenie czy należy przerwać skanowanie
         if interrupt_check and interrupt_check():
             logger.warning("Skanowanie przerwane przez użytkownika")
             raise ScanningInterrupted("Skanowanie przerwane przez użytkownika")
-        
+
         # Obsługa limitu głębokości
         if max_depth >= 0 and depth > max_depth:
             return
-            
+
         # Zabezpieczenie przed zapętleniem (symlinki)
         normalized_current = os.path.realpath(current_dir)
         if normalized_current in visited_dirs:
             logger.warning(f"Wykryto pętlę w katalogach: {normalized_current}")
             return
         visited_dirs.add(normalized_current)
-        
+
         # Skanowanie folderu
         try:
             total_folders_scanned += 1
             entries = list(os.scandir(current_dir))
-            
+
             # Najpierw przetwarzamy pliki
             for entry in entries:
                 if entry.is_file():
@@ -173,71 +176,78 @@ def collect_files(
                     name = entry.name
                     base_name, ext = os.path.splitext(name)
                     ext_lower = ext.lower()
-                    
-                    if ext_lower in ARCHIVE_EXTENSIONS or ext_lower in PREVIEW_EXTENSIONS:
-                        map_key = os.path.join(normalize_path(current_dir), base_name.lower())
+
+                    if (
+                        ext_lower in ARCHIVE_EXTENSIONS
+                        or ext_lower in PREVIEW_EXTENSIONS
+                    ):
+                        map_key = os.path.join(
+                            normalize_path(current_dir), base_name.lower()
+                        )
                         full_file_path = normalize_path(os.path.join(current_dir, name))
                         file_map[map_key].append(full_file_path)
-            
+
             # Potem rekurencyjnie przetwarzamy podfoldery
             for entry in entries:
                 if entry.is_dir():
                     _walk_directory(entry.path, depth + 1)
-            
+
         except (PermissionError, OSError) as e:
             logger.warning(f"Błąd dostępu do katalogu {current_dir}: {e}")
-    
+
     try:
         _walk_directory(normalized_dir)
     except ScanningInterrupted:
         raise
-    
+
     elapsed_time = time.time() - start_time
     logger.info(
         f"Zakończono zbieranie plików. Przeskanowano {total_folders_scanned} folderów, "
         f"znaleziono {total_files_found} plików w czasie {elapsed_time:.2f}s"
     )
-    
+
     # Zapisujemy wynik do bufora
     _files_cache[normalized_dir] = (time.time(), dict(file_map))
-    
+
     return dict(file_map)
 
 
 def create_file_pairs(
-    file_map: Dict[str, List[str]], 
+    file_map: Dict[str, List[str]],
     base_directory: str,
     pair_all: bool = True,
 ) -> Tuple[List[FilePair], Set[str]]:
     """
     Tworzy pary plików na podstawie zebranych danych.
-    
+
     Args:
         file_map: Słownik zmapowanych plików
         base_directory: Katalog bazowy dla względnych ścieżek w FilePair
         pair_all: Czy parować wszystkie możliwe kombinacje (True) czy tylko pierwsze znalezione (False)
-        
+
     Returns:
         Krotka zawierająca listę utworzonych par oraz zbiór przetworzonych plików
     """
     found_pairs: List[FilePair] = []
     processed_files: Set[str] = set()
-    
+
     for base_path, files_list in file_map.items():
         # Dzielimy pliki na archiwa i podglądy
         archive_files = [
-            f for f in files_list
+            f
+            for f in files_list
             if os.path.splitext(f)[1].lower() in ARCHIVE_EXTENSIONS
         ]
         preview_files = [
-            f for f in files_list
+            f
+            for f in files_list
             if os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS
         ]
-        
+
         # Jeśli nie ma zarówno archiwów jak i podglądów, pomijamy
         if not archive_files or not preview_files:
             continue
-        
+
         # Tworzenie par - albo wszystkie kombinacje, albo tylko pierwszą
         if pair_all:
             for archive in archive_files:
@@ -248,7 +258,9 @@ def create_file_pairs(
                         processed_files.add(archive)
                         processed_files.add(preview)
                     except ValueError as e:
-                        logger.error(f"Błąd tworzenia FilePair dla '{archive}' i '{preview}': {e}")
+                        logger.error(
+                            f"Błąd tworzenia FilePair dla '{archive}' i '{preview}': {e}"
+                        )
         else:
             # Tylko pierwsza para
             try:
@@ -258,7 +270,7 @@ def create_file_pairs(
                 processed_files.add(preview_files[0])
             except ValueError as e:
                 logger.error(f"Błąd tworzenia FilePair dla '{archive_files[0]}': {e}")
-                
+
     return found_pairs, processed_files
 
 
@@ -268,20 +280,20 @@ def identify_unpaired_files(
 ) -> Tuple[List[str], List[str]]:
     """
     Identyfikuje niesparowane pliki na podstawie zebranych danych.
-    
+
     Args:
         file_map: Słownik zmapowanych plików
         processed_files: Zbiór już przetworzonych (sparowanych) plików
-        
+
     Returns:
         Krotka zawierająca listy niesparowanych archiwów i podglądów
     """
     unpaired_archives: List[str] = []
     unpaired_previews: List[str] = []
-    
+
     # Zbieramy wszystkie pliki z mapy
     all_files = {file for files_list in file_map.values() for file in files_list}
-    
+
     # Identyfikujemy niesparowane pliki
     unpaired_files = all_files - processed_files
     for f in unpaired_files:
@@ -289,7 +301,7 @@ def identify_unpaired_files(
             unpaired_archives.append(f)
         elif os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS:
             unpaired_previews.append(f)
-            
+
     return unpaired_archives, unpaired_previews
 
 
@@ -309,63 +321,67 @@ def scan_folder_for_pairs(
         use_cache: Czy używać buforowanych wyników jeśli są dostępne
         pair_all: Czy parować wszystkie możliwe kombinacje plików
         interrupt_check: Opcjonalna funkcja sprawdzająca czy przerwać skanowanie
-        
+
     Returns:
         Krotka zawierająca listę znalezionych par, listę niesparowanych archiwów
         i listę niesparowanych podglądów.
-        
+
     Raises:
         ScanningInterrupted: Jeśli skanowanie zostało przerwane
     """
     normalized_dir = normalize_path(directory)
-    
+
     # Sprawdź czy katalog istnieje
     if not path_exists(normalized_dir):
         logger.error(f"Katalog {normalized_dir} nie istnieje")
         return [], [], []
-    
-    # Sprawdź czy mamy w buforze i czy można go użyć
+
+    # Sprawdź czy mamy w buforze (wyłączono sprawdzanie czasu dla wydajności)
     cache_key = f"{normalized_dir}_{max_depth}_{pair_all}"
     if use_cache and cache_key in _scan_cache:
-        logger.debug(f"Używam buforowanych wyników skanowania dla {normalized_dir}")
+        logger.info(f"CACHE HIT: Używam buforowanych wyników dla {normalized_dir}")
         return _scan_cache[cache_key]
-    
+
     logger.info(f"Rozpoczęto skanowanie katalogu: {normalized_dir}")
     start_time = time.time()
-    
+
     try:
         # Krok 1: Zbieranie wszystkich plików
         file_map = collect_files(normalized_dir, max_depth, interrupt_check)
-        
+
         # Krok 2: Tworzenie par plików
-        found_pairs, processed_files = create_file_pairs(file_map, normalized_dir, pair_all)
-        
+        found_pairs, processed_files = create_file_pairs(
+            file_map, normalized_dir, pair_all
+        )
+
         # Krok 3: Identyfikacja niesparowanych plików
-        unpaired_archives, unpaired_previews = identify_unpaired_files(file_map, processed_files)
-        
+        unpaired_archives, unpaired_previews = identify_unpaired_files(
+            file_map, processed_files
+        )
+
     except ScanningInterrupted:
         # W przypadku przerwania zwracamy częściowe wyniki, ale nie buforujemy ich
         logger.warning("Zwracam częściowe wyniki z powodu przerwania skanowania")
         raise
-        
+
     elapsed_time = time.time() - start_time
     logger.info(
         f"Zakończono skanowanie '{normalized_dir}' w czasie {elapsed_time:.2f}s. "
         f"Znaleziono {len(found_pairs)} par, {len(unpaired_archives)} niesparowanych "
         f"archiwów i {len(unpaired_previews)} niesparowanych podglądów."
     )
-    
+
     # Zapisujemy wynik do bufora
     result = (found_pairs, unpaired_archives, unpaired_previews)
     _scan_cache[cache_key] = result
-    
+
     return result
 
 
 def get_scan_statistics() -> Dict[str, int]:
     """
     Zwraca statystyki dotyczące bieżącego stanu bufora skanowania.
-    
+
     Returns:
         Słownik zawierający statystyki
     """
@@ -378,15 +394,15 @@ def get_scan_statistics() -> Dict[str, int]:
 if __name__ == "__main__":
     # Ten blok jest przeznaczony do prostych testów manualnych.
     # Aby go użyć, dostosuj ścieżkę `test_dir` i uruchom moduł bezpośrednio.
-    
+
     # Konfiguracja logowania dla testów
     logging.basicConfig(level=logging.DEBUG)
-    
+
     # test_dir = "C:/przykładowy/katalog/testowy"
     # print(f"Testowanie skanowania katalogu: {test_dir}")
     # pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(test_dir)
     # print(f"Znaleziono {len(pairs)} par")
     # print(f"Niesparowane archiwa: {len(unpaired_archives)}")
     # print(f"Niesparowane podglądy: {len(unpaired_previews)}")
-    
+
     print("Uruchom test_scanner.py aby przetestować moduł skanera.")

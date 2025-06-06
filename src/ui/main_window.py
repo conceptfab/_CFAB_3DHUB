@@ -75,7 +75,7 @@ class ScanFolderWorker(QObject):
                 f"{self.directory_to_scan} w wątku."
             )
             found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
-                self.directory_to_scan, max_depth=0
+                self.directory_to_scan, max_depth=0, pair_all=False
             )
             if not self._should_stop:
                 self.finished.emit(found_pairs, unpaired_archives, unpaired_previews)
@@ -127,8 +127,7 @@ class DataProcessingWorker(QObject):
                 )
                 for file_pair in self.file_pairs:
                     self.tile_data_ready.emit(file_pair)
-                    # Dajemy głównemu wątkowi szansę na przetworzenie zdarzeń
-                    QThread.msleep(1)
+                    # Usuniętno opóźnienie QThread.msleep(1) dla lepszej wydajności
             else:
                 logging.debug("DataProcessingWorker: Brak par plików do przetworzenia.")
 
@@ -236,6 +235,12 @@ class MainWindow(QMainWindow):
         self.select_folder_button = QPushButton("Wybierz Folder Roboczy")
         self.select_folder_button.clicked.connect(self._select_working_directory)
         self.top_layout.addWidget(self.select_folder_button)
+
+        # Przycisk czyszczenia cache
+        self.clear_cache_button = QPushButton("Odśwież (Wyczyść Cache)")
+        self.clear_cache_button.clicked.connect(self._force_refresh)
+        self.clear_cache_button.setVisible(False)  # Ukryty na początku
+        self.top_layout.addWidget(self.clear_cache_button)
 
         # Panel kontroli rozmiaru
         self.size_control_panel = QWidget()
@@ -469,6 +474,11 @@ class MainWindow(QMainWindow):
         # 1. Wyczyść wszystkie dane i widoki przed nowym skanowaniem
         self._clear_all_data_and_views()
 
+        # 2. Wyczyść cache skanowania tylko przy nowym folderze
+        from src.logic.scanner import clear_cache
+
+        clear_cache()
+
         # 2. Zaktualizuj drzewo folderów, aby pokazywało nową lokalizację
         self._init_directory_tree()
 
@@ -511,6 +521,15 @@ class MainWindow(QMainWindow):
             self.scan_worker.deleteLater()
             self.scan_worker = None
         logging.debug("Wątek skanujący i worker zostały bezpiecznie wyczyszczone.")
+
+    def _force_refresh(self):
+        """Wymusza ponowne skanowanie poprzez czyszczenie cache."""
+        if self.current_working_directory:
+            from src.logic.scanner import clear_cache
+
+            clear_cache()
+            logging.info("Cache wyczyszczony - wymuszono ponowne skanowanie")
+            self._select_working_directory(self.current_working_directory)
 
     def _clear_all_data_and_views(self):
         """Czyści wszystkie dane plików i odpowiednie widoki, w tym galerię."""
@@ -656,6 +675,9 @@ class MainWindow(QMainWindow):
         # Przywróć przycisk
         self.select_folder_button.setText("Wybierz Folder Roboczy")
         self.select_folder_button.setEnabled(True)
+
+        # Pokaż przycisk odświeżania cache
+        self.clear_cache_button.setVisible(True)
 
         # Zapisz metadane
         self._save_metadata()
@@ -1249,7 +1271,7 @@ class MainWindow(QMainWindow):
 
         # Skanuj folder na nowo
         found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
-            self.current_working_directory, max_depth=0
+            self.current_working_directory, max_depth=0, pair_all=False
         )
         self.all_file_pairs = found_pairs
         self.unpaired_archives = unpaired_archives
