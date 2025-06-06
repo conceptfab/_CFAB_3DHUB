@@ -19,7 +19,7 @@ from src.utils.path_utils import normalize_path
 METADATA_DIR_NAME = ".app_metadata"
 METADATA_FILE_NAME = "metadata.json"
 LOCK_FILE_NAME = "metadata.lock"  # Nazwa pliku blokady
-LOCK_TIMEOUT = 10  # Czas oczekiwania na blokadę w sekundach
+LOCK_TIMEOUT = 1  # Czas oczekiwania na blokadę w sekundach (zmniejszone)
 
 
 def get_metadata_path(working_directory: str) -> str:
@@ -235,27 +235,27 @@ def load_metadata(working_directory: str) -> Dict[str, Any]:
         )
         return default_metadata  # Nie można kontynuować bez katalogu
 
-    lock = FileLock(lock_path, timeout=LOCK_TIMEOUT)
+    # Wyłączamy blokadę plików - powoduje niepotrzebne opóźnienia
+    # lock = FileLock(lock_path, timeout=LOCK_TIMEOUT)
 
     try:
-        with lock:
-            if not os.path.exists(metadata_path):
-                logging.debug(
-                    f"Plik metadanych nie istnieje: {metadata_path}. Zwracam domyślne."
-                )
-                return default_metadata
+        if not os.path.exists(metadata_path):
+            logging.debug(
+                f"Plik metadanych nie istnieje: {metadata_path}. Zwracam domyślne."
+            )
+            return default_metadata
 
-            with open(metadata_path, "r", encoding="utf-8") as file:
-                metadata = json.load(file)
-                logging.debug(f"Wczytano metadane z {metadata_path}")
+        with open(metadata_path, "r", encoding="utf-8") as file:
+            metadata = json.load(file)
+            logging.debug(f"Wczytano metadane z {metadata_path}")
 
-            if not _validate_metadata_structure(metadata):
-                logging.warning(
-                    f"Struktura metadanych w {metadata_path} jest nieprawidłowa. Zwracam domyślne."
-                )
-                return default_metadata
+        if not _validate_metadata_structure(metadata):
+            logging.warning(
+                f"Struktura metadanych w {metadata_path} jest nieprawidłowa. Zwracam domyślne."
+            )
+            return default_metadata
 
-            return metadata
+        return metadata
     except Timeout:
         logging.error(
             f"Nie można uzyskać blokady pliku metadanych {lock_path} w ciągu {LOCK_TIMEOUT}s."
@@ -297,97 +297,98 @@ def save_metadata(
     lock_path = get_lock_path(working_directory)
     metadata_dir = os.path.dirname(metadata_path)  # Pobieramy katalog z pełnej ścieżki
 
-    lock = FileLock(lock_path, timeout=LOCK_TIMEOUT)
+    # Wyłączamy blokadę plików - powoduje niepotrzebne opóźnienia
+    # lock = FileLock(lock_path, timeout=LOCK_TIMEOUT)
 
     try:
-        with lock:
-            os.makedirs(metadata_dir, exist_ok=True)
+        # with lock:  # Zakomentowane - bez blokady
+        os.makedirs(metadata_dir, exist_ok=True)
 
-            # Wczytanie istniejących metadanych, aby nie nadpisać innych informacji,
-            # jeśli plik metadanych zawierałby więcej niż tylko te trzy klucze.
-            # Jednak obecna logika load_metadata i tak zwraca tylko te klucze lub domyślne.
-            # Dla bezpieczeństwa i przyszłej rozbudowy, lepiej wczytać.
-            current_metadata = load_metadata(
-                working_directory
-            )  # load_metadata już obsługuje blokadę, ale tu jesteśmy wewnątrz bloku
+        # Wczytanie istniejących metadanych, aby nie nadpisać innych informacji,
+        # jeśli plik metadanych zawierałby więcej niż tylko te trzy klucze.
+        # Jednak obecna logika load_metadata i tak zwraca tylko te klucze lub domyślne.
+        # Dla bezpieczeństwa i przyszłej rozbudowy, lepiej wczytać.
+        current_metadata = load_metadata(
+            working_directory
+        )  # load_metadata już obsługuje blokadę, ale tu jesteśmy wewnątrz bloku
 
-            # Przygotowanie danych do zapisu dla sparowanych plików
-            # Używamy słownika do przechowywania metadanych par, aby łatwiej aktualizować
-            # i unikać duplikatów, jeśli file_pairs_list zawierałoby je.
-            updated_file_pairs_metadata = current_metadata.get("file_pairs", {})
+        # Przygotowanie danych do zapisu dla sparowanych plików
+        # Używamy słownika do przechowywania metadanych par, aby łatwiej aktualizować
+        # i unikać duplikatów, jeśli file_pairs_list zawierałoby je.
+        updated_file_pairs_metadata = current_metadata.get("file_pairs", {})
 
-            for file_pair in file_pairs_list:
-                # Sprawdzamy, czy obiekt ma wymagane atrybuty/metody
-                if not all(
-                    hasattr(file_pair, attr)
-                    for attr in [
-                        "archive_path",
-                        "is_favorite",
-                        "get_stars",
-                        "get_color_tag",
-                    ]
-                ):
-                    logging.warning(
-                        f"Pominięto obiekt w file_pairs_list - brak wymaganych atrybutów: {file_pair}"
-                    )
-                    continue
-
-                relative_archive_path = get_relative_path(
-                    file_pair.archive_path, working_directory
+        for file_pair in file_pairs_list:
+            # Sprawdzamy, czy obiekt ma wymagane atrybuty/metody
+            if not all(
+                hasattr(file_pair, attr)
+                for attr in [
+                    "archive_path",
+                    "is_favorite",
+                    "get_stars",
+                    "get_color_tag",
+                ]
+            ):
+                logging.warning(
+                    f"Pominięto obiekt w file_pairs_list - brak wymaganych atrybutów: {file_pair}"
                 )
-                if relative_archive_path is None:
-                    logging.warning(
-                        f"Nie można uzyskać ścieżki względnej dla {file_pair.archive_path}. Pomijam zapis tej pary."
-                    )
-                    continue
+                continue
 
-                pair_metadata = {
-                    "is_favorite": file_pair.is_favorite,
-                    "stars": file_pair.get_stars(),
-                    "color_tag": file_pair.get_color_tag(),
-                }
-                updated_file_pairs_metadata[relative_archive_path] = pair_metadata
+            relative_archive_path = get_relative_path(
+                file_pair.archive_path, working_directory
+            )
+            if relative_archive_path is None:
+                logging.warning(
+                    f"Nie można uzyskać ścieżki względnej dla {file_pair.archive_path}. Pomijam zapis tej pary."
+                )
+                continue
 
-            current_metadata["file_pairs"] = updated_file_pairs_metadata
+            pair_metadata = {
+                "is_favorite": file_pair.is_favorite,
+                "stars": file_pair.get_stars(),
+                "color_tag": file_pair.get_color_tag(),
+            }
+            updated_file_pairs_metadata[relative_archive_path] = pair_metadata
 
-            # Przygotowanie i zapis list niesparowanych plików
-            current_metadata["unpaired_archives"] = []
-            for p in unpaired_archives:
-                rel_p = get_relative_path(p, working_directory)
-                if rel_p is not None:
-                    current_metadata["unpaired_archives"].append(rel_p)
-                else:
-                    logging.warning(
-                        f"Nie można uzyskać ścieżki względnej dla niesparowanego archiwum: {p}. Pomijam."
-                    )
+        current_metadata["file_pairs"] = updated_file_pairs_metadata
 
-            current_metadata["unpaired_previews"] = []
-            for p in unpaired_previews:
-                rel_p = get_relative_path(p, working_directory)
-                if rel_p is not None:
-                    current_metadata["unpaired_previews"].append(rel_p)
-                else:
-                    logging.warning(
-                        f"Nie można uzyskać ścieżki względnej dla niesparowanego podglądu: {p}. Pomijam."
-                    )
+        # Przygotowanie i zapis list niesparowanych plików
+        current_metadata["unpaired_archives"] = []
+        for p in unpaired_archives:
+            rel_p = get_relative_path(p, working_directory)
+            if rel_p is not None:
+                current_metadata["unpaired_archives"].append(rel_p)
+            else:
+                logging.warning(
+                    f"Nie można uzyskać ścieżki względnej dla niesparowanego archiwum: {p}. Pomijam."
+                )
 
-            # Atomowy zapis: najpierw do pliku tymczasowego, potem zamiana
-            temp_file_path = ""
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                delete=False,
-                encoding="utf-8",
-                dir=metadata_dir,
-                suffix=".tmp",
-            ) as temp_file:
-                json.dump(current_metadata, temp_file, ensure_ascii=False, indent=4)
-                temp_file_path = temp_file.name
+        current_metadata["unpaired_previews"] = []
+        for p in unpaired_previews:
+            rel_p = get_relative_path(p, working_directory)
+            if rel_p is not None:
+                current_metadata["unpaired_previews"].append(rel_p)
+            else:
+                logging.warning(
+                    f"Nie można uzyskać ścieżki względnej dla niesparowanego podglądu: {p}. Pomijam."
+                )
 
-            # Zastępujemy docelowy plik tymczasowym
-            # shutil.move jest generalnie atomowe na większości systemów, jeśli źródło i cel są na tym samym systemie plików.
-            shutil.move(temp_file_path, metadata_path)
-            logging.debug(f"Zapisano metadane do {metadata_path}")
-            return True
+        # Atomowy zapis: najpierw do pliku tymczasowego, potem zamiana
+        temp_file_path = ""
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            delete=False,
+            encoding="utf-8",
+            dir=metadata_dir,
+            suffix=".tmp",
+        ) as temp_file:
+            json.dump(current_metadata, temp_file, ensure_ascii=False, indent=4)
+            temp_file_path = temp_file.name
+
+        # Zastępujemy docelowy plik tymczasowym
+        # shutil.move jest generalnie atomowe na większości systemów, jeśli źródło i cel są na tym samym systemie plików.
+        shutil.move(temp_file_path, metadata_path)
+        logging.debug(f"Zapisano metadane do {metadata_path}")
+        return True
 
     except Timeout:
         logging.error(
