@@ -246,7 +246,7 @@ class ThumbnailCache:
 def _load_thumbnail_async(self):
     # Zachowanie ID aktualnego workera
     worker_id = self._current_worker_id
-    
+
     # Przerwanie istniejącego workera
     if self.thumbnail_thread is not None and self.thumbnail_thread.isRunning():
         self.thumbnail_worker.finished.disconnect()
