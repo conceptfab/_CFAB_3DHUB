@@ -49,7 +49,7 @@ Na podstawie mapy przygotuj:
 
 ### Cel drugiego etapu:
 
-Szczegółowa analiza każdego pliku zgodnie z **mapą kodu (`code_map.md`)** i planem z etapu 1, z progressywnym zapisywaniem wyników.
+Szczegółowa analiza każdego pliku zgodnie z **mapą kodu (`code_map.md`)** i planem z etapu 1, z progressywnym zapisywaniem wyników. W tej aplikacji kluczowa jest wydajność - ma pracować z tysiącami plików oraz stabilność. Przeanalizuj kod szczególnie pod tym kątem i zaproponuj adekwatne poprawki.
 
 ### Wymagania etapu 2:
 

@@ -535,4 +535,28 @@ def move_file_pair(
         return None
 
 
+def create_pair_from_files(archive_path: str, preview_path: str) -> FilePair | None:
+    """
+    Wrapper dla manually_pair_files - tworzy parę plików z podanych ścieżek.
+
+    Args:
+        archive_path (str): Ścieżka do pliku archiwum.
+        preview_path (str): Ścieżka do pliku podglądu.
+
+    Returns:
+        FilePair | None: Obiekt FilePair jeśli parowanie się powiodło, None w przypadku błędu.
+    """
+    # Normaliza ścieżki
+    archive_path = normalize_path(archive_path)
+    preview_path = normalize_path(preview_path)
+
+    # Określ katalog roboczy na podstawie archiwum
+    working_directory = os.path.dirname(archive_path)
+
+    logger.info(f"Tworzenie pary z plików: A='{archive_path}', P='{preview_path}'")
+
+    # Użyj istniejącej funkcji manually_pair_files
+    return manually_pair_files(archive_path, preview_path, working_directory)
+
+
 # ... (reszta pliku, jeśli istnieje) ...
