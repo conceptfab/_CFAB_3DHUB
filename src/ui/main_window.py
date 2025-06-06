@@ -75,7 +75,7 @@ class ScanFolderWorker(QObject):
                 f"{self.directory_to_scan} w wątku."
             )
             found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
-                self.directory_to_scan
+                self.directory_to_scan, max_depth=0
             )
             if not self._should_stop:
                 self.finished.emit(found_pairs, unpaired_archives, unpaired_previews)
@@ -1249,7 +1249,7 @@ class MainWindow(QMainWindow):
 
         # Skanuj folder na nowo
         found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
-            self.current_working_directory
+            self.current_working_directory, max_depth=0
         )
         self.all_file_pairs = found_pairs
         self.unpaired_archives = unpaired_archives
