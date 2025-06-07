@@ -10,7 +10,9 @@ import os
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple, Union
+
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
 
 from src import app_config  # Importujemy moduł konfiguracji
 from src.models.file_pair import FilePair
@@ -23,8 +25,9 @@ logger = logging.getLogger(__name__)
 ARCHIVE_EXTENSIONS = set(app_config.SUPPORTED_ARCHIVE_EXTENSIONS)
 PREVIEW_EXTENSIONS = set(app_config.SUPPORTED_PREVIEW_EXTENSIONS)
 
-MAX_CACHE_ENTRIES = 100  # Konfigurowalne
-MAX_CACHE_AGE_SECONDS = 3600  # 1 godzina
+# Parametry cache z centralnego pliku konfiguracyjnego
+MAX_CACHE_ENTRIES = app_config.SCANNER_MAX_CACHE_ENTRIES
+MAX_CACHE_AGE_SECONDS = app_config.SCANNER_MAX_CACHE_AGE_SECONDS
 
 # Cache dla wyników skanowania, klucz: ścieżka katalogu, wartość: wynik skanowania
 _scan_cache: Dict[str, Tuple[List[FilePair], List[str], List[str]]] = {}
@@ -91,7 +94,13 @@ def get_directory_modification_time(directory: str) -> float:
     if not path_exists(directory):
         return 0
 
-    max_mtime = os.path.getmtime(directory)
+    try:
+        max_mtime = os.path.getmtime(directory)
+    except (PermissionError, OSError) as e:
+        logger.warning(
+            f"Nie można uzyskać czasu modyfikacji dla katalogu {directory}: {e}"
+        )
+        return 0
 
     # Sprawdzamy wszystkie pliki i podfoldery w katalogu (tylko 1 poziom w głąb)
     try:
@@ -105,8 +114,10 @@ def get_directory_modification_time(directory: str) -> float:
                     logger.warning(
                         f"Nie można uzyskać czasu modyfikacji dla {entry.path}: {e}"
                     )
+                    # Kontynuujemy sprawdzanie innych plików/folderów
     except (PermissionError, OSError) as e:
         logger.warning(f"Nie można odczytać zawartości katalogu {directory}: {e}")
+        # Zwracamy aktualny max_mtime, aby nie stracić już zebranych informacji
 
     return max_mtime
 
@@ -140,6 +151,9 @@ def collect_files(
     max_depth: int = -1,
     interrupt_check: Optional[Callable[[], bool]] = None,
     force_refresh: bool = False,  # Dodany parametr
+    progress_callback: Optional[
+        Callable[[int, str], None]
+    ] = None,  # Nowy parametr do raportowania postępu
 ) -> Dict[str, List[str]]:
     """
     Zbiera wszystkie pliki w katalogu zgodnie z obsługiwanymi rozszerzeniami.
@@ -149,6 +163,7 @@ def collect_files(
         max_depth: Maksymalna głębokość rekursji, -1 oznacza brak limitu
         interrupt_check: Opcjonalna funkcja sprawdzająca czy przerwać skanowanie
         force_refresh: Czy wymusić odświeżenie cache (ignoruje is_cache_valid)
+        progress_callback: Opcjonalna funkcja do raportowania postępu (procent, wiadomość)
 
     Returns:
         Słownik zmapowanych plików, gdzie kluczem jest nazwa bazowa (bez rozszerzenia),
@@ -165,6 +180,8 @@ def collect_files(
             logger.debug(
                 f"Cache jest aktualny dla {normalized_dir}, używam buforowanych plików"
             )
+            if progress_callback:
+                progress_callback(100, f"Używam cache dla {normalized_dir}")
             _, file_map = _files_cache[normalized_dir]
             return file_map
         else:
@@ -174,13 +191,41 @@ def collect_files(
     # Jeśli katalog nie istnieje lub nie jest katalogiem, zwróć pusty słownik
     if not path_exists(normalized_dir) or not os.path.isdir(normalized_dir):
         logger.warning(f"Katalog {normalized_dir} nie istnieje lub nie jest katalogiem")
+        if progress_callback:
+            progress_callback(100, f"Katalog {normalized_dir} nie istnieje")
         return {}
 
     logger.info(f"Rozpoczęto zbieranie plików z katalogu: {normalized_dir}")
+    if progress_callback:
+        progress_callback(0, f"Rozpoczynam skanowanie: {normalized_dir}")
+
     file_map = defaultdict(list)
     total_folders_scanned = 0
     total_files_found = 0
     start_time = time.time()
+
+    # Najpierw oszacujmy liczbę folderów do przeskanowania, aby móc raportować postęp
+    estimated_folders = 1  # Przynajmniej główny folder
+    if max_depth != 0:
+        try:
+            # Szybkie oszacowanie liczby folderów (tylko jeśli potrzebujemy głębszego skanowania)
+            stack = [(normalized_dir, 0)]
+            while stack and (len(stack) < 1000):  # Limit dla szacowania
+                current_dir, depth = stack.pop()
+                if max_depth >= 0 and depth > max_depth:
+                    continue
+                try:
+                    with os.scandir(current_dir) as entries:
+                        for entry in entries:
+                            if entry.is_dir():
+                                estimated_folders += 1
+                                if depth + 1 <= max_depth or max_depth < 0:
+                                    stack.append((entry.path, depth + 1))
+                except (PermissionError, OSError):
+                    pass  # Ignorujemy błędy podczas szacowania
+        except Exception as e:
+            logger.warning(f"Błąd podczas szacowania liczby folderów: {e}")
+            estimated_folders = 10  # Wartość domyślna jeśli wystąpi błąd
 
     # Zestaw odwiedzonych katalogów (do obsługi pętli symbolicznych)
     visited_dirs = set()
@@ -196,6 +241,14 @@ def collect_files(
         # Obsługa limitu głębokości
         if max_depth >= 0 and depth > max_depth:
             return
+
+        # Raportowanie postępu
+        if progress_callback and estimated_folders > 0:
+            progress = min(95, int(total_folders_scanned * 100 / estimated_folders))
+            progress_callback(
+                progress,
+                f"Skanowanie: {os.path.basename(current_dir)} ({total_files_found} plików)",
+            )
 
         # Zabezpieczenie przed zapętleniem (symlinki)
         normalized_current = os.path.realpath(current_dir)
@@ -312,21 +365,74 @@ def create_file_pairs(
                             f"Błąd tworzenia FilePair dla '{archive}' i '{preview}': {e}"
                         )
         elif pair_strategy == "best_match":
-            # TODO: Implementacja inteligentnego parowania po nazwach
-            # Na razie działa jak "first_match"
-            logger.warning(
-                "Strategia 'best_match' nie jest jeszcze w pełni zaimplementowana, używam 'first_match'."
-            )
-            if archive_files and preview_files:
-                try:
-                    pair = FilePair(archive_files[0], preview_files[0], base_directory)
-                    found_pairs.append(pair)
-                    processed_files.add(archive_files[0])
-                    processed_files.add(preview_files[0])
-                except ValueError as e:
-                    logger.error(
-                        f"Błąd tworzenia FilePair dla '{archive_files[0]}' i '{preview_files[0]}': {e}"
-                    )
+            # Implementacja inteligentnego parowania po nazwach
+            # Algorytm wybiera najlepszy podgląd dla każdego archiwum na podstawie:
+            # 1. Dokładnej zgodności nazwy (bez rozszerzeń)
+            # 2. Najnowsza data modyfikacji pliku podglądu (jeśli jest kilka z taką samą nazwą)
+            # 3. Preferowane rozszerzenie (jpg > png > inne)
+
+            # Preferowane rozszerzenia podglądu (od najbardziej preferowanego)
+            preview_preference = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"]
+
+            for archive in archive_files:
+                if not preview_files:  # Jeśli nie ma podglądów, przechodzimy dalej
+                    continue
+
+                archive_name = os.path.basename(archive)
+                archive_base_name = os.path.splitext(archive_name)[0].lower()
+                best_preview = None
+                best_score = -1
+
+                for preview in preview_files:
+                    preview_name = os.path.basename(preview)
+                    preview_base_name = os.path.splitext(preview_name)[0].lower()
+                    preview_ext = os.path.splitext(preview)[1].lower()
+
+                    # Obliczamy ocenę dopasowania
+                    score = 0
+
+                    # 1. Dokładna zgodność nazwy (najważniejsze)
+                    if preview_base_name == archive_base_name:
+                        score += 1000
+                    # Częściowa zgodność (np. "model_01" i "model_01_preview")
+                    elif preview_base_name.startswith(archive_base_name):
+                        score += 500
+                    elif archive_base_name.startswith(preview_base_name):
+                        score += 500
+                    else:
+                        # Jeśli nazwy są zupełnie różne, to ten podgląd nie pasuje
+                        continue
+
+                    # 2. Preferowane rozszerzenie
+                    if preview_ext in preview_preference:
+                        score += (
+                            len(preview_preference)
+                            - preview_preference.index(preview_ext)
+                        ) * 10
+
+                    # 3. Nowsze pliki są preferowane
+                    try:
+                        mtime = os.path.getmtime(preview)
+                        score += mtime / 10000000  # Dodaje mały ułamek do punktacji
+                    except (OSError, PermissionError):
+                        pass  # Ignorujemy błędy przy sprawdzaniu czasu modyfikacji
+
+                    # Aktualizujemy najlepszy podgląd
+                    if score > best_score:
+                        best_score = score
+                        best_preview = preview
+
+                # Jeśli znaleźliśmy pasujący podgląd, tworzymy parę
+                if best_preview and best_score > 0:
+                    try:
+                        pair = FilePair(archive, best_preview, base_directory)
+                        found_pairs.append(pair)
+                        processed_files.add(archive)
+                        processed_files.add(best_preview)
+                    except ValueError as e:
+                        logger.error(
+                            f"Błąd tworzenia FilePair dla '{archive}' i '{best_preview}': {e}"
+                        )
         else:
             logger.error(f"Nieznana strategia parowania: {pair_strategy}")
 
@@ -372,6 +478,9 @@ def scan_folder_for_pairs(
     pair_strategy: str = "first_match",  # Dodany parametr
     interrupt_check: Optional[Callable[[], bool]] = None,
     force_refresh_cache: bool = False,  # Dodany parametr
+    progress_callback: Optional[
+        Callable[[int, str], None]
+    ] = None,  # Nowy parametr do raportowania postępu
 ) -> Tuple[List[FilePair], List[str], List[str]]:
     """
     Skanuje podany katalog i jego podkatalogi w poszukiwaniu par plików.
@@ -383,6 +492,7 @@ def scan_folder_for_pairs(
         pair_strategy: Strategia parowania plików (zastępuje pair_all)
         interrupt_check: Opcjonalna funkcja sprawdzająca czy przerwać skanowanie
         force_refresh_cache: Czy wymusić odświeżenie cache plików (przekazywane do collect_files)
+        progress_callback: Opcjonalna funkcja do raportowania postępu (procent, wiadomość)
 
     Returns:
         Krotka zawierająca listę znalezionych par, listę niesparowanych archiwów
@@ -395,6 +505,8 @@ def scan_folder_for_pairs(
 
     if not path_exists(normalized_dir):
         logger.error(f"Katalog {normalized_dir} nie istnieje")
+        if progress_callback:
+            progress_callback(100, f"Błąd: Katalog {normalized_dir} nie istnieje")
         return [], [], []
 
     cache_key = (
@@ -407,21 +519,43 @@ def scan_folder_for_pairs(
         logger.info(
             f"CACHE HIT: Używam buforowanych wyników dla {normalized_dir} ze strategią {pair_strategy}"
         )
+        if progress_callback:
+            progress_callback(100, f"Używam buforowanych wyników dla {normalized_dir}")
         return _scan_cache[cache_key]
 
     logger.info(
         f"Rozpoczęto skanowanie katalogu: {normalized_dir} ze strategią {pair_strategy}"
     )
+    if progress_callback:
+        progress_callback(0, f"Rozpoczynam skanowanie: {normalized_dir}")
+
     start_time = time.time()
 
     try:
-        # Krok 1: Zbieranie wszystkich plików
-        file_map = collect_files(
-            normalized_dir,
-            max_depth,
-            interrupt_check,
-            force_refresh=force_refresh_cache,
-        )
+        # Krok 1: Zbieranie wszystkich plików (80% całego procesu)
+        if progress_callback:
+            # Tworzymy wrapper do callback'a, aby skalować postęp z collect_files (0-80%)
+            def scaled_progress(percent, message):
+                scaled = int(percent * 0.8)  # collect_files to 80% całego procesu
+                progress_callback(scaled, message)
+
+            file_map = collect_files(
+                normalized_dir,
+                max_depth,
+                interrupt_check,
+                force_refresh=force_refresh_cache,
+                progress_callback=scaled_progress,
+            )
+        else:
+            file_map = collect_files(
+                normalized_dir,
+                max_depth,
+                interrupt_check,
+                force_refresh=force_refresh_cache,
+            )
+
+        if progress_callback:
+            progress_callback(85, f"Tworzenie par plików...")
 
         # Krok 2: Tworzenie par plików
         found_pairs, processed_files = create_file_pairs(
@@ -429,6 +563,9 @@ def scan_folder_for_pairs(
             normalized_dir,
             pair_strategy=pair_strategy,  # Użycie nowej strategii
         )
+
+        if progress_callback:
+            progress_callback(90, f"Identyfikacja niesparowanych plików...")
 
         # Krok 3: Identyfikacja niesparowanych plików
         unpaired_archives, unpaired_previews = identify_unpaired_files(
@@ -438,14 +575,20 @@ def scan_folder_for_pairs(
     except ScanningInterrupted:
         # W przypadku przerwania zwracamy częściowe wyniki, ale nie buforujemy ich
         logger.warning("Zwracam częściowe wyniki z powodu przerwania skanowania")
+        if progress_callback:
+            progress_callback(100, "Skanowanie przerwane przez użytkownika")
         raise
 
     elapsed_time = time.time() - start_time
-    logger.info(
+    result_message = (
         f"Zakończono skanowanie '{normalized_dir}' w czasie {elapsed_time:.2f}s. "
         f"Znaleziono {len(found_pairs)} par, {len(unpaired_archives)} niesparowanych "
         f"archiwów i {len(unpaired_previews)} niesparowanych podglądów."
     )
+    logger.info(result_message)
+
+    if progress_callback:
+        progress_callback(100, f"Zakończono: {len(found_pairs)} par")
 
     # Zapisujemy wynik do bufora
     result = (found_pairs, unpaired_archives, unpaired_previews)

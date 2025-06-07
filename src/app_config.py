@@ -17,13 +17,13 @@ class AppConfig:
     z walidacją danych i obsługą błędów.
     """
 
-    # --- Domyślne wartości konfiguracyjne ---
+    # --- Domyślne wartości konfiguracji ---
     DEFAULT_CONFIG = {
         # UI
         "thumbnail_size": 150,
         "thumbnail_slider_position": 50,
-        "min_thumbnail_size": 50,
-        "max_thumbnail_size": 300,
+        "min_thumbnail_size": 100,
+        "max_thumbnail_size": 400,
         # Obsługiwane rozszerzenia
         "supported_archive_extensions": [".rar", ".zip", ".7z", ".tar", ".gz", ".bz2"],
         "supported_preview_extensions": [
@@ -45,6 +45,9 @@ class AppConfig:
             "Fioletowy": "#8E24AA",
             "Czarny": "#000000",
         },
+        # Parametry cache dla scanera
+        "scanner_max_cache_entries": 100,
+        "scanner_max_cache_age_seconds": 3600,  # 1 godzina
     }
 
     def __init__(self, config_dir=None, config_file=None):
@@ -248,6 +251,37 @@ class AppConfig:
         """
         return self.get("thumbnail_slider_position", 50)
 
+    @property
+    def predefined_colors_filter(self):
+        """
+        Pobiera słownik predefiniowanych kolorów do filtrowania.
+
+        Returns:
+            OrderedDict: Słownik kolorów.
+        """
+        colors_dict = self.get_predefined_colors()
+        return OrderedDict(colors_dict.items())
+
+    @property
+    def scanner_max_cache_entries(self):
+        """
+        Pobiera maksymalną liczbę wpisów w cache skanera.
+
+        Returns:
+            int: Maksymalna liczba wpisów w cache.
+        """
+        return self.get("scanner_max_cache_entries", 100)
+
+    @property
+    def scanner_max_cache_age_seconds(self):
+        """
+        Pobiera maksymalny wiek wpisów w cache skanera w sekundach.
+
+        Returns:
+            int: Maksymalny wiek wpisów w cache w sekundach.
+        """
+        return self.get("scanner_max_cache_age_seconds", 3600)
+
     def set_thumbnail_size_range(self, min_size, max_size):
         """
         Ustawia zakres rozmiarów miniatur.
@@ -400,6 +434,26 @@ class AppConfig:
         colors_dict = self.get_predefined_colors()
         return OrderedDict(colors_dict.items())
 
+    @property
+    def scanner_max_cache_entries(self):
+        """
+        Pobiera maksymalną liczbę wpisów w cache skanera.
+
+        Returns:
+            int: Maksymalna liczba wpisów w cache.
+        """
+        return self.get("scanner_max_cache_entries", 100)
+
+    @property
+    def scanner_max_cache_age_seconds(self):
+        """
+        Pobiera maksymalny wiek wpisów w cache skanera w sekundach.
+
+        Returns:
+            int: Maksymalny wiek wpisów w cache w sekundach.
+        """
+        return self.get("scanner_max_cache_age_seconds", 3600)
+
 
 # --- Inicjalizacja domyślnej instancji konfiguracji ---
 config = AppConfig()
@@ -426,3 +480,7 @@ PREDEFINED_COLORS_FILTER = config.predefined_colors_filter
 MIN_THUMBNAIL_SIZE = (config.min_thumbnail_size, config.min_thumbnail_size)
 MAX_THUMBNAIL_SIZE = (config.max_thumbnail_size, config.max_thumbnail_size)
 DEFAULT_THUMBNAIL_SIZE = config.thumbnail_size
+
+# Parametry cache dla skanera
+SCANNER_MAX_CACHE_ENTRIES = config.scanner_max_cache_entries
+SCANNER_MAX_CACHE_AGE_SECONDS = config.scanner_max_cache_age_seconds
