@@ -26,8 +26,9 @@ Celem tego dokumentu jest zdefiniowanie wymagań dla aplikacji desktopowej w Pyt
 *   **Folder Roboczy:** Główny folder wybrany przez użytkownika, w którym aplikacja będzie operować, włącznie ze wszystkimi jego podfolderami.
 *   **Para Plików:** Zestaw składający się z pliku archiwum (np. `.rar`, `.zip`) i odpowiadającego mu pliku podglądu (np. `.jpg`, `.jpeg`, `.png`), które mają identyczną nazwę pliku (bez rozszerzenia).
 *   **Klasa `FilePair`:** Dedykowana klasa w Pythonie odpowiedzialna za zarządzanie operacjami na Parze Plików, zapewniając spójność działań na obu plikach.
-*   **Podgląd (Kafelek):** Element UI reprezentujący plik podglądu, wyświetlający miniaturę obrazu, nazwę pliku (bez rozszerzenia), rozmiar pliku archiwum oraz opcje tagowania.
-*   **Tagi:** Metadane przypisywane do Par Plików (np. "ulubione", gwiazdki, kolory) umożliwiające ich kategoryzację i filtrowanie.
+*   **Podgląd (Kafelek):** Element UI reprezentujący plik podglądu, wyświetlający miniaturę obrazu, nazwę pliku (bez rozszerzenia), rozmiar pliku archiwum oraz opcje tagowania i zaznaczania do operacji zbiorczych.
+*   **Tagi:** Metadane przypisywane do Par Plików (np. gwiazdki, kolory) umożliwiające ich kategoryzację i filtrowanie.
+*   **Operacje Zbiorcze:** Funkcjonalność umożliwiająca zaznaczenie wielu kafelków i wykonanie na nich wspólnych operacji (usuwanie, przenoszenie, kopiowanie).
 
 ---
 
@@ -116,39 +117,42 @@ Rozwój aplikacji będzie przebiegał w iteracyjnych etapach, z częstym dostarc
 
 ---
 
-### Etap 3: Interakcje z Plikami i Podstawowe Tagowanie (AI: Funkcjonalności Użytkownika)
+### Etap 3: Interakcje z Plikami i Zaznaczanie Zbiorowe (AI: Funkcjonalności Użytkownika)
 
-*   **Cel:** Umożliwienie otwierania plików archiwów, wyświetlania większego podglądu oraz podstawowego tagowania ("ulubione").
+*   **Cel:** Umożliwienie otwierania plików archiwów, wyświetlania większego podglądu oraz implementacja systemu zaznaczania zbiorowego do operacji na wielu plikach.
 *   **Podetapy:**
     1.  **Logika Biznesowa (AI):**
         *   Implementacja funkcji otwierania pliku archiwum w domyślnym programie systemowym po kliknięciu na jego nazwę na kafelku.
-        *   Rozbudowa klasy `FilePair` o atrybut `is_favorite` (boolean).
-        *   Implementacja mechanizmu zapisu/odczytu metadanych (w tym tagu "ulubione") dla Par Plików. Początkowo może to być prosty plik JSON/XML w folderze roboczym lub w podfolderze `.app_data` (należy zadbać o wydajność i unikanie konfliktów przy zapisie). W przyszłości można rozważyć SQLite.
+        *   Implementacja systemu śledzenia zaznaczonych kafelków dla operacji zbiorczych (usuwanie, przenoszenie).
+        *   Implementacja mechanizmu zapisu/odczytu metadanych dla Par Plików. Początkowo może to być prosty plik JSON/XML w folderze roboczym lub w podfolderze `.app_data` (należy zadbać o wydajność i unikanie konfliktów przy zapisie). W przyszłości można rozważyć SQLite.
     2.  **Interfejs Użytkownika (AI):**
         *   Implementacja reakcji na kliknięcie nazwy pliku na kafelku (otwarcie archiwum).
         *   Implementacja wyświetlania większego podglądu obrazu po kliknięciu na miniaturę na kafelku (np. w osobnym oknie dialogowym lub dedykowanym obszarze UI).
-        *   Dodanie ikony/przycisku "Ulubione" (np. gwiazdka) na każdym kafelku, umożliwiającej przełączanie statusu `is_favorite`. Wizualne oznaczenie ulubionych kafelków.
+        *   Dodanie checkbox na każdym kafelku umożliwiającego zaznaczenie do operacji zbiorczych. Wizualne oznaczenie zaznaczonych kafelków.
+        *   Implementacja panelu operacji zbiorczych z przyciskami "Zaznacz wszystkie", "Odznacz wszystkie", "Usuń zaznaczone", "Przenieś zaznaczone".
 *   **Testy (AI):**
     *   Jednostkowe: dla funkcji otwierania archiwum.
-    *   Jednostkowe: dla zapisu/odczytu statusu "ulubione".
-    *   Manualne UI: testowanie interakcji z kafelkami (otwieranie, duży podgląd, tagowanie).
-*   **Dokumentacja:** Opis mechanizmu zapisu metadanych.
-*   **Raportowanie:** Status implementacji interakcji i tagowania.
+    *   Jednostkowe: dla mechanizmu zaznaczania zbiorowego.
+    *   Manualne UI: testowanie interakcji z kafelkami (otwieranie, duży podgląd, zaznaczanie).
+*   **Dokumentacja:** Opis mechanizmu zapisu metadanych i systemu zaznaczania zbiorowego.
+*   **Raportowanie:** Status implementacji interakcji i zaznaczania zbiorowego.
 
 ---
 
 ### Etap 4: Zaawansowane Tagowanie i Filtrowanie (AI: Organizacja i Wyszukiwanie)
 
-*   **Cel:** Dodanie zaawansowanych opcji tagowania (gwiazdki, kolory) i filtrowania widoku na ich podstawie.
+*   **Cel:** Dodanie zaawansowanych opcji tagowania (gwiazdki, kolory) i filtrowania widoku na ich podstawie, oraz rozbudowa systemu operacji zbiorczych.
 *   **Podetapy:**
     1.  **Logika Biznesowa (AI):**
         *   Rozbudowa klasy `FilePair` o atrybuty dla gwiazdek (np. integer 0-5) i tagu kolorystycznego (np. string z nazwą koloru lub kodem hex).
         *   Aktualizacja mechanizmu zapisu/odczytu metadanych o nowe tagi.
-        *   Implementacja logiki filtrowania listy wyświetlanych Par Plików na podstawie wybranych tagów (ulubione, gwiazdki, kolory).
+        *   Implementacja logiki filtrowania listy wyświetlanych Par Plików na podstawie wybranych tagów (gwiazdki, kolory).
+        *   Rozbudowa systemu operacji zbiorczych o dodatkowe operacje (kopiowanie, archiwizacja).
     2.  **Interfejs Użytkownika (AI):**
         *   Dodanie kontrolek na kafelkach lub w menu kontekstowym do przypisywania gwiazdek (np. 5 klikalnych gwiazdek) i wyboru koloru etykiety (np. z predefiniowanej palety).
-        *   Dodanie panelu filtrowania w UI (np. checkboxy, listy rozwijane) umożliwiającego wybór kryteriów filtrowania (np. "Pokaż tylko ulubione", "Pokaż z oceną >= 3 gwiazdki", "Pokaż z zieloną etykietą").
+        *   Dodanie panelu filtrowania w UI (np. checkboxy, listy rozwijane) umożliwiającego wybór kryteriów filtrowania (np. "Pokaż z oceną >= 3 gwiazdki", "Pokaż z zieloną etykietą").
         *   Aktualizacja widoku kafelków w odpowiedzi na zmiany filtrów.
+        *   Rozbudowa panelu operacji zbiorczych o dodatkowe opcje.
 *   **Testy (AI):**
     *   Jednostkowe: dla logiki filtrowania.
     *   Manualne UI: testowanie przypisywania tagów i działania filtrów.

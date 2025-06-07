@@ -185,13 +185,7 @@ def _validate_metadata_structure(metadata: Dict[str, Any]) -> bool:
                     f"Nieprawidłowy format danych dla pary plików '{pair_key}'. Oczekiwano słownika."
                 )
                 return False
-            # Można dodać bardziej szczegółową walidację pól wewnątrz pair_data, np. is_favorite, stars
-            if "is_favorite" in pair_data and not isinstance(
-                pair_data["is_favorite"], bool
-            ):
-                logging.warning(
-                    f"Nieprawidłowy typ dla 'is_favorite' w parze '{pair_key}'."
-                )
+            # Można dodać bardziej szczegółową walidację pól wewnątrz pair_data, np. stars
             if "stars" in pair_data and not isinstance(pair_data["stars"], int):
                 logging.warning(f"Nieprawidłowy typ dla 'stars' w parze '{pair_key}'.")
             if "color_tag" in pair_data and not (
@@ -331,7 +325,6 @@ def save_metadata(
                 hasattr(file_pair, attr)
                 for attr in [
                     "archive_path",
-                    "is_favorite",
                     "get_stars",
                     "get_color_tag",
                 ]
@@ -351,14 +344,13 @@ def save_metadata(
                 continue
 
             pair_metadata = {
-                "is_favorite": file_pair.is_favorite,
                 "stars": file_pair.get_stars(),
                 "color_tag": file_pair.get_color_tag(),
             }
             updated_file_pairs_metadata[relative_archive_path] = pair_metadata
 
             logging.debug(
-                f"📝 {relative_archive_path}: favorite={file_pair.is_favorite}, stars={file_pair.get_stars()}, color={file_pair.get_color_tag()}"
+                f"📝 {relative_archive_path}: stars={file_pair.get_stars()}, color={file_pair.get_color_tag()}"
             )
 
         current_metadata["file_pairs"] = updated_file_pairs_metadata
@@ -449,7 +441,6 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
                 hasattr(file_pair, attr)
                 for attr in [
                     "archive_path",
-                    "is_favorite",
                     "get_stars",
                     "set_stars",
                     "get_color_tag",
@@ -475,13 +466,6 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
             if relative_archive_path in file_pairs_metadata:
                 pair_metadata = file_pairs_metadata[relative_archive_path]
 
-                if "is_favorite" in pair_metadata and isinstance(
-                    pair_metadata["is_favorite"], bool
-                ):
-                    file_pair.is_favorite = pair_metadata["is_favorite"]
-                # else:
-                #     logging.debug(f"Brak 'is_favorite' lub nieprawidłowy typ dla {relative_archive_path}")
-
                 if "stars" in pair_metadata and isinstance(pair_metadata["stars"], int):
                     file_pair.set_stars(pair_metadata["stars"])
                 # else:
@@ -497,7 +481,7 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
 
                 logging.debug(
                     f"Zastosowano metadane dla {file_pair.get_base_name()}: "
-                    f"Ulubiony={file_pair.is_favorite}, Gwiazdki={file_pair.get_stars()}, Kolor={file_pair.get_color_tag()}"
+                    f"Gwiazdki={file_pair.get_stars()}, Kolor={file_pair.get_color_tag()}"
                 )
             # else:
             #     logging.debug(f"Brak metadanych w pliku dla pary: {relative_archive_path}")
@@ -575,19 +559,6 @@ def remove_metadata_for_file(
             f"Błąd podczas usuwania metadanych dla {relative_archive_path}: {e}"
         )
         return False
-
-
-def get_all_favorite_relative_paths(working_directory: str) -> List[str]:
-    """
-    Zwraca listę względnych ścieżek do archiwów oznaczonych jako ulubione.
-    """
-    metadata = load_metadata(working_directory)
-    favorites = []
-    if metadata and "file_pairs" in metadata:
-        for rel_path, pair_data in metadata["file_pairs"].items():
-            if pair_data.get("is_favorite", False):
-                favorites.append(rel_path)
-    return favorites
 
 
 def get_metadata_for_relative_path(

@@ -52,7 +52,8 @@ Aktualnie aplikacja znajduje się w fazie początkowej (Etap 0) i posiada tylko 
 - Wybór folderu roboczego
 - Rekursywne skanowanie w poszukiwaniu par plików (archiwum + podgląd)
 - Wyświetlanie podglądów jako kafelków w interfejsie
-- Tagowanie plików (ulubione, gwiazdki, kolory)
+- Tagowanie plików (gwiazdki, kolory)
+- Operacje zbiorcze na zaznaczonych plikach (usuwanie, przenoszenie)
 - Filtrowanie i sortowanie
 - Podgląd i operacje na plikach
 

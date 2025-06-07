@@ -49,7 +49,7 @@ Na podstawie mapy przygotuj:
 
 ### Cel drugiego etapu:
 
-Szczegółowa analiza każdego pliku zgodnie z **mapą kodu (`code_map.md`)** i planem z etapu 1, z progressywnym zapisywaniem wyników. W tej aplikacji kluczowa jest wydajność - ma pracować z tysiącami plików oraz stabilność. Przeanalizuj kod szczególnie pod tym kątem i zaproponuj adekwatne poprawki.
+Szczegółowa analiza każdego pliku zgodnie z **mapą kodu (`code_map.md`)** i planem z etapu 1, z progressywnym zapisywaniem wyników. W tej aplikacji kluczowa jest wydajność - ma pracować z tysiącami plików oraz stabilność. Przeanalizuj kod szczególnie pod tym kątem i zaproponuj adekwatne poprawki. Do aplikacji należy dodać funkcję pokazującą postęp danego procesu - w tym momencie aplikacja jest zamrożona na jakiś czas i nie wiadomo co się dzieje. Na dole okna powinien być pasek postępu z informacją co aktulanie jest realizowane. Przeanalizuj które funkcję powinny w ten sposób powinny komunikować procesy do UI. Zastosuj także styl styles.qss do UI.
 
 ### Wymagania etapu 2:
 

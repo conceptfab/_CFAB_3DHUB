@@ -1,27 +1,27 @@
 """
 Widget zawierający kontrolki do zarządzania metadanymi pliku,
-takimi jak ulubione, ocena w gwiazdkach i tag kolorystyczny.
+takimi jak checkbox do selekcji, ocena w gwiazdkach i tag kolorystyczny.
 """
 
 import logging
 from collections import OrderedDict
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
-from PyQt6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QWidget
+from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from src.models.file_pair import FilePair
 
 
 class MetadataControlsWidget(QWidget):
     """
-    Widget grupujący kontrolki metadanych: Ulubione, Gwiazdki, Kolor.
+    Widget grupujący kontrolki metadanych: Checkbox selekcji, Gwiazdki, Kolor.
     Emituje sygnały po interakcji użytkownika.
     """
 
     # Sygnały emitowane przez ten widget po zmianie wartości przez użytkownika
     # Nie zawierają FilePair, tylko nową wartość.
     # FileTileWidget będzie odpowiedzialny za aktualizację FilePair.
-    favorite_status_changed = pyqtSignal(bool)  # True if favorite, False otherwise
+    tile_selected_changed = pyqtSignal(bool)  # True if selected, False otherwise
     stars_value_changed = pyqtSignal(int)  # new star count (0-5)
     color_tag_value_changed = pyqtSignal(str)  # new color hex string
 
@@ -47,30 +47,50 @@ class MetadataControlsWidget(QWidget):
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(
             0, 5, 0, 0
-        )  # Mały margines górny        # --- Przycisk Ulubione ---
-        self.favorite_button = QPushButton()
-        self.favorite_button.setToolTip(
-            "Oznacz/Odznacz jako ulubione"
-        )  # ═══════════════════════════════════════════════════════════════
-        # STYLOWANIE PRZYCISKU ULUBIONE - EDYTUJ TUTAJ KOLORY
+        )  # Mały margines górny
+        
+        # --- Checkbox do selekcji kafli ---
+        self.selection_checkbox = QCheckBox()
+        self.selection_checkbox.setToolTip("Zaznacz/Odznacz kafelek do operacji grupowych")
+        
         # ═══════════════════════════════════════════════════════════════
-        self.favorite_button.setStyleSheet(
+        # STYLOWANIE CHECKBOXA SELEKCJI - EDYTUJ TUTAJ KOLORY
+        # ═══════════════════════════════════════════════════════════════
+        self.selection_checkbox.setStyleSheet(
             """
-            QPushButton {
-                /* ▼▼▼ PRZYCISK ULUBIONE - NORMALNY STAN ▼▼▼ */
+            QCheckBox {
+                /* ▼▼▼ CHECKBOX SELEKCJI - NORMALNY STAN ▼▼▼ */
                 border: none;                           /* Bez obramowania */
-                font-size: 16px;                       /* Rozmiar ikony gwiazdki */
                 color: #666666;                         /* SZARY kolor - zmień na #CCCCCC dla ciemnego tła */
                 background-color: transparent;          /* Przezroczyste tło */
+                spacing: 0px;                           /* Brak odstępu między checkboxem a tekstem */
             }
-            QPushButton:hover {
-                /* ▼▼▼ HOVER NA PRZYCISKU ULUBIONE ▼▼▼ */
-                color: #E53935;                         /* CZERWONY hover - zmień według potrzeb */
+            QCheckBox::indicator {
+                /* ▼▼▼ WSKAŹNIK CHECKBOXA ▼▼▼ */
+                width: 16px;                           /* Szerokość checkboxa */
+                height: 16px;                          /* Wysokość checkboxa */
+                background-color: #2A2A2A;             /* Ciemne tło - zmień na #FFFFFF dla jasnego */
+                border: 1px solid #666666;             /* Szare obramowanie */
+                border-radius: 3px;                    /* Zaokrąglone rogi */
+            }
+            QCheckBox::indicator:hover {
+                /* ▼▼▼ HOVER NA CHECKBOXIE ▼▼▼ */
+                border: 1px solid #4a90e2;            /* NIEBIESKIE obramowanie hover */
+                background-color: #3A3A3A;            /* Jaśniejsze tło hover */
+            }
+            QCheckBox::indicator:checked {
+                /* ▼▼▼ ZAZNACZONY CHECKBOX ▼▼▼ */
+                background-color: #4a90e2;            /* NIEBIESKI kolor zaznaczenia */
+                border: 1px solid #4a90e2;            /* NIEBIESKI border zaznaczenia */
+            }
+            QCheckBox::indicator:checked:hover {
+                /* ▼▼▼ ZAZNACZONY CHECKBOX HOVER ▼▼▼ */
+                background-color: #5ba0f2;            /* Jaśniejszy niebieski hover */
             }
             """
         )
-        self.favorite_button.clicked.connect(self._on_favorite_button_clicked)
-        self.layout.addWidget(self.favorite_button)
+        self.selection_checkbox.stateChanged.connect(self._on_selection_checkbox_changed)
+        self.layout.addWidget(self.selection_checkbox)
 
         # --- Kontrolki gwiazdek ---
         self.stars_layout_widget = QWidget()
@@ -149,41 +169,30 @@ class MetadataControlsWidget(QWidget):
         """Ustawia FilePair i aktualizuje stan kontrolek."""
         self._file_pair = file_pair
         if self._file_pair:
-            self.update_favorite_display(self._file_pair.is_favorite_file())
+            self.update_selection_display(False)  # Domyślnie nie zaznaczony
             self.update_stars_display(self._file_pair.get_stars())
             self.update_color_tag_display(self._file_pair.get_color_tag())
         else:
             # Ustaw domyślne stany, jeśli nie ma FilePair
-            self.update_favorite_display(False)
+            self.update_selection_display(False)
             self.update_stars_display(0)
             self.update_color_tag_display("")
             self.setEnabled(False)  # Wyłącz kontrolki, jeśli nie ma danych
 
-    def update_favorite_display(self, is_favorite: bool):
-        """Aktualizuje wygląd przycisku 'Ulubione'."""
-        if is_favorite:
-            self.favorite_button.setText("★")  # Krótszy tekst
-            self.favorite_button.setStyleSheet(
-                "background-color: #fffacd; color: #DAA520;"
-            )
-        else:
-            self.favorite_button.setText("☆")  # Krótszy tekst
-            self.favorite_button.setStyleSheet("")
-        self.favorite_button.setToolTip(
-            "Odznacz Ulubione" if is_favorite else "Oznacz Ulubione"
+    def update_selection_display(self, is_selected: bool):
+        """Aktualizuje stan checkboxa selekcji."""
+        self.selection_checkbox.setChecked(is_selected)
+        self.selection_checkbox.setToolTip(
+            "Odznacz kafelek" if is_selected else "Zaznacz kafelek do operacji grupowych"
         )
 
-    def _on_favorite_button_clicked(self):
-        """Obsługuje kliknięcie przycisku ulubionych."""
-        if not self._file_pair:
-            return
-        current_status = self._file_pair.is_favorite_file()
-        new_status = not current_status
-        # Aktualizacja UI jest celowo pomijana tutaj,
-        # FileTileWidget zaktualizuje cały MetadataControlsWidget po zmianie FilePair
-        self.favorite_status_changed.emit(new_status)
+    def _on_selection_checkbox_changed(self, state: int):
+        """Obsługuje zmianę stanu checkboxa selekcji."""
+        is_selected = state == Qt.CheckState.Checked.value
+        # Emituj sygnał zmiany selekcji
+        self.tile_selected_changed.emit(is_selected)
         logging.debug(
-            f"MetadataControls: favorite_status_changed emitted: {new_status}"
+            f"MetadataControls: tile_selected_changed emitted: {is_selected}"
         )
 
     def update_stars_display(self, star_count: int):
@@ -255,12 +264,12 @@ class MetadataControlsWidget(QWidget):
     def setEnabled(self, enabled: bool):
         """Włącza lub wyłącza wszystkie kontrolki w widgecie."""
         super().setEnabled(enabled)
-        self.favorite_button.setEnabled(enabled)
+        self.selection_checkbox.setEnabled(enabled)
         for btn in self.star_buttons:
             btn.setEnabled(enabled)
         self.color_tag_combo.setEnabled(enabled)
         if not enabled:
             # Dodatkowo, można zresetować wygląd do stanu "pustego"
-            self.update_favorite_display(False)
+            self.update_selection_display(False)
             self.update_stars_display(0)
             self.update_color_tag_display("")

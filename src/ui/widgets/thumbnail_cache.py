@@ -84,7 +84,9 @@ class ThumbnailCache:
                     # Fallback to QImage if direct QPixmap loading fails
                     image = QImage()
                     if not image.load(path):
-                        logger.warning(f"Nie można załadować miniatury (QImage) z: {path}")
+                        logger.warning(
+                            f"Nie można załadować miniatury (QImage) z: {path}"
+                        )
                         return None
                     pixmap = QPixmap.fromImage(image)
 

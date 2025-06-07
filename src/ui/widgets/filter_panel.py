@@ -25,10 +25,6 @@ class FilterPanel(QGroupBox):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(10)
 
-        # Checkbox ulubionych
-        self.filter_fav_checkbox = QCheckBox("Tylko ulubione")
-        layout.addWidget(self.filter_fav_checkbox)
-
         # Filtr gwiazdek
         self.filter_stars_label = QLabel("Min. gwiazdki:")
         layout.addWidget(self.filter_stars_label)
@@ -54,7 +50,6 @@ class FilterPanel(QGroupBox):
         """
         Zwraca aktualnie ustawione kryteria filtrowania.
         """
-        show_fav = self.filter_fav_checkbox.isChecked()
         min_stars = self.filter_stars_combo.currentData()
         if min_stars is None:
             min_stars = 0  # Fallback
@@ -64,7 +59,6 @@ class FilterPanel(QGroupBox):
             req_color = "ALL"  # Fallback
 
         return {
-            "show_favorites_only": show_fav,
             "min_stars": min_stars,
             "required_color_tag": req_color,
         }
@@ -73,6 +67,5 @@ class FilterPanel(QGroupBox):
         """
         Podłącza sygnały zmiany filtrów do podanego callback.
         """
-        self.filter_fav_checkbox.stateChanged.connect(callback)
         self.filter_stars_combo.currentIndexChanged.connect(callback)
         self.filter_color_combo.currentIndexChanged.connect(callback)

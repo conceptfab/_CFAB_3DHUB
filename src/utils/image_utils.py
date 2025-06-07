@@ -97,56 +97,56 @@ def pillow_image_to_qpixmap(pil_image):
 def crop_to_square(pil_image, size):
     """
     Przycina obraz PIL do kwadratowych proporcji i skaluje do zadanego rozmiaru.
-    
+
     Logika przycinania:
     - Dla obrazów WYSOKICH (height > width): przycina OD GÓRY
-    - Dla obrazów SZEROKICH (width > height): przycina OD LEWEJ KRAWĘDZI  
+    - Dla obrazów SZEROKICH (width > height): przycina OD LEWEJ KRAWĘDZI
     - Dla obrazów kwadratowych: brak przycinania, tylko skalowanie
-    
+
     Args:
         pil_image (PIL.Image): Obraz do przycięcia
         size (int): Docelowy rozmiar kwadratu (szerokość = wysokość)
-        
+
     Returns:
         PIL.Image: Przycięty i przeskalowany obraz kwadratowy
     """
     try:
         # Pobierz wymiary oryginalnego obrazu
         width, height = pil_image.size
-        
+
         # Oblicz rozmiar kwadratu do wycięcia (minimum z szerokości i wysokości)
         crop_size = min(width, height)
-        
+
         # Określ pozycję przycinania w zależności od proporcji obrazu
         if width > height:
             # Obraz SZEROKI - przycinaj OD LEWEJ KRAWĘDZI
             left = 0  # Zaczynaj od lewej krawędzi
-            top = 0   # Zachowaj całą wysokość (która jest mniejsza)
+            top = 0  # Zachowaj całą wysokość (która jest mniejsza)
             right = crop_size  # Szerokość = wysokość obrazu
-            bottom = height    # Cała wysokość
-            
+            bottom = height  # Cała wysokość
+
         elif height > width:
             # Obraz WYSOKI - przycinaj OD GÓRY
-            left = 0      # Zachowaj całą szerokość (która jest mniejsza)
-            top = 0       # Zaczynaj od górnej krawędzi
-            right = width # Cała szerokość
+            left = 0  # Zachowaj całą szerokość (która jest mniejsza)
+            top = 0  # Zaczynaj od górnej krawędzi
+            right = width  # Cała szerokość
             bottom = crop_size  # Wysokość = szerokość obrazu
-            
+
         else:
             # Obraz KWADRATOWY - brak przycinania
             left = 0
             top = 0
             right = width
             bottom = height
-        
+
         # Wytnij kwadrat zgodnie z obliczonymi współrzędnymi
         cropped_image = pil_image.crop((left, top, right, bottom))
-        
+
         # Przeskaluj do docelowego rozmiaru
         resized_image = cropped_image.resize((size, size), Image.LANCZOS)
-        
+
         return resized_image
-        
+
     except Exception as e:
         logging.error(f"Błąd podczas przycinania obrazu do kwadratu: {e}")
         # W przypadku błędu, zwróć oryginalny obraz przeskalowany (fallback)

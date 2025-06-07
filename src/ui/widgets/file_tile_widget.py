@@ -22,7 +22,11 @@ from src.ui.widgets.metadata_controls_widget import (
     MetadataControlsWidget,
 )  # NOWY IMPORT
 from src.ui.widgets.thumbnail_cache import ThumbnailCache
-from src.utils.image_utils import create_placeholder_pixmap, pillow_image_to_qpixmap, crop_to_square
+from src.utils.image_utils import (
+    create_placeholder_pixmap,
+    crop_to_square,
+    pillow_image_to_qpixmap,
+)
 
 
 # Definicja Workera
@@ -98,7 +102,7 @@ class FileTileWidget(QWidget):
     # MODIFICATION: Define custom signals
     archive_open_requested = pyqtSignal(FilePair)
     preview_image_requested = pyqtSignal(FilePair)
-    favorite_toggled = pyqtSignal(FilePair)
+    tile_selected = pyqtSignal(FilePair, bool)  # file_pair, selected_state
     stars_changed = pyqtSignal(FilePair, int)  # file_pair, new_star_count
     color_tag_changed = pyqtSignal(FilePair, str)  # file_pair, new_color_tag_hex
     tile_context_menu_requested = pyqtSignal(
@@ -406,8 +410,8 @@ class FileTileWidget(QWidget):
         self.layout.addWidget(self.metadata_controls)
 
         # Połączenie sygnałów z MetadataControlsWidget
-        self.metadata_controls.favorite_status_changed.connect(
-            self._on_favorite_changed
+        self.metadata_controls.tile_selected_changed.connect(
+            self._on_tile_selection_changed
         )
         self.metadata_controls.stars_value_changed.connect(self._on_stars_changed)
         self.metadata_controls.color_tag_value_changed.connect(
@@ -452,9 +456,7 @@ class FileTileWidget(QWidget):
             if self.file_pair:  # Upewnij się, że file_pair istnieje
                 self.filename_label.setText(self.file_pair.get_base_name())
                 # POPRAWKA: Delegowanie do metadata_controls
-                self.metadata_controls.update_favorite_display(
-                    self.file_pair.is_favorite_file()
-                )
+                self.metadata_controls.update_selection_display(False)  # Default to not selected
                 self.metadata_controls.update_stars_display(self.file_pair.get_stars())
 
                 # Aktualizacja koloru obwódki miniatury - tylko jeśli jest wybrany kolor
@@ -468,7 +470,7 @@ class FileTileWidget(QWidget):
                 self.filename_label.setText("Brak danych")
                 # Ustaw domyślne stany dla kontrolek, jeśli file_pair jest None
                 # POPRAWKA: Delegowanie do metadata_controls
-                self.metadata_controls.update_favorite_display(False)
+                self.metadata_controls.update_selection_display(False)
                 self.metadata_controls.update_stars_display(0)
                 self.metadata_controls.update_color_tag_display("")
                 self._update_thumbnail_border_color("")  # Usuń kolor obwódki
@@ -712,16 +714,14 @@ class FileTileWidget(QWidget):
 
         self._current_worker = None  # Zresetuj referencję do workera        # --- Obsługa sygnałów z MetadataControlsWidget ---
 
-    def _on_favorite_changed(self, is_favorite: bool):
-        logging.info(f"🔥 FileTileWidget._on_favorite_changed wywołane: {is_favorite}")
+    def _on_tile_selection_changed(self, is_selected: bool):
+        """Handle tile selection change from MetadataControlsWidget checkbox."""
+        logging.info(f"🔥 FileTileWidget._on_tile_selection_changed wywołane: {is_selected}")
         if self._file_pair:
-            self._file_pair.set_favorite(is_favorite)
-            # Odśwież tylko kontrolki metadanych, aby uniknąć ponownego ładowania miniatury
-            self.metadata_controls.update_favorite_display(is_favorite)
-            self.favorite_toggled.emit(self._file_pair)
-            self.file_pair_updated.emit(self._file_pair)
+            # Emit signal to notify about selection change
+            self.tile_selected.emit(self._file_pair, is_selected)
             logging.debug(
-                f"FileTileWidget: Zmieniono status ulubionych dla {self._file_pair.get_base_name()} na {is_favorite}"
+                f"FileTileWidget: Zmieniono status selekcji dla {self._file_pair.get_base_name()} na {is_selected}"
             )
 
     def _on_stars_changed(self, stars: int):
@@ -762,8 +762,6 @@ class FileTileWidget(QWidget):
         # Przykładowe akcje - dostosuj według potrzeb
         action_open = menu.addAction("Otwórz")
         action_preview = menu.addAction("Podgląd")
-        action_favorite = menu.addAction("Dodaj do ulubionych")
-        action_remove_favorite = menu.addAction("Usuń z ulubionych")
         action_properties = menu.addAction("Właściwości")
 
         # Rozdzielacz
@@ -779,8 +777,6 @@ class FileTileWidget(QWidget):
         # Połączenie sygnałów akcji z odpowiednimi slotami
         action_open.triggered.connect(self.open_file)
         action_preview.triggered.connect(self.preview_image)
-        action_favorite.triggered.connect(self.add_to_favorites)
-        action_remove_favorite.triggered.connect(self.remove_from_favorites)
         action_properties.triggered.connect(self.show_properties)
         action_exit.triggered.connect(self.close)
 
@@ -1006,8 +1002,6 @@ class FileTileWidget(QWidget):
         # Przykładowe akcje - dostosuj według potrzeb
         action_open = menu.addAction("Otwórz")
         action_preview = menu.addAction("Podgląd")
-        action_favorite = menu.addAction("Dodaj do ulubionych")
-        action_remove_favorite = menu.addAction("Usuń z ulubionych")
         action_properties = menu.addAction("Właściwości")
 
         # Rozdzielacz
@@ -1023,19 +1017,10 @@ class FileTileWidget(QWidget):
         # Połączenie sygnałów akcji z odpowiednimi slotami
         action_open.triggered.connect(self.open_file)
         action_preview.triggered.connect(self.preview_image)
-        action_favorite.triggered.connect(self.add_to_favorites)
-        action_remove_favorite.triggered.connect(self.remove_from_favorites)
         action_properties.triggered.connect(self.show_properties)
         action_exit.triggered.connect(self.close)
 
         return menu
-
-    # MODIFICATION: New method to emit favorite_toggled signal
-    def _emit_favorite_toggled_signal(self):
-        """Emituje sygnał zmiany statusu ulubionego."""
-        # Ta metoda może być już niepotrzebna jeśli logika jest w MetadataControlsWidget
-        # self.favorite_toggled.emit(self.file_pair)
-        pass
 
     # Usunięte metody _on_star_button_clicked, update_stars_display
     # Logika gwiazdek jest teraz w MetadataControlsWidget

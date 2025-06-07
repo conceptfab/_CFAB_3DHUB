@@ -28,15 +28,15 @@ class SignalTester(QObject):
 
     def __init__(self):
         super().__init__()
-        self.favorite_received = False
+        self.tile_selected_received = False
         self.stars_received = False
         self.color_received = False
 
-    def on_favorite_changed(self, file_pair):
+    def on_tile_selection_changed(self, file_pair, is_selected):
         print(
-            f"🔥 SYGNAŁ FAVORITE OTRZYMANY: {file_pair.get_base_name()} -> {file_pair.is_favorite}"
+            f"🔥 SYGNAŁ TILE SELECTION OTRZYMANY: {file_pair.get_base_name()} -> {is_selected}"
         )
-        self.favorite_received = True
+        self.tile_selected_received = True
 
     def on_stars_changed(self, file_pair, stars):
         print(f"🔥 SYGNAŁ STARS OTRZYMANY: {file_pair.get_base_name()} -> {stars}")
@@ -69,21 +69,16 @@ def test_signals():
     metadata_widget = tile_widget.metadata_controls
 
     # Stwórz tester sygnałów
-    tester = SignalTester()
-
-    # Podłącz sygnały
-    tile_widget.favorite_toggled.connect(tester.on_favorite_changed)
+    tester = SignalTester()    # Podłącz sygnały
+    tile_widget.tile_selected.connect(tester.on_tile_selection_changed)
     tile_widget.stars_changed.connect(tester.on_stars_changed)
     tile_widget.color_tag_changed.connect(tester.on_color_changed)
 
     print("🔌 Sygnały podłączone")
     # Symuluj kliknięcia
-    print("🖱️ Symulacja kliknięcia favorite...")
+    print("🖱️ Symulacja kliknięcia checkbox selekcji...")
     print(f"   File pair w metadata_widget: {metadata_widget._file_pair}")
-    print(
-        f"   Current favorite status: {metadata_widget._file_pair.is_favorite if metadata_widget._file_pair else 'None'}"
-    )
-    metadata_widget.favorite_button.click()
+    metadata_widget.selection_checkbox.click()
 
     print("🖱️ Symulacja kliknięcia stars...")
     print(
@@ -96,17 +91,15 @@ def test_signals():
         f"   Current color: {metadata_widget._file_pair.get_color_tag() if metadata_widget._file_pair else 'None'}"
     )
     metadata_widget.color_tag_combo.setCurrentIndex(1)  # Czerwony
-    metadata_widget._on_color_combo_activated(1)
-
-    # Przetwórz eventy
+    metadata_widget._on_color_combo_activated(1)    # Przetwórz eventy
     app.processEvents()
 
     print(f"✅ Test zakończony:")
-    print(f"   Favorite signal: {tester.favorite_received}")
+    print(f"   Tile selection signal: {tester.tile_selected_received}")
     print(f"   Stars signal: {tester.stars_received}")
     print(f"   Color signal: {tester.color_received}")
 
-    return tester.favorite_received and tester.stars_received and tester.color_received
+    return tester.tile_selected_received and tester.stars_received and tester.color_received
 
 
 if __name__ == "__main__":

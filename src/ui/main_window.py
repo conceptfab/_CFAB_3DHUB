@@ -63,6 +63,9 @@ class MainWindow(QMainWindow):
         self.unpaired_archives: list[str] = []
         self.unpaired_previews: list[str] = []
 
+        # Bulk selection tracking
+        self.selected_tiles: set[FilePair] = set()
+
         # Wątki
         self.scan_thread = None
         self.scan_worker = None
@@ -107,6 +110,9 @@ class MainWindow(QMainWindow):
         self.filter_panel.setEnabled(False)  # Ale zablokowany na start
         self.filter_panel.connect_signals(self._apply_filters_and_update_view)
         self.main_layout.addWidget(self.filter_panel)
+
+        # Bulk operations panel
+        self._create_bulk_operations_panel()
 
         # TabWidget jako główny kontener widoków
         self.tab_widget = QTabWidget()
@@ -171,6 +177,92 @@ class MainWindow(QMainWindow):
 
         self.top_layout.addStretch(1)
         self.top_layout.addWidget(self.size_control_panel)
+
+    def _create_bulk_operations_panel(self):
+        """
+        Creates the bulk operations panel for selected tiles.
+        """
+        self.bulk_operations_panel = QWidget()
+        self.bulk_operations_panel.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        self.bulk_operations_panel.setVisible(False)  # Hidden by default
+        
+        # Apply styling for better visibility
+        self.bulk_operations_panel.setStyleSheet("""
+            QWidget {
+                background-color: #f0f0f0;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                padding: 5px;
+                margin: 2px;
+            }
+            QPushButton {
+                background-color: #4a90e2;
+                color: white;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 3px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #357abd;
+            }
+            QPushButton:pressed {
+                background-color: #285a9b;
+            }
+            QLabel {
+                color: #333;
+                font-weight: bold;
+            }
+        """)
+        
+        bulk_layout = QHBoxLayout(self.bulk_operations_panel)
+        bulk_layout.setContentsMargins(10, 5, 10, 5)
+        
+        # Selected count label
+        self.selected_count_label = QLabel("Zaznaczone: 0")
+        bulk_layout.addWidget(self.selected_count_label)
+        
+        bulk_layout.addStretch(1)
+        
+        # Select all button
+        self.select_all_button = QPushButton("Zaznacz wszystkie")
+        self.select_all_button.clicked.connect(self._select_all_tiles)
+        bulk_layout.addWidget(self.select_all_button)
+        
+        # Clear selection button
+        self.clear_selection_button = QPushButton("Wyczyść zaznaczenie")
+        self.clear_selection_button.clicked.connect(self._clear_all_selections)
+        bulk_layout.addWidget(self.clear_selection_button)
+        
+        # Separator
+        separator = QLabel("|")
+        separator.setStyleSheet("color: #999; margin: 0 10px;")
+        bulk_layout.addWidget(separator)
+        
+        # Bulk move button
+        self.bulk_move_button = QPushButton("Przenieś zaznaczone")
+        self.bulk_move_button.clicked.connect(self._perform_bulk_move)
+        bulk_layout.addWidget(self.bulk_move_button)
+        
+        # Bulk delete button
+        self.bulk_delete_button = QPushButton("Usuń zaznaczone")
+        self.bulk_delete_button.setStyleSheet("""
+            QPushButton {
+                background-color: #e74c3c;
+            }
+            QPushButton:hover {
+                background-color: #c0392b;
+            }
+            QPushButton:pressed {
+                background-color: #a93226;
+            }
+        """)
+        self.bulk_delete_button.clicked.connect(self._perform_bulk_delete)
+        bulk_layout.addWidget(self.bulk_delete_button)
+        
+        self.main_layout.addWidget(self.bulk_operations_panel)
 
     def _create_gallery_tab(self):
         """
@@ -554,7 +646,7 @@ class MainWindow(QMainWindow):
             # Podłącz sygnały kafelka
             tile.archive_open_requested.connect(self.open_archive)
             tile.preview_image_requested.connect(self._show_preview_dialog)
-            tile.favorite_toggled.connect(self.toggle_favorite_status)
+            tile.tile_selected.connect(self._handle_tile_selection_changed)
             tile.stars_changed.connect(self._handle_stars_changed)
             tile.color_tag_changed.connect(self._handle_color_tag_changed)
             tile.tile_context_menu_requested.connect(self._show_file_context_menu)
@@ -741,22 +833,162 @@ class MainWindow(QMainWindow):
             logging.error(error_message)
             QMessageBox.critical(self, "Błąd Podglądu", error_message)
 
-    def toggle_favorite_status(self, file_pair: FilePair):
+    def _handle_tile_selection_changed(self, file_pair: FilePair, is_selected: bool):
         """
-        Przełącza status 'ulubione' dla danej pary plików.
+        Obsługuje zmianę stanu selekcji kafelka.
         """
         logging.info(
-            f"💙 toggle_favorite_status wywołane: {file_pair.get_base_name()} -> {not file_pair.is_favorite}"
+            f"✅ _handle_tile_selection_changed wywołane: {file_pair.get_base_name()} -> {is_selected}"
         )
-        if file_pair in self.all_file_pairs:
-            file_pair.toggle_favorite()
-            self._save_metadata()
-            # Jeśli filtr ulubionych jest aktywny, zmiana może wpłynąć na widok
-            filter_criteria = self.filter_panel.get_filter_criteria()
-            if filter_criteria.get("show_favorites_only"):
-                self._apply_filters_and_update_view()
+        
+        if is_selected:
+            self.selected_tiles.add(file_pair)
         else:
-            logging.warning("Toggle fav dla nieznanej pary.")
+            self.selected_tiles.discard(file_pair)
+        
+        # Update bulk operations UI visibility
+        self._update_bulk_operations_visibility()
+        
+        logging.debug(f"Tile selection changed for {file_pair.get_base_name()}: {is_selected}. "
+                     f"Total selected: {len(self.selected_tiles)}")
+
+    def _update_bulk_operations_visibility(self):
+        """Updates visibility of bulk operations controls based on selection count."""
+        has_selection = len(self.selected_tiles) > 0
+        if hasattr(self, 'bulk_operations_panel'):
+            self.bulk_operations_panel.setVisible(has_selection)
+            if hasattr(self, 'selected_count_label'):
+                count = len(self.selected_tiles)
+                self.selected_count_label.setText(f"Zaznaczone: {count}")
+
+    def _clear_all_selections(self):
+        """Clears all tile selections."""
+        self.selected_tiles.clear()
+        
+        # Update all visible tiles to reflect cleared selection
+        if hasattr(self, 'gallery_manager') and self.gallery_manager:
+            for tile_widget in self.gallery_manager.get_all_tile_widgets():
+                if hasattr(tile_widget, 'metadata_controls'):
+                    tile_widget.metadata_controls.update_selection_display(False)
+        
+        self._update_bulk_operations_visibility()
+        logging.debug("Cleared all tile selections")
+
+    def _select_all_tiles(self):
+        """Selects all currently visible tiles."""
+        if hasattr(self, 'gallery_manager') and self.gallery_manager:
+            for tile_widget in self.gallery_manager.get_all_tile_widgets():
+                if hasattr(tile_widget, 'file_pair') and tile_widget.file_pair:
+                    self.selected_tiles.add(tile_widget.file_pair)
+                    if hasattr(tile_widget, 'metadata_controls'):
+                        tile_widget.metadata_controls.update_selection_display(True)
+            
+            self._update_bulk_operations_visibility()
+            logging.debug(f"Selected all {len(self.selected_tiles)} visible tiles")
+
+    def _perform_bulk_delete(self):
+        """Performs bulk delete operation on selected tiles."""
+        if not self.selected_tiles:
+            return
+            
+        count = len(self.selected_tiles)
+        reply = QMessageBox.question(
+            self,
+            "Potwierdź usunięcie",
+            f"Czy na pewno chcesz usunąć {count} zaznaczonych plików?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            deleted_pairs = []
+            for file_pair in self.selected_tiles.copy():
+                try:
+                    # Use the existing file operations
+                    if hasattr(self, 'file_operations_ui') and self.file_operations_ui:
+                        # Remove files
+                        import os
+                        if os.path.exists(file_pair.archive_path):
+                            os.remove(file_pair.archive_path)
+                        if os.path.exists(file_pair.preview_path):
+                            os.remove(file_pair.preview_path)
+                        deleted_pairs.append(file_pair)
+                        logging.debug(f"Deleted files for {file_pair.get_base_name()}")
+                except Exception as e:
+                    logging.error(f"Failed to delete files for {file_pair.get_base_name()}: {e}")
+            
+            # Remove deleted pairs from data structures
+            for file_pair in deleted_pairs:
+                if file_pair in self.all_file_pairs:
+                    self.all_file_pairs.remove(file_pair)
+                self.selected_tiles.discard(file_pair)
+            
+            # Refresh view
+            self._apply_filters_and_update_view()
+            self._save_metadata()
+            
+            QMessageBox.information(
+                self,
+                "Usuwanie zakończone",
+                f"Usunięto {len(deleted_pairs)} z {count} zaznaczonych plików."
+            )
+
+    def _perform_bulk_move(self):
+        """Performs bulk move operation on selected tiles."""
+        if not self.selected_tiles:
+            return
+            
+        # Get destination directory
+        destination = QFileDialog.getExistingDirectory(
+            self,
+            "Wybierz folder docelowy",
+            self.current_working_directory or ""
+        )
+        
+        if not destination:
+            return
+            
+        count = len(self.selected_tiles)
+        moved_pairs = []
+        
+        for file_pair in self.selected_tiles.copy():
+            try:
+                import shutil
+                import os
+                
+                # Move archive file
+                if os.path.exists(file_pair.archive_path):
+                    archive_name = os.path.basename(file_pair.archive_path)
+                    new_archive_path = os.path.join(destination, archive_name)
+                    shutil.move(file_pair.archive_path, new_archive_path)
+                
+                # Move preview file
+                if os.path.exists(file_pair.preview_path):
+                    preview_name = os.path.basename(file_pair.preview_path)
+                    new_preview_path = os.path.join(destination, preview_name)
+                    shutil.move(file_pair.preview_path, new_preview_path)
+                
+                moved_pairs.append(file_pair)
+                logging.debug(f"Moved files for {file_pair.get_base_name()} to {destination}")
+                
+            except Exception as e:
+                logging.error(f"Failed to move files for {file_pair.get_base_name()}: {e}")
+        
+        # Remove moved pairs from data structures
+        for file_pair in moved_pairs:
+            if file_pair in self.all_file_pairs:
+                self.all_file_pairs.remove(file_pair)
+            self.selected_tiles.discard(file_pair)
+        
+        # Refresh view
+        self._apply_filters_and_update_view()
+        self._save_metadata()
+        
+        QMessageBox.information(
+            self,
+            "Przenoszenie zakończone",
+            f"Przeniesiono {len(moved_pairs)} z {count} zaznaczonych plików do:\n{destination}"
+        )
 
     def _handle_stars_changed(self, file_pair: FilePair, new_star_count: int):
         """

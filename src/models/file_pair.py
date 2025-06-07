@@ -52,7 +52,6 @@ class FilePair:
         # Inicjalizacja metadanych z domyślnymi wartościami
         self.preview_thumbnail: QPixmap | None = None
         self.archive_size_bytes: int | None = None
-        self.is_favorite: bool = False
         self.stars: int = 0
         self.color_tag: str | None = None
 
@@ -154,44 +153,6 @@ class FilePair:
             return f"{size_bytes / 1024**2:.1f} MB"
         else:
             return f"{size_bytes / 1024**3:.1f} GB"
-
-    def toggle_favorite(self) -> None:
-        """
-        Przełącza status "ulubiony" dla danego pliku.
-
-        Returns:
-            bool: Nowy stan flagi is_favorite
-        """
-        self.is_favorite = not self.is_favorite
-        log_msg = (
-            f"Przełączono status 'ulubiony' dla {self.get_base_name()}: "
-            f"{self.is_favorite}"
-        )
-        logger.debug(log_msg)
-        return self.is_favorite
-
-    def is_favorite_file(self):
-        """
-        Sprawdza, czy plik jest oznaczony jako "ulubiony".
-
-        Returns:
-            bool: True jeśli plik jest oznaczony jako ulubiony,
-                  False w przeciwnym wypadku
-        """
-        return self.is_favorite
-
-    def set_favorite(self, state):
-        """
-        Ustawia status "ulubiony" dla danego pliku.
-
-        Args:
-            state (bool): Nowy stan flagi is_favorite
-
-        Returns:
-            bool: Aktualny stan flagi is_favorite
-        """
-        self.is_favorite = bool(state)
-        return self.is_favorite
 
     def set_stars(self, num_stars: int) -> None:
         """

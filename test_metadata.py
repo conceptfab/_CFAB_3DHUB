@@ -29,18 +29,15 @@ def test_metadata_save():
     # Stwórz testowy plik archiwum
     test_archive = os.path.join(test_dir, "test.zip")
     with open(test_archive, "w") as f:
-        f.write("test")
-
-    # Stwórz FilePair
+        f.write("test")    # Stwórz FilePair
     file_pair = FilePair(test_archive, None, test_dir)
 
-    # Ustaw metadane
-    file_pair.is_favorite = True
+    # Ustaw metadane (bez favorites)
     file_pair.set_stars(4)
     file_pair.set_color_tag("#E53935")
 
     print(
-        f"📊 FilePair: favorite={file_pair.is_favorite}, stars={file_pair.get_stars()}, color={file_pair.get_color_tag()}"
+        f"📊 FilePair: stars={file_pair.get_stars()}, color={file_pair.get_color_tag()}"
     )
 
     # Zapisz metadane
@@ -61,12 +58,10 @@ def test_metadata_save():
 
     # Wczytaj z powrotem
     loaded_metadata = metadata_manager.load_metadata(test_dir)
-    print(f"📖 Wczytane metadane: {loaded_metadata}")
-
-    # Zastosuj metadane
+    print(f"📖 Wczytane metadane: {loaded_metadata}")    # Zastosuj metadane
     metadata_manager.apply_metadata_to_file_pairs(test_dir, [file_pair])
     print(
-        f"🔄 Po zastosowaniu: favorite={file_pair.is_favorite}, stars={file_pair.get_stars()}, color={file_pair.get_color_tag()}"
+        f"🔄 Po zastosowaniu: stars={file_pair.get_stars()}, color={file_pair.get_color_tag()}"
     )
 
 

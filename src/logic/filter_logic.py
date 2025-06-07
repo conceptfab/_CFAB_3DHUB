@@ -20,7 +20,6 @@ def filter_file_pairs(
         filter_criteria (Dict[str, Any]): Słownik określający kryteria
             filtrowania:
             {
-                "show_favorites_only": bool,  # True, by pokazać tylko ulubione
                 "min_stars": int,             # 0-5, 0 = brak filtra gwiazdek
                 "required_color_tag": str     # "ALL" = brak filtra,
                                               # "__NONE__" = tag pusty,
@@ -35,14 +34,13 @@ def filter_file_pairs(
         return file_pairs_list
 
     filtered_list: List[FilePair] = []
-    show_favorites_only = filter_criteria.get("show_favorites_only", False)
     min_stars = filter_criteria.get("min_stars", 0)
     required_color_tag = filter_criteria.get("required_color_tag", "ALL")
     path_prefix = filter_criteria.get("path_prefix")
 
     logging.debug(f"Filter run: {len(file_pairs_list)} pairs.")
     logging.debug(
-        f"Crit: Fav={show_favorites_only}, S>={min_stars}, "
+        f"Crit: S>={min_stars}, "
         f"C='{required_color_tag}', Path='{path_prefix}'"
     )
 
@@ -60,18 +58,12 @@ def filter_file_pairs(
             if not pair_path.startswith(prefix):
                 continue
 
-        pair_is_fav = pair.is_favorite
         pair_stars = pair.get_stars()
         pair_color_tag = pair.get_color_tag()
 
         logging.debug(
-            f"P#{i}({fp_name}):F?{pair_is_fav},S:{pair_stars},T:'{pair_color_tag}'"
+            f"P#{i}({fp_name}):S:{pair_stars},T:'{pair_color_tag}'"
         )
-
-        # Sprawdzenie warunku ulubionych
-        if show_favorites_only and not pair_is_fav:
-            logging.debug(f"  P#{i}({fp_name}): REJ (fav)")
-            continue
 
         # Sprawdzenie warunku minimalnej liczby gwiazdek
         if min_stars > 0 and pair_stars < min_stars:

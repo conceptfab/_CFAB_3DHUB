@@ -140,3 +140,13 @@ class GalleryManager:
 
         # Przerenderuj galerię z nowymi rozmiarami
         self.update_gallery_view()
+
+    def get_all_tile_widgets(self) -> List[FileTileWidget]:
+        """
+        Zwraca listę wszystkich widgetów kafelków w galerii.
+        Używane do operacji zbiorczych (zaznaczanie wszystkich, operacje na zaznaczonych).
+
+        Returns:
+            List[FileTileWidget]: Lista wszystkich widgetów kafelków
+        """
+        return list(self.gallery_tile_widgets.values())

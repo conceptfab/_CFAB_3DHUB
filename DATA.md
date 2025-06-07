@@ -22,7 +22,6 @@ Najlepiej przechowywać dane robocze **wewnątrz folderu roboczego wybranego prz
 1.  **Metadane Par Plików:**
     *   Ścieżka do pliku archiwum (najlepiej względna do folderu roboczego).
     *   Ścieżka do pliku podglądu (najlepiej względna).
-    *   Status "ulubione" (boolean).
     *   Ocena w gwiazdkach (integer, np. 0-5).
     *   Tag kolorystyczny (string, np. nazwa koloru lub kod hex).
     *   Rozmiar pliku archiwum (można odczytywać na bieżąco, cache'owanie może przyspieszyć).
@@ -52,7 +51,6 @@ Najlepiej przechowywać dane robocze **wewnątrz folderu roboczego wybranego prz
         "subfolder1/archive1.zip": {
           "archive_path": "subfolder1/archive1.zip",
           "preview_path": "subfolder1/archive1.jpg",
-          "is_favorite": true,
           "stars": 5,
           "color_tag": "red",
           "archive_size_bytes": 1024000 // Opcjonalnie
@@ -81,7 +79,7 @@ Najlepiej przechowywać dane robocze **wewnątrz folderu roboczego wybranego prz
 *   **Struktura:**
     *   W folderze `.app_metadata` tworzymy plik bazy danych, np. `metadata.sqlite`.
     *   Definiujemy tabele, np.:
-        *   `file_pairs` (kolumny: `id` INTEGER PRIMARY KEY, `archive_path` TEXT UNIQUE, `preview_path` TEXT, `is_favorite` BOOLEAN, `stars` INTEGER, `color_tag` TEXT, `archive_size_bytes` INTEGER).
+        *   `file_pairs` (kolumny: `id` INTEGER PRIMARY KEY, `archive_path` TEXT UNIQUE, `preview_path` TEXT, `stars` INTEGER, `color_tag` TEXT, `archive_size_bytes` INTEGER).
         *   `unpaired_files` (kolumny: `id` INTEGER PRIMARY KEY, `file_path` TEXT UNIQUE, `type` TEXT CHECK(type IN ('archive', 'preview'))).
     *   Indeksy na kolumnach używanych do filtrowania znacznie przyspieszą zapytania.
 

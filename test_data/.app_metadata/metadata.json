@@ -1,7 +1,6 @@
 {
     "file_pairs": {
         "test.zip": {
-            "is_favorite": true,
             "stars": 4,
             "color_tag": "#E53935"
         }
