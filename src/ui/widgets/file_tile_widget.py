@@ -456,7 +456,9 @@ class FileTileWidget(QWidget):
             if self.file_pair:  # Upewnij się, że file_pair istnieje
                 self.filename_label.setText(self.file_pair.get_base_name())
                 # POPRAWKA: Delegowanie do metadata_controls
-                self.metadata_controls.update_selection_display(False)  # Default to not selected
+                self.metadata_controls.update_selection_display(
+                    False
+                )  # Default to not selected
                 self.metadata_controls.update_stars_display(self.file_pair.get_stars())
 
                 # Aktualizacja koloru obwódki miniatury - tylko jeśli jest wybrany kolor
@@ -716,7 +718,9 @@ class FileTileWidget(QWidget):
 
     def _on_tile_selection_changed(self, is_selected: bool):
         """Handle tile selection change from MetadataControlsWidget checkbox."""
-        logging.info(f"🔥 FileTileWidget._on_tile_selection_changed wywołane: {is_selected}")
+        logging.info(
+            f"🔥 FileTileWidget._on_tile_selection_changed wywołane: {is_selected}"
+        )
         if self._file_pair:
             # Emit signal to notify about selection change
             self.tile_selected.emit(self._file_pair, is_selected)

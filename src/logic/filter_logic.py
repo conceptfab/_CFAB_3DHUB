@@ -40,8 +40,7 @@ def filter_file_pairs(
 
     logging.debug(f"Filter run: {len(file_pairs_list)} pairs.")
     logging.debug(
-        f"Crit: S>={min_stars}, "
-        f"C='{required_color_tag}', Path='{path_prefix}'"
+        f"Crit: S>={min_stars}, " f"C='{required_color_tag}', Path='{path_prefix}'"
     )
 
     for i, pair in enumerate(file_pairs_list):
@@ -61,9 +60,7 @@ def filter_file_pairs(
         pair_stars = pair.get_stars()
         pair_color_tag = pair.get_color_tag()
 
-        logging.debug(
-            f"P#{i}({fp_name}):S:{pair_stars},T:'{pair_color_tag}'"
-        )
+        logging.debug(f"P#{i}({fp_name}):S:{pair_stars},T:'{pair_color_tag}'")
 
         # Sprawdzenie warunku minimalnej liczby gwiazdek
         if min_stars > 0 and pair_stars < min_stars:

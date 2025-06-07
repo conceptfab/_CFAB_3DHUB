@@ -7,7 +7,14 @@ import logging
 from collections import OrderedDict
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
-from PyQt6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QWidget
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QWidget,
+)
 
 from src.models.file_pair import FilePair
 
@@ -45,14 +52,14 @@ class MetadataControlsWidget(QWidget):
     def _init_ui(self):
         """Inicjalizuje elementy interfejsu użytkownika kontrolek metadanych."""
         self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(
-            0, 5, 0, 0
-        )  # Mały margines górny
-        
+        self.layout.setContentsMargins(0, 5, 0, 0)  # Mały margines górny
+
         # --- Checkbox do selekcji kafli ---
         self.selection_checkbox = QCheckBox()
-        self.selection_checkbox.setToolTip("Zaznacz/Odznacz kafelek do operacji grupowych")
-        
+        self.selection_checkbox.setToolTip(
+            "Zaznacz/Odznacz kafelek do operacji grupowych"
+        )
+
         # ═══════════════════════════════════════════════════════════════
         # STYLOWANIE CHECKBOXA SELEKCJI - EDYTUJ TUTAJ KOLORY
         # ═══════════════════════════════════════════════════════════════
@@ -89,7 +96,9 @@ class MetadataControlsWidget(QWidget):
             }
             """
         )
-        self.selection_checkbox.stateChanged.connect(self._on_selection_checkbox_changed)
+        self.selection_checkbox.stateChanged.connect(
+            self._on_selection_checkbox_changed
+        )
         self.layout.addWidget(self.selection_checkbox)
 
         # --- Kontrolki gwiazdek ---
@@ -183,7 +192,9 @@ class MetadataControlsWidget(QWidget):
         """Aktualizuje stan checkboxa selekcji."""
         self.selection_checkbox.setChecked(is_selected)
         self.selection_checkbox.setToolTip(
-            "Odznacz kafelek" if is_selected else "Zaznacz kafelek do operacji grupowych"
+            "Odznacz kafelek"
+            if is_selected
+            else "Zaznacz kafelek do operacji grupowych"
         )
 
     def _on_selection_checkbox_changed(self, state: int):
@@ -191,9 +202,7 @@ class MetadataControlsWidget(QWidget):
         is_selected = state == Qt.CheckState.Checked.value
         # Emituj sygnał zmiany selekcji
         self.tile_selected_changed.emit(is_selected)
-        logging.debug(
-            f"MetadataControls: tile_selected_changed emitted: {is_selected}"
-        )
+        logging.debug(f"MetadataControls: tile_selected_changed emitted: {is_selected}")
 
     def update_stars_display(self, star_count: int):
         """Aktualizuje wygląd przycisków gwiazdek."""
