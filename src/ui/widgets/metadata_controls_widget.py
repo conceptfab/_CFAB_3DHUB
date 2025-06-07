@@ -45,11 +45,24 @@ class MetadataControlsWidget(QWidget):
     def _init_ui(self):
         """Inicjalizuje elementy interfejsu użytkownika kontrolek metadanych."""
         self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(0, 5, 0, 0)  # Mały margines górny
-
-        # --- Przycisk Ulubione ---
+        self.layout.setContentsMargins(
+            0, 5, 0, 0
+        )  # Mały margines górny        # --- Przycisk Ulubione ---
         self.favorite_button = QPushButton()
         self.favorite_button.setToolTip("Oznacz/Odznacz jako ulubione")
+        self.favorite_button.setStyleSheet(
+            """
+            QPushButton {
+                border: none;
+                font-size: 16px;
+                color: #666666;
+                background-color: transparent;
+            }
+            QPushButton:hover {
+                color: #E53935;
+            }
+            """
+        )
         self.favorite_button.clicked.connect(self._on_favorite_button_clicked)
         self.layout.addWidget(self.favorite_button)
 
@@ -65,8 +78,15 @@ class MetadataControlsWidget(QWidget):
             star_button.setFixedSize(25, 25)
             star_button.setStyleSheet(
                 """
-                QPushButton { border: none; font-size: 16px; }
-                QPushButton:hover { color: #DAA520; }
+                QPushButton { 
+                    border: none; 
+                    font-size: 16px; 
+                    color: #666666;
+                    background-color: transparent;
+                }
+                QPushButton:hover { 
+                    color: #DAA520; 
+                }
                 """
             )
             star_button.clicked.connect(
@@ -74,11 +94,34 @@ class MetadataControlsWidget(QWidget):
             )
             self.star_buttons.append(star_button)
             self.stars_layout.addWidget(star_button)
-        self.layout.addWidget(self.stars_layout_widget)
-
-        # --- ComboBox Kolorów ---
+        self.layout.addWidget(self.stars_layout_widget)  # --- ComboBox Kolorów ---
         self.color_tag_combo = QComboBox()
         self.color_tag_combo.setToolTip("Zmień tag kolorystyczny")
+        self.color_tag_combo.setStyleSheet(
+            """
+            QComboBox {
+                color: #000000;
+                background-color: #F5F5F5;
+                border: 1px solid #CCCCCC;
+                border-radius: 3px;
+                padding: 2px 18px 2px 3px;
+                min-width: 60px;
+            }
+            QComboBox:hover {
+                border: 1px solid #4a90e2;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 15px;
+                border-left-width: 1px;
+                border-left-color: #CCCCCC;
+                border-left-style: solid;
+                border-top-right-radius: 3px;
+                border-bottom-right-radius: 3px;
+            }
+            """
+        )
         for name, value in self.PREDEFINED_COLORS.items():
             self.color_tag_combo.addItem(name, userData=value)
         self.color_tag_combo.activated.connect(self._on_color_combo_activated)

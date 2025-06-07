@@ -12,7 +12,7 @@ from collections import OrderedDict  # Dodaj OrderedDict
 from PIL import Image, UnidentifiedImageError
 from PyQt6.QtCore import QObject  # Dodaj QObject, QEvent
 from PyQt6.QtCore import QEvent, QMimeData, QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QDesktopServices, QDrag, QPixmap
+from PyQt6.QtGui import QAction, QColor, QDesktopServices, QDrag, QPixmap
 from PyQt6.QtWidgets import QHBoxLayout  # Dodaj QHBoxLayout
 from PyQt6.QtWidgets import QVBoxLayout  # Upewnij się, że QVBoxLayout jest tutaj
 from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QMenu, QSizePolicy, QWidget
@@ -149,21 +149,64 @@ class FileTileWidget(QWidget):
 
         # Ustawienie podstawowych właściwości widgetu
         self.setObjectName("FileTileWidget")
-        self.setStyleSheet(
-            """
-            #FileTileWidget {
-                background-color: #ffffff;
-                border: 2px solid #999999;
-                border-radius: 8px;
-                padding: 0px;
+
+        # JASNE TŁO ŻEBY BYŁO WIDAĆ NA CIEMNYM UI!
+        super_aggressive_stylesheet = """
+            /* Główny widget kafelka - JASNE TŁO */
+            FileTileWidget {
+                background-color: #FFFFFF !important;
+                border: 3px solid #333333 !important;
+                border-radius: 8px !important;
+                padding: 2px !important;
+                margin: 2px !important;
             }
-            #FileTileWidget:hover {
-                background-color: #f0f7ff;
-                border: 2px solid #4a90e2;
+            FileTileWidget:hover {
+                background-color: #F0F0F0 !important;
+                border: 3px solid #4a90e2 !important;
+            }
+            
+            /* Również dla QWidget z ID */
+            QWidget#FileTileWidget {
+                background-color: #FFFFFF !important;
+                border: 3px solid #333333 !important;
+                border-radius: 8px !important;
+                padding: 2px !important;
+                margin: 2px !important;
+            }
+            QWidget#FileTileWidget:hover {
+                background-color: #F0F0F0 !important;
+                border: 3px solid #4a90e2 !important;
+            }
+            
+            /* Wszystkie QWidget wewnątrz dziedziczą jasne tło */
+            QWidget {
+                background-color: inherit !important;
             }
         """
+        self.setStyleSheet(super_aggressive_stylesheet)
+
+        # KURWA DEBUGOWANIE
+        logging.error(
+            f"🔴 USTAWIONO SUPER AGRESYWNY STYLESHEET DLA: {self.objectName()}"
         )
-        self.setFixedSize(self.thumbnail_size[0], self.thumbnail_size[1])
+        print(f"🔴 USTAWIONO SUPER AGRESYWNY STYLESHEET DLA: {self.objectName()}")
+
+        # Ustawienie dodatkowych właściwości
+        self.setAutoFillBackground(True)
+
+        # Wymuś ponowne zastosowanie stylu BARDZO AGRESYWNIE
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        # Dodatkowo: wymuś aktualizację
+        self.update()
+        self.repaint()
+
+        # Ustaw też palettę jako backup
+        palette = self.palette()
+        palette.setColor(self.backgroundRole(), QColor("#2b2b2b"))
+        self.setPalette(palette)
 
         # Inicjalizacja UI
         self._init_ui()
@@ -186,23 +229,20 @@ class FileTileWidget(QWidget):
         # Oblicz rozmiar czcionki na podstawie rozmiaru kafelka
         base_font_size = max(8, min(18, int(self.thumbnail_size[0] / 12)))  # 8-18px
 
-        # Ustaw nowy stylesheet z dynamicznym rozmiarem czcionki
-        # Używamy jasno szarego koloru dla dobrej widoczności na ciemnym tle
+        # CZARNY TEKST NA BIAŁYM TLE KAFELKA!
         self.filename_label.setStyleSheet(
             f"""
             QLabel {{
-                color: #E0E0E0;
+                color: #000000;
                 font-weight: bold;
                 font-size: {base_font_size}px;
                 padding: 2px;
                 border-radius: 2px;
-                background-color: transparent;
             }}
             QLabel:hover {{
-                color: #FFFFFF;
+                color: #0066CC;
                 font-weight: bold;
                 text-decoration: underline;
-                background-color: transparent;
             }}
         """
         )
@@ -257,12 +297,12 @@ class FileTileWidget(QWidget):
 
         # --- Frame - kontener na miniaturę z kolorową obwódką ---
         self.thumbnail_frame = QFrame(self)
+        # USUNIĘTY transparent background - niech dziedziczy od rodzica!
         self.thumbnail_frame.setStyleSheet(
             """
             QFrame {
                 border: none;
                 padding: 0px;
-                background-color: transparent;
             }
         """
         )
@@ -292,12 +332,9 @@ class FileTileWidget(QWidget):
             QFrame.Shape.NoFrame
         )  # Bez wewnętrznej ramki
 
-        # Dodanie efektu hover dla miniatury
+        # Dodanie efektu hover dla miniatury - BEZ TRANSPARENT!
         self.thumbnail_label.setStyleSheet(
             """
-            QLabel {
-                background-color: transparent;
-            }
             QLabel:hover {
                 opacity: 0.9;
             }
@@ -320,22 +357,19 @@ class FileTileWidget(QWidget):
         self.filename_label.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
-        # Dodanie stylu dla efektu hover - wyraźniejszy
-        # Używamy jasno szarego koloru dla dobrej widoczności na ciemnym tle
+        # CZARNY TEKST NA BIAŁYM TLE KAFELKA!
         self.filename_label.setStyleSheet(
             """
             QLabel {
-                color: #E0E0E0;
+                color: #000000;
                 font-weight: bold;
                 padding: 2px;
                 border-radius: 2px;
-                background-color: transparent;
             }
             QLabel:hover {
-                color: #FFFFFF;
+                color: #0066CC;
                 font-weight: bold;
                 text-decoration: underline;
-                background-color: transparent;
             }
         """
         )
