@@ -232,7 +232,7 @@ _Analiza pliku `src/logic/file_operations.py` zakończona._
     - **Bezpieczeństwo wątków:** Dostęp do bazy danych SQLite z wielu wątków bez odpowiedniej serializacji lub użycia trybu WAL (Write-Ahead Logging) może prowadzić do błędów `OperationalError: database is locked` lub uszkodzenia danych. Jeśli operacje na metadanych będą wywoływane z wątków roboczych (np. po skanowaniu, podczas operacji na plikach), musi to być rozwiązane.
     - **Obsługa błędów SQL:** Należy dokładnie sprawdzić, czy wszystkie operacje na bazie danych (SELECT, INSERT, UPDATE, DELETE) mają odpowiednią obsługę wyjątków (`sqlite3.Error` i jego podklasy). Błędy SQL powinny być logowane, a aplikacja powinna sobie z nimi radzić w sposób przewidywalny.
     - **Iniekcja SQL:** Jeśli zapytania SQL są budowane przez konkatenację stringów z danymi wejściowymi, istnieje ryzyko iniekcji SQL. Należy bezwzględnie używać parametryzowanych zapytań (placeholdery `?`).
-    - **Wydajność przy dużej bazie danych:** Brak odpowiednich indeksów na często przeszukiwanych kolumnach (np. `file_path`, `archive_path`, tagi) może prowadzić do znacznego spowolnienia zapytań.
+    - **Wydajność przy dużej bazie danych:** Brak odpowiednich indeksów na często przeszukiwanych kolumnach (np. `file_path`, `archive_path`, tagi) może prowadzić to znacznego spowolnienia zapytań.
     - **Schema migration:** Brak mechanizmu migracji schematu bazy danych w przypadku przyszłych zmian struktury.
 
 2.  **Optymalizacje:**
@@ -316,7 +316,7 @@ _Analiza pliku `src/logic/metadata_manager.py` zakończona._
 2.  **Optymalizacje:**
 
     - **Asynchroniczne ładowanie/generowanie miniaturek:** Przenieść operacje `load_pixmap_from_path` do wątków roboczych (`src/ui/delegates/workers.py`). Główny wątek powinien zlecać zadanie i otrzymywać gotową miniaturkę przez sygnał.
-    - **Implementacja strategii LRU dla cache:** Ograniczyć maksymalną liczbę przechowywanych miniaturek lub całkowity rozmiar pamięci zajmowanej przez cache. Po przekroczeniu limitu, najdawniej używane elementy powinny być usuwane.
+    - **Implementacja strategii LRU dla cache:** Ograniczyć maksymalną liczbę przechowywanych miniaturek lub całkowity rozmiar pamięci zajmowanej przez cache. Po przekroceniu limitu, najdawniej używane elementy powinny być usuwane.
     - **Cache na dysku (opcjonalnie):** Dla bardzo dużych zbiorów danych lub potrzeby utrwalenia cache między sesjami, można rozważyć dodatkowy cache na dysku (np. w folderze danych aplikacji).
     - **Optymalizacja `pillow_image_to_qpixmap` i `crop_to_square`:** Upewnić się, że te funkcje są tak wydajne, jak to możliwe.
     - **Współdzielenie `QPixmap`:** Jeśli ten sam obraz (ta sama ścieżka) jest potrzebny w różnych rozmiarach, można rozważyć przechowywanie oryginalnego `QPixmap` (lub `QImage`) i skalowanie go na żądanie, zamiast przechowywania wielu wersji rozmiarowych tego samego obrazu. Może to jednak wpłynąć na wydajność skalowania w locie.
@@ -325,7 +325,7 @@ _Analiza pliku `src/logic/metadata_manager.py` zakończona._
     - **Usunięcie/Przemyślenie Singletona:** Rozważyć przekazywanie instancji `ThumbnailCache` przez wstrzykiwanie zależności zamiast globalnego dostępu, co ułatwi testowanie i zarządzanie cyklem życia.
     - **Uproszczenie `get_error_icon`:** Załadować ikonę błędu z pliku zasobów (`.qrc`) lub użyć prostszej, predefiniowanej ikony.
     - **Interfejs dla asynchronicznego pobierania:** Zmodyfikować `get_thumbnail` tak, aby mógł inicjować ładowanie w tle, jeśli miniaturki nie ma w cache, i powiadamiać o jej dostępności (np. przez `QFuture` lub sygnały).
-    - **Normalizacja ścieżek:** Zapewnić, że wszystkie ścieżki używane jako klucze są znormalizowane (np. `os.path.normpath` i `os.path.normcase` lub odpowiedniki z `pathlib`).
+    - **Normalizacja ścieżek:** Zapewnić, że wszystkie ścieżki używane jako klucze są znormalizowane (np. `os.path.normpath` i `os.path.normcase` lub odpowiednie z `pathlib`).
 
 ### 🧪 Plan testów
 
@@ -355,7 +355,7 @@ _Analiza pliku `src/logic/metadata_manager.py` zakończona._
 
 ### 📊 Status tracking
 
-- [ ] Kod zaimplementowany
+- [ ] Kod zaimplementany
 - [ ] Testy podstawowe przeprowadzone
 - [ ] Testy integracji przeprowadzone
 - [ ] Testy wydajności przeprowadzone
@@ -509,7 +509,7 @@ _Analiza pliku `src/ui/delegates/workers.py` zakończona._
 
 ### 📊 Status tracking
 
-- [ ] Kod zaimplementowany
+- [ ] Kod zaimplementany
 - [ ] Testy podstawowe przeprowadzone
 - [ ] Testy integracji przeprowadzone
 - [ ] Testy wydajności przeprowadzone
@@ -593,7 +593,7 @@ _Analiza pliku `src/ui/gallery_manager.py` zakończona._
 
 ### 📊 Status tracking
 
-- [ ] Kod zaimplementowany
+- [ ] Kod zaimplementany
 - [ ] Testy podstawowe przeprowadzone
 - [ ] Testy integracji przeprowadzone
 - [ ] Testy wydajności przeprowadzone
@@ -636,12 +636,15 @@ _Analiza pliku `src/ui/main_window.py` zakończona._
     - **Komentarze:** Komentarze są jasne i adekwatne. Docstring dla `main()` dobrze opisuje jej rolę.
 
 4.  **Zgodność z `styles.qss`:**
+
     - Nie dotyczy bezpośrednio tego pliku, ponieważ `main.py` nie tworzy ani nie stylizuje elementów UI. Odpowiedzialność za ładowanie i aplikowanie stylów spoczywa na `MainWindow` lub na poziomie `QApplication`, jeśli style mają być globalne od samego początku.
 
 5.  **Pasek postępu:**
+
     - Nie dotyczy bezpośrednio tego pliku. Pasek postępu jest elementem UI zarządzanym przez `MainWindow`.
 
 6.  **Wydajność:**
+
     - Plik nie zawiera operacji intensywnych obliczeniowo ani I/O, więc nie ma bezpośrednich problemów z wydajnością. Jego rola to inicjalizacja.
 
 7.  **Stabilność:**
@@ -710,6 +713,7 @@ _Analiza pliku `src/main.py` zakończona._
     - **Kolejność importów:** Import `src.main import main` jest oznaczony `# noqa: E402` z powodu umieszczenia go po modyfikacji `sys.path`. Jest to akceptowalne i powszechnie stosowane obejście dla E402 w takich przypadkach.
 
 3.  **Refaktoryzacja:**
+
     - **Globalny try-except w `run()`:** Zaleca się opakowanie wywołania `main()` w funkcji `run()` w blok `try...except Exception as e:` w celu logowania wszelkich nieprzechwyconych wyjątków i ewentualnego wyświetlenia komunikatu błędu użytkownikowi. To zwiększyłoby odporność skryptu uruchomieniowego.
     - **Struktura funkcji `run()`:** Obecna struktura jest czytelna. Warunkowe ustawianie poziomu logowania jest jasno zaimplementowane.
 
@@ -738,9 +742,11 @@ _Analiza pliku `src/main.py` zakończona._
     - Uruchom `python run_app.py`.
     - Sprawdź, czy błąd `ImportError` (lub podobny) jest przechwytywany, logowany, i czy skrypt kończy działanie w kontrolowany sposób.
 2.  **Błąd wykonania `main()` z `src.main`:**
+
     - Wprowadź tymczasowy błąd (np. `raise Exception("Error in main()")`) na początku funkcji `main()` w pliku `src/main.py`.
     - Uruchom `python run_app.py`.
-    - Sprawdź, czy wyjątek jest przechwytywany przez handler w `run_app.py`, logowany, i czy skrypt informuje o błędzie/kończy działanie.
+
+      - Sprawdź, czy wyjątek jest przechwytywany przez handler w `run_app.py`, logowany, i czy skrypt informuje o błędzie/kończy działanie.
 
 ### 📊 Status tracking
 
@@ -753,3 +759,454 @@ _Analiza pliku `src/main.py` zakończona._
 ---
 
 _Analiza pliku `run_app.py` zakończona._
+
+## ETAP 10: `src/app_config.py`
+
+### Identyfikacja
+
+- **Ścieżka**: `src/app_config.py`
+- **Priorytet**: Wysoki
+- **Opis**: Zarządza konfiguracją aplikacji, w tym odczytem, zapisem i walidacją parametrów. Obsługuje domyślne wartości i aktualizacje konfiguracji.
+
+### Analiza Problemu
+
+#### Krytyczne Błędy i Problemy ze Stabilnością:
+
+1.  **Brak obsługi błędów przy tworzeniu katalogu konfiguracyjnego**: W `_save_config`, `os.makedirs(self._app_data_dir, exist_ok=True)` może zgłosić wyjątek (np. `PermissionError`), który nie jest przechwytywany. Może to prowadzić do nieoczekiwanego zakończenia działania aplikacji lub niemożności zapisania konfiguracji.
+2.  **Potencjalne nadpisanie konfiguracji przy błędzie odczytu**: Jeśli plik konfiguracyjny istnieje, ale jest uszkodzony (np. nieprawidłowy JSON), metoda `_load_config` zwraca `DEFAULT_CONFIG`. Jeśli następnie aplikacja spróbuje zapisać konfigurację (np. przez `set`), uszkodzony plik zostanie nadpisany domyślnymi wartościami, co może prowadzić do utraty wcześniejszych ustawień użytkownika.
+
+#### Optymalizacje i Wydajność:
+
+1.  **Wielokrotny zapis do pliku przy zmianie wielu parametrów**: Metoda `set_thumbnail_size_range` wywołuje `self.set` dwukrotnie, co prowadzi do dwukrotnego zapisu całego pliku konfiguracyjnego. W przypadku częstych zmian lub większej liczby parametrów ustawianych jednocześnie, bardziej efektywne byłoby zebranie zmian i zapisanie pliku raz.
+2.  **Obliczanie `_thumbnail_size`**: Wartość `_thumbnail_size` jest obliczana w `_update_derived_values` i przechowywana jako atrybut instancji. Jest to dobre, ale metoda `_update_derived_values` jest wywoływana po każdym pomyślnym zapisie konfiguracji (`set` -> `_save_config` -> `_update_derived_values`). Jeśli konfiguracja jest zapisywana często, a inne wartości pochodne nie są tak często używane, można rozważyć leniwe obliczanie lub bardziej selektywne aktualizacje.
+
+#### Refaktoryzacja i Czytelność Kodu:
+
+1.  **Walidacja typów i wartości**: Metody walidacyjne (`_validate_int`, `_validate_str`, etc.) są statyczne i dobrze zdefiniowane. Można by rozważyć użycie bardziej zaawansowanych bibliotek do walidacji (np. Pydantic), jeśli konfiguracja stanie się bardziej złożona, co mogłoby uprościć kod i zapewnić lepsze komunikaty o błędach.
+2.  **Powtarzające się bloki `try-except` w `_load_config`**: Bloki `except json.JSONDecodeError` i `except IOError` mają identyczną logikę (logowanie błędu i zwracanie `DEFAULT_CONFIG`). Można je połączyć w jeden blok `except (json.JSONDecodeError, IOError) as e:`.
+3.  **Eksport dla kompatybilności wstecznej**: Sekcja na końcu pliku (`# --- Eksport funkcji i stałych dla kompatybilności wstecznej ---`) jest dobrym rozwiązaniem tymczasowym, ale docelowo kod korzystający z tych eksportowanych elementów powinien zostać zrefaktoryzowany, aby bezpośrednio korzystać z instancji `config` i jej metod/właściwości. Zmniejszy to globalny stan i poprawi enkapsulację.
+4.  **Nazewnictwo**: `predefined_colors_filter` jako właściwość zwracająca `OrderedDict` z `predefined_colors` jest nieco myląca. Nazwa sugeruje, że może to być jakiś mechanizm filtrowania, a nie tylko uporządkowana wersja słownika. Może `ordered_predefined_colors` byłoby jaśniejsze.
+5.  **Typowanie**: Plik używa type hintów, co jest dobre. Należy zapewnić ich spójność i kompletność.
+6.  **Stałe dla kryteriów specjalnych**: Wartości stringowe jak `"ALL"` i `"__NONE__` dla `required_color_tag` mogłyby być zdefiniowane jako stałe (np. `COLOR_FILTER_ALL = "ALL"`, `COLOR_FILTER_NONE = "__NONE__"`) dla lepszej czytelności i uniknięcia literówek.
+7.  **Domyślna instancja `config`**: Tworzenie globalnej instancji `config = AppConfig()` na poziomie modułu jest powszechną praktyką, ale może utrudniać testowanie i prowadzić do problemów, jeśli różne części aplikacji potrzebowałyby różnych konfiguracji (choć w tym przypadku wydaje się to mało prawdopodobne). Wstrzykiwanie zależności (dependency injection) mogłoby być alternatywą w bardziej złożonych systemach.
+
+#### Sugestie dotyczące UI (jeśli dotyczy):
+
+- Nie dotyczy bezpośrednio, ale zmiany w konfiguracji (np. `thumbnail_size`) powinny być odzwierciedlane w UI w czasie rzeczywistym lub po ponownym załadowaniu odpowiednich komponentów.
+
+### Plan Testów
+
+1.  **Testy jednostkowe dla `AppConfig`**:
+
+    - **Inicjalizacja**:
+      - Sprawdzenie, czy `AppConfig` poprawnie tworzy domyślny plik konfiguracyjny, jeśli nie istnieje.
+      - Sprawdzenie, czy `AppConfig` poprawnie wczytuje istniejący plik konfiguracyjny.
+      - Sprawdzenie, czy `AppConfig` używa domyślnych wartości, gdy plik konfiguracyjny jest uszkodzony (nieprawidłowy JSON).
+      - Sprawdzenie, czy `AppConfig` używa domyślnych wartości, gdy nie ma uprawnień do odczytu pliku konfiguracyjnego (może wymagać mockowania `os.path.exists` lub `open`).
+      - Sprawdzenie, czy `AppConfig` poprawnie uzupełnia brakujące klucze w istniejącym pliku konfiguracyjnym wartościami domyślnymi i zapisuje zaktualizowaną konfigurację.
+    - **Odczyt i Zapis (`get`, `set`)**:
+      - Test `get` dla istniejących i nieistniejących kluczy (z wartością domyślną i bez).
+      - Test `set` dla różnych typów danych i sprawdzenie, czy konfiguracja jest poprawnie zapisywana do pliku.
+      - Test `set` i sprawdzenie, czy `_update_derived_values` jest wywoływana (np. przez sprawdzenie zmiany `_thumbnail_size`).
+    - **Walidacja (`_validate_*` metody)**:
+      - Testy dla każdej metody walidacyjnej z poprawnymi i niepoprawnymi danymi (różne typy, wartości poza zakresem).
+    - **Metody specyficzne dla parametrów**:
+      - `set_thumbnail_slider_position`: test z poprawnymi i niepoprawnymi wartościami (poza zakresem 0-100).
+      - `get_thumbnail_slider_position`: test odczytu wartości.
+      - `set_thumbnail_size_range`: test z poprawnymi i niepoprawnymi wartościami (np. min > max).
+      - `get_supported_extensions`: test dla "archive", "preview" i nieznanego typu.
+      - `set_supported_extensions`: test z listą stringów, normalizacją (dodawanie kropki), dla "archive", "preview" i nieznanego typu.
+      - `get_predefined_colors`, `set_predefined_colors`: test odczytu i zapisu słownika.
+    - **Właściwości**:
+      - Test odczytu wszystkich właściwości (`thumbnail_size`, `min_thumbnail_size`, `max_thumbnail_size`, `supported_archive_extensions`, `supported_preview_extensions`, `predefined_colors_filter`).
+      - Sprawdzenie, czy `thumbnail_size` jest poprawnie obliczane na podstawie `thumbnail_slider_position`, `min_thumbnail_size`, `max_thumbnail_size`.
+    - **Obsługa błędów zapisu**:
+      - Symulacja `IOError` podczas zapisu w `_save_config` (np. przez mockowanie `open` aby zgłaszało wyjątek) i sprawdzenie, czy metoda `set` zwraca `False` oraz czy błąd jest logowany.
+      - Symulacja `PermissionError` podczas `os.makedirs` w `_save_config`.
+    - **Zachowanie przy uszkodzonym pliku konfiguracyjnym**:
+      - Utworzenie pliku `config.json` z nieprawidłową składnią JSON. Sprawdzenie, czy `_load_config` zwraca `DEFAULT_CONFIG` i loguje błąd.
+      - Utworzenie pliku `config.json`, który jest prawidłowym JSON-em, ale zawiera wartości niekompatybilne z oczekiwaniami (np. string zamiast int dla `thumbnail_size`). Obecna implementacja nie waliduje typów przy odczycie, jedynie przy ustawianiu przez dedykowane metody. To może być obszar do poprawy – walidacja przy wczytywaniu konfiguracji.
+
+2.  **Testy integracyjne (jeśli dotyczy)**:
+    - Sprawdzenie, czy zmiany w konfiguracji (np. rozmiar miniatur, obsługiwane rozszerzenia) są poprawnie odzwierciedlane w innych częściach aplikacji (np. w UI galerii, w logice skanowania plików).
+    - Testowanie ścieżki użytkownika: zmiana ustawienia w UI (jeśli jest taka opcja), zapis konfiguracji, ponowne uruchomienie aplikacji i sprawdzenie, czy nowe ustawienie jest aktywne.
+
+### Śledzenie Postępów
+
+- [ ] **Analiza**: Ukończono.
+- [ ] **Implementacja Poprawek**:
+  - [ ] Obsługa błędów w `_save_config` (np. `PermissionError` przy `os.makedirs`).
+  - [ ] Rozważenie strategii dla uszkodzonego pliku konfiguracyjnego, aby uniknąć nadpisania przez domyślne wartości przy błędzie odczytu (np. przez utworzenie backupu przed próbą zapisu nowej konfiguracji, jeśli ostatni odczyt był z domyślnych wartości z powodu błędu).
+  - [ ] Optymalizacja zapisu w `set_thumbnail_size_range` (jeden zapis na końcu).
+  - [ ] Połączenie bloków `try-except` w `_load_config`.
+  - [ ] Dodanie pełnego typowania do klasy `AppConfig` i jej metod.
+  - [ ] (Opcjonalnie) Refaktoryzacja kodu używającego eksportowanych stałych/funkcji, aby korzystał bezpośrednio z instancji `config`.
+  - [ ] (Opcjonalnie) Zmiana nazwy właściwości `predefined_colors_filter`.
+  - [ ] (Opcjonalnie, długoterminowo) Rozważenie walidacji typów/wartości podczas wczytywania konfiguracji z pliku, a nie tylko przy ich ustawianiu.
+- [ ] **Testowanie**:
+  - [ ] Napisanie testów jednostkowych dla `AppConfig`.
+  - [ ] Przeprowadzenie testów integracyjnych.
+- [ ] **Dokumentacja**: Zaktualizowano `corrections.md`.
+
+---
+
+## ETAP 11: `src/logic/filter_logic.py`
+
+### Identyfikacja
+
+- **Ścieżka**: `src/logic/filter_logic.py`
+- **Priorytet**: Średni
+- **Opis:** Moduł odpowiedzialny za logikę filtrowania listy obiektów `FilePair` na podstawie różnych kryteriów, takich jak ocena gwiazdkowa, tagi kolorystyczne i prefiks ścieżki.
+
+### Analiza Problemu
+
+#### Krytyczne Błędy i Problemy ze Stabilnością:
+
+1.  **Brak walidacji typów kryteriów**: Funkcja `filter_file_pairs` pobiera `filter_criteria` jako słownik, ale nie ma jawnej walidacji typów wartości w tym słowniku (np. czy `min_stars` jest int, czy `required_color_tag` jest stringiem). Nieprawidłowe typy mogą prowadzić do `TypeError` lub nieoczekiwanego zachowania podczas porównań.
+2.  **Potencjalne `TypeError` przy porównywaniu tagów kolorów**: W linii `pair_color_tag.strip().lower() == required_color_tag.strip().lower()`, jeśli `pair_color_tag` jest `None` (co jest możliwe, jeśli `get_color_tag()` zwraca `None`), wywołanie `.strip()` spowoduje `AttributeError`. Chociaż warunek `isinstance(pair_color_tag, str)` częściowo to pokrywa, warto rozważyć bardziej bezpośrednią obsługę `None`.
+
+#### Optymalizacje i Wydajność:
+
+1.  **Logowanie w pętli**: Intensywne logowanie wewnątrz pętli (`logging.debug`) dla każdego sprawdzanego elementu może znacząco spowolnić filtrowanie przy bardzo dużych listach `file_pairs_list`. Chociaż jest to przydatne do debugowania, w środowisku produkcyjnym logowanie na poziomie DEBUG powinno być domyślnie wyłączone lub mniej szczegółowe.
+2.  **Wielokrotne wywołania `normalize_path`**: W pętli, `normalize_path(path_prefix)` jest wywoływane dla każdego elementu, mimo że `path_prefix` się nie zmienia. Można to zoptymalizować, normalizując `path_prefix` raz przed pętlą.
+3.  **Porównywanie ścieżek**: `pair_path.startswith(prefix)` jest używane do filtrowania po ścieżce. Jest to generalnie wydajne. Należy upewnić się, że normalizacja ścieżek (zarówno `pair_path` jak i `prefix`) jest spójna i poprawnie obsługuje różne separatory systemowe, wielkość liter (jeśli system plików jest niewrażliwy na wielkość liter, a porównanie ma być wrażliwe lub odwrotnie).
+
+#### Refaktoryzacja i Czytelność Kodu:
+
+1.  **Złożoność warunku filtrowania kolorów**: Logika sprawdzania `required_color_tag` (`"ALL"`, `"__NONE__"`, konkretny kolor) jest nieco rozbudowana. Można by ją uprościć lub uczynić bardziej czytelną, np. przez wydzielenie do osobnej funkcji pomocniczej.
+2.  **Typowanie**: Plik używa type hintów, co jest dobre. Należy zapewnić ich spójność i kompletność.
+3.  **Stałe dla kryteriów specjalnych**: Wartości stringowe jak `"ALL"` i `"__NONE__` dla `required_color_tag` mogłyby być zdefiniowane jako stałe (np. `COLOR_FILTER_ALL = "ALL"`, `COLOR_FILTER_NONE = "__NONE__"`) dla lepszej czytelności i uniknięcia literówek.
+4.  **Obsługa `None` w `pair_color_tag`**: Jak wspomniano, bezpośrednie sprawdzenie `if pair_color_tag is None:` przed próbą użycia metod stringowych byłoby bezpieczniejsze.
+
+#### Sugestie dotyczące UI (jeśli dotyczy):
+
+- Wyniki filtrowania bezpośrednio wpływają na to, co jest wyświetlane w galerii. Wydajność tej funkcji jest kluczowa dla responsywności UI przy zmianie filtrów.
+
+### Plan Testów
+
+1.  **Testy jednostkowe dla `filter_file_pairs`**:
+
+    - **Pusta lista wejściowa**: Sprawdzenie, czy zwraca pustą listę.
+    - **Puste kryteria filtrowania**: Sprawdzenie, czy zwraca oryginalną listę.
+    - **Filtrowanie po `min_stars`**:
+      - Test z `min_stars = 0` (powinno zwrócić wszystko, co pasuje do innych kryteriów).
+      - Test z `min_stars = 3` (powinno zwrócić tylko pary z >= 3 gwiazdkami).
+      - Test z `min_stars` większym niż maksymalna liczba gwiazdek w danych (powinno zwrócić pustą listę).
+    - **Filtrowanie po `required_color_tag`**:
+      - Test z `required_color_tag = "ALL"` (powinno zwrócić wszystko, co pasuje do innych kryteriów).
+      - Test z `required_color_tag = "__NONE__"` (powinno zwrócić tylko pary z pustym/None tagiem koloru).
+      - Test z konkretnym kolorem (np. `"#FF0000"`), sprawdzając dopasowanie (również niewrażliwe na wielkość liter i z białymi znakami).
+      - Test z kolorem, którego nie ma żadna para.
+    - **Filtrowanie po `path_prefix`**:
+      - Test z prefiksem pasującym do niektórych par.
+      - Test z prefiksem niepasującym do żadnej pary.
+      - Test z prefiksem będącą całą ścieżką do archiwum.
+      - Test z normalizacją ścieżek (różne separatory, wielkość liter, jeśli to istotne).
+    - **Kombinacja kryteriów**:
+      - Test z `min_stars` i `required_color_tag`.
+      - Test z `min_stars` i `path_prefix`.
+      - Test z `required_color_tag` i `path_prefix`.
+      - Test ze wszystkimi trzema kryteriami.
+    - **Przypadki brzegowe dla tagów kolorów**:
+      - `pair_color_tag` jest `None`, `required_color_tag` jest `"__NONE__"`.
+      - `pair_color_tag` jest `None`, `required_color_tag` jest konkretnym kolorem.
+      - `pair_color_tag` jest pustym stringiem, `required_color_tag` jest `"__NONE__"`.
+    - **Nieprawidłowe typy w `filter_criteria`** (jeśli nie ma walidacji na wejściu, jak funkcja się zachowa – idealnie powinna zgłosić błąd lub zignorować nieprawidłowe kryterium).
+
+2.  **Testy integracyjne**:
+    - Sprawdzenie, czy zmiana filtrów w UI (np. w `FilterPanel`) poprawnie wywołuje `filter_file_pairs` i czy `GalleryManager` aktualizuje widok zgodnie z wynikami filtrowania.
+    - Testowanie responsywności UI podczas filtrowania dużej liczby elementów.
+
+### Śledzenie postępów
+
+- [ ] **Analiza**: Ukończono.
+- [ ] **Implementacja Poprawek**:
+  - [ ] Dodanie walidacji typów dla wartości w `filter_criteria` lub zapewnienie odporności na nieprawidłowe typy.
+  - [ ] Poprawa obsługi `None` dla `pair_color_tag` przed wywołaniem metod stringowych.
+  - [ ] Optymalizacja logowania (np. możliwość wyłączenia szczegółowego logowania w pętli).
+  - [ ] Optymalizacja `normalize_path(path_prefix)` (wywołanie raz przed pętlą).
+  - [ ] (Opcjonalnie) Refaktoryzacja logiki filtrowania kolorów dla czytelności.
+  - [ ] (Opcjonalnie) Zdefiniowanie stałych dla `"ALL"` i `"__NONE__"`.
+- [ ] **Testowanie**:
+  - [ ] Napisanie testów jednostkowych dla `filter_file_pairs`.
+  - [ ] Przeprowadzenie testów integracyjnych z UI.
+- [ ] **Dokumentacja**: Zaktualizowano `corrections.md`.
+
+---
+
+## ETAP 12: src/models/file_pair.py
+
+### 📋 Identyfikacja
+
+- **Plik główny:** `src/models/file_pair.py`
+- **Priorytet:** 🟡 ŚREDNI
+- **Zależności:**
+  - `logging`
+  - `os`
+  - `PyQt6.QtCore.Qt`
+  - `PyQt6.QtGui.QPixmap`
+
+### 🔍 Analiza problemów
+
+1.  **Błędy krytyczne/Potencjalne problemy:**
+
+    - **Walidacja ścieżek w `__init__`**: Poprawnie używa `_normalize_path` i `os.path.isabs`, rzucając `ValueError` dla niepoprawnych ścieżek. To jest dobre.
+    - **Ładowanie miniatury (`load_preview_thumbnail`):**
+      - Oryginalny `QPixmap` jest ładowany w całości przed skalowaniem. Dla ekstremalnie dużych plików podglądu (choć mało prawdopodobne) mogłoby to zużyć dużo pamięci. W praktyce dla typowych podglądów powinno być akceptowalne.
+      - `Qt.TransformationMode.SmoothTransformation` jest używane dla jakości, ale `FastTransformation` mogłoby być szybsze dla miniaturek, gdzie wydajność jest kluczowa. Można rozważyć uczynienie tego konfigurowalnym lub zmianę na `FastTransformation`.
+      - Tworzenie placeholdera `QPixmap` jest dobrym fallbackiem.
+    - **Pobieranie rozmiaru archiwum (`get_archive_size`):**
+      - Jeśli plik nie istnieje, `self.archive_size_bytes` jest ustawiane na `0`. Może to być mylące, gdyż `0` może oznaczać pusty plik. Lepsze byłoby pozostawienie `None` lub użycie dedykowanej wartości oznaczającej błąd/brak pliku, chociaż obecne logowanie ostrzeżenia jest pomocne.
+
+2.  **Optymalizacje:**
+
+    - **Normalizacja ścieżek (`_normalize_path`):** Funkcja jest globalna w module. Mogłaby być metodą statyczną klasy `FilePair` lub, jeśli jest używana szerzej, przeniesiona do `src/utils/path_utils.py`.
+    - **Wydajność metod `get_relative_*_path`:** `os.path.relpath` jest wywoływane za każdym razem. Jeśli te ścieżki są często odpytywane, a `working_directory` i ścieżki absolutne się nie zmieniają, można by je obliczyć raz i przechować. Jednak dla obiektu danych obecne podejście jest akceptowalne.
+    - **Formatowanie rozmiaru (`get_formatted_archive_size`):** Logika jest wystarczająca dla obecnych potrzeb. Dla bardziej zaawansowanych formatowań można by rozważyć bibliotekę `humanize`.
+
+3.  **Refaktoryzacja:**
+    - **Zależność od Qt w modelu danych:** `FilePair` bezpośrednio używa `QPixmap`, co tworzy zależność modelu danych od biblioteki UI. Idealnie, modele danych powinny być niezależne od UI. Miniaturka mogłaby być przechowywana jako surowe dane (`bytes`) lub ścieżka, a konwersja do `QPixmap` odbywałaby się bliżej warstwy UI. Jest to jednak znacząca zmiana architektoniczna i obecny kompromis może być akceptowalny w projekcie silnie opartym na Qt.
+    - **Przechowywanie metadanych:** Obecnie `stars` i `color_tag` są atrybutami. Dla większej liczby metadanych można by rozważyć osobną klasę `Metadata`.
+
+### 🧪 Plan testów
+
+1.  **Testy inicjalizacji `FilePair`:**
+    - Poprawne ścieżki absolutne (archiwum i podgląd; tylko archiwum).
+    - Niepoprawne ścieżki (względne) – sprawdzenie rzucania `ValueError`.
+    - Normalizacja ścieżek (różne separatory).
+    - Poprawne ustawienie `base_name`.
+    - Domyślne wartości metadanych (`preview_thumbnail=None`, `archive_size_bytes=None`, `stars=0`, `color_tag=None`).
+2.  **Testy metod `get_*_path` i `get_relative_*_path`:**
+    - Sprawdzenie poprawności zwracanych ścieżek.
+    - Obsługa `preview_path = None`.
+3.  **Testy ładowania miniatury (`load_preview_thumbnail`, `get_preview_thumbnail`):**
+    - Ładowanie z istniejącego, poprawnego pliku podglądu (sprawdzenie rozmiaru, typu `QPixmap`).
+    - Próba ładowania z nieistniejącego pliku (powinien powstać placeholder).
+    - Próba ładowania z uszkodzonego pliku (placeholder, logowanie błędu).
+    - Sprawdzenie skalowania (różne `size` na wejściu).
+4.  **Testy rozmiaru archiwum (`get_archive_size`, `get_formatted_archive_size`):**
+    - Pobieranie rozmiaru dla istniejącego i nieistniejącego pliku.
+    - Formatowanie rozmiaru dla różnych wielkości (B, KB, MB, GB) i dla wartości 0/`None` ("N/A").
+5.  **Testy metadanych (`set_stars`, `get_stars`, `set_color_tag`, `get_color_tag`):**
+    - Ustawianie i pobieranie poprawnej liczby gwiazdek (0-5).
+    - Próba ustawienia niepoprawnej liczby gwiazdek (np. -1, 6, string) – sprawdzenie logowania i ustawienia na 0.
+    - Ustawianie i pobieranie tagu koloru (string, `None`).
+6.  **Test `__repr__`:**
+    - Sprawdzenie poprawności i czytelności reprezentacji stringowej.
+
+### 📊 Status tracking
+
+- [ ] Kod zaimplementowany (analiza istniejącego kodu)
+- [ ] Testy podstawowe (do napisania i przeprowadzenia)
+- [ ] Testy integracji (w kontekście użycia `FilePair` w innych modułach)
+- [ ] Testy wydajności (np. ładowanie wielu miniaturek, jeśli `FilePair` jest za to odpowiedzialny bezpośrednio)
+- [ ] Dokumentacja zaktualizowana
+- [ ] Gotowe do wdrożenia (po ewentualnych poprawkach i testach)
+
+---
+
+<details>
+<summary>Analiza <code>src/models/file_pair.py</code> - Średni priorytet</summary>
+
+### Identyfikacja
+
+- **Nazwa pliku:** `file_pair.py`
+- **Priorytet:** Średni
+- **Opis:** Model danych dla par plików lub pojedynczych plików z metadanymi.
+- **Kluczowe funkcjonalności:** Reprezentacja struktury danych pliku, jego ścieżki, metadanych, potencjalnie powiązanych plików (np. RAW + JPG).
+- **Zależności:** Wiele komponentów logicznych i UI, które operują na plikach i ich właściwościach.
+
+### Analiza problemów
+
+- **Błędy krytyczne (potencjalne):**
+  - Niespójność danych, jeśli obiekt `FilePair` jest modyfikowany z wielu miejsc bez odpowiedniej synchronizacji lub mechanizmów walidacji.
+  - Błędy przy serializacji/deserializacji obiektu, jeśli jest taka potrzeba (np. do zapisu stanu).
+- **Optymalizacje:**
+  - Upewnienie się, że model jest jak najbardziej "lekki" i zawiera tylko niezbędne dane, aby nie spowalniać operacji na dużych listach obiektów.
+  - Rozważenie użycia `__slots__` dla optymalizacji zużycia pamięci, jeśli tworzonych jest bardzo dużo instancji `FilePair`.
+  - Zapewnienie metod do łatwego dostępu i modyfikacji atrybutów, z ewentualną walidacją.
+  - Jeśli model ma obsługiwać różne typy "par" (np. plik główny + plik pomocniczy, plik przed + plik po), upewnienie się, że struktura jest wystarczająco elastyczna.
+- **Refaktoryzacja:**
+  - Zastosowanie typowania (type hints) dla wszystkich atrybutów i metod.
+  - Przejrzyste nazewnictwo atrybutów i metod.
+  - Jeśli klasa staje się zbyt rozbudowana, rozważenie podziału na mniejsze, bardziej wyspecjalizowane klasy lub użycie kompozycji.
+  - Dokumentacja (docstrings) dla klasy i jej publicznych metod.
+
+### Plan testów
+
+- **Testy jednostkowe:**
+  - Testowanie tworzenia instancji `FilePair` z różnymi danymi wejściowymi.
+  - Testowanie metod dostępowych (gettery/settery), jeśli istnieją.
+  - Testowanie logiki biznesowej zawartej w modelu (np. metody porównujące, metody zwracające przetworzone dane).
+  - Testowanie obsługi przypadków brzegowych (np. brakujące dane, niepoprawne typy danych).
+- **Testy integracyjne:**
+  - Sprawdzenie, jak model `FilePair` jest używany przez inne komponenty (np. `scanner.py`, `gallery_manager.py`) i czy integracja jest poprawna.
+- **Testy UI (manualne lub zautomatyzowane):**
+  - Pośrednio, poprzez testowanie komponentów UI, które wyświetlają dane z obiektów `FilePair`.
+
+### Śledzenie postępów
+
+- [x] Analiza kodu zakończona.
+- [x] Zidentyfikowane problemy i sugestie zapisane.
+- [x] Plan testów przygotowany.
+- [ ] (Opcjonalnie) Utworzone zadania w systemie śledzenia błędów/zadań.
+</details>
+
+<details>
+<summary>Analiza <code>src/ui/directory_tree_manager.py</code> - Średni priorytet</summary>
+
+### Identyfikacja
+
+- **Nazwa pliku:** `directory_tree_manager.py`
+- **Priorytet:** Średni
+- **Opis:** Zarządza wyświetlaniem i nawigacją po strukturze folderów w interfejsie użytkownika.
+- **Kluczowe funkcjonalności:** Wyświetlanie drzewa katalogów, obsługa wyboru folderu, potencjalne odświeżanie drzewa.
+- **Zależności:** Prawdopodobnie `PyQt5/PySide2`, `src/logic/scanner.py` (pośrednio, do pobierania danych o katalogach).
+
+### Analiza problemów
+
+- **Błędy krytyczne (potencjalne):**
+  - Brak obsługi błędów przy dostępie do systemu plików (np. brak uprawnień, nieistniejące ścieżki).
+  - Problemy z wydajnością przy bardzo dużych strukturach katalogów, jeśli całe drzewo jest ładowane od razu, a nie np. leniwie (lazy loading).
+  - Możliwe blokowanie UI podczas ładowania/odświeżania drzewa, jeśli operacje te nie są wykonywane w osobnym wątku.
+- **Optymalizacje:**
+  - Implementacja leniwego ładowania (lazy loading) dla gałęzi drzewa, aby poprawić wydajność przy starcie i dla dużych struktur.
+  - Wykorzystanie osobnego wątku (`workers.py`) do operacji I/O związanych z odczytem struktury katalogów, aby uniknąć blokowania UI.
+  - Optymalizacja renderowania elementów drzewa, jeśli jest ono niestandardowe.
+  - Dodanie mechanizmu filtrowania lub wyszukiwania w drzewie katalogów.
+  - Możliwość zapamiętania ostatnio wybranej ścieżki lub rozwiniętych gałęzi.
+- **Refaktoryzacja:**
+  - Wydzielenie logiki pobierania danych o strukturze katalogów do osobnej klasy lub funkcji, jeśli jest ona mocno powiązana z UI.
+  - Upewnienie się, że sygnały i sloty są używane efektywnie do komunikacji z innymi komponentami (np. z galerią po wybraniu folderu).
+  - Zastosowanie typowania (type hints) dla poprawy czytelności i wsparcia analizy statycznej.
+  - Ujednolicenie nazewnictwa zmiennych i funkcji.
+
+### Plan testów
+
+- **Testy jednostkowe:**
+  - Testowanie logiki budowania modelu drzewa (jeśli jest oddzielona od widoku).
+  - Testowanie funkcji pomocniczych (np. do pobierania ikon, formatowania nazw).
+- **Testy integracyjne:**
+  - Testowanie interakcji z modelem danych (np. `QFileSystemModel` lub niestandardowym).
+  - Testowanie poprawnego emitowania sygnałów po wybraniu folderu.
+  - Testowanie reakcji na zmiany w systemie plików (jeśli zaimplementowano automatyczne odświeżanie).
+- **Testy UI (manualne lub zautomatyzowane):**
+  - Sprawdzenie poprawnego wyświetlania struktury katalogów.
+  - Testowanie nawigacji (rozwijanie/zwijanie gałęzi, wybór folderu).
+  - Testowanie responsywności UI podczas ładowania dużych drzew katalogów.
+  - Sprawdzenie obsługi przypadków brzegowych (puste foldery, foldery z dużą ilością podfolderów, brak dostępu).
+  - Testowanie działania z różnymi ścieżkami startowymi.
+
+### Śledzenie postępów
+
+- [ ] Analiza kodu zakończona. (Zakładając, że odczyt pliku był wystarczający do tej wstępnej analizy)
+- [ ] Zidentyfikowane problemy i sugestie zapisane.
+- [ ] Plan testów przygotowany.
+- [ ] (Opcjonalnie) Utworzone zadania w systemie śledzenia błędów/zadań.
+</details>
+
+<details>
+<summary>Analiza pliku: <code>src/ui/widgets/file_tile_widget.py</code></summary>
+
+**Identyfikacja pliku:**
+Plik `src/ui/widgets/file_tile_widget.py` jest odpowiedzialny za renderowanie pojedynczego kafelka pliku w widoku galerii. Powinien wyświetlać miniaturkę, nazwę pliku i potencjalnie inne istotne metadane. Jest to kluczowy komponent wizualny dla `GalleryManager`, wpływający na interakcję użytkownika z listą plików.
+
+**Potencjalne problemy:**
+
+1.  **Krytyczne błędy:**
+    - Niespójność danych, jeśli obiekt `FileTileWidget` jest modyfikowany z wielu miejsc bez odpowiedniej synchronizacji lub mechanizmów walidacji.
+    - Błędy przy serializacji/deserializacji obiektu, jeśli jest taka potrzeba (np. do zapisu stanu).
+2.  **Obszary do optymalizacji:**
+    - **Wydajność renderowania:** Metoda odpowiedzialna za rysowanie widgetu (np. `paintEvent` w Qt) może wymagać optymalizacji, aby zapewnić płynne przewijanie galerii z dużą liczbą kafelków. Należy unikać skomplikowanych operacji rysowania w głównym wątku.
+    - **Zarządzanie zasobami:** Efektywne wykorzystanie miniaturek z `ThumbnailCache` w celu unikania ich wielokrotnego generowania. Rozważenie leniwego ładowania danych lub elementów wizualnych, które nie są od razu widoczne.
+    - **Responsywność UI:** Zapewnienie, że interakcje użytkownika z kafelkiem (np. kliknięcie, zaznaczenie, najechanie myszą) są obsługiwane szybko i nie blokują interfejsu.
+    - **Aktualizacja danych:** Mechanizm aktualizacji wyglądu kafelka w odpowiedzi na zmiany w danych bazowych (np. zmiana metadanych pliku) powinien być efektywny.
+3.  **Potrzeba refaktoryzacji:**
+    - **Separacja odpowiedzialności (SoC):** Logika pobierania i formatowania danych powinna być oddzielona od logiki stricte prezentacyjnej (rysowania). Model danych (`FilePair`) powinien dostarczać widgetowi gotowe lub łatwo przetwarzalne informacje.
+    - **Stylizacja:** Zastosowanie zewnętrznych stylów (np. z `styles.qss` lub dedykowanego `tile_styles.py`) zamiast hardcodowania wartości stylów (kolory, czcionki, marginesy) bezpośrednio w kodzie widgetu. Umożliwi to łatwiejszą zmianę wyglądu i spójność.
+    - **Czytelność i konserwacja kodu:** Wprowadzenie lub uzupełnienie type hintów, dodanie klarownych komentarzy wyjaśniających bardziej złożone fragmenty kodu oraz poprawa nazewnictwa zmiennych i metod.
+    - **Obsługa zdarzeń:** Ustandaryzowanie i uproszczenie obsługi zdarzeń myszy (np. pojedyncze kliknięcie, podwójne kliknięcie, menu kontekstowe), potencjalnie przez emitowanie sygnałów do `GalleryManager`.
+
+**Plan testów:**
+
+1.  **Testy jednostkowe (jeśli widget ma własną logikę):**
+    - Testowanie tworzenia widgetu z różnymi typami danych wejściowych (prawidłowe, niekompletne, błędne dane z `FilePair`).
+    - Testowanie metod dostępowych (gettery/settery), jeśli istnieją.
+    - Testowanie logiki biznesowej zawartej w modelu (np. metody porównujące, metody zwracające przetworzone dane).
+    - Testowanie obsługi przypadków brzegowych (np. brakujące dane, niepoprawne typy danych).
+2.  **Testy integracyjne (z `GalleryManager` i `ThumbnailCache`):**
+    - Sprawdzenie, czy widget poprawnie wyświetla miniaturki dostarczane przez `ThumbnailCache`.
+    - Testowanie poprawnego renderowania widgetu w kontekście siatki lub listy w `GalleryManager`.
+    - Weryfikacja, czy interakcje z widgetem (np. kliknięcie) poprawnie wywołują odpowiednie akcje lub sygnały obsługiwane przez `GalleryManager`.
+3.  **Testy wydajnościowe:**
+    - Analiza czasu renderowania pojedynczego kafelka.
+    - Testowanie wydajności przy wyświetlaniu i przewijaniu galerii z bardzo dużą liczbą kafelków (np. setki, tysiące).
+    - Monitorowanie zużycia pamięci przez widgety, szczególnie przy dynamicznym dodawaniu/usuwaniu.
+4.  **Testy UI (manualne):**
+    - Wizualna weryfikacja poprawności wyświetlania kafelków w różnych stanach i z różnymi danymi.
+    - Testowanie responsywności na interakcje użytkownika (kliknięcia, zaznaczanie).
+    - Testowanie wyglądu przy różnych rozdzielczościach i ustawieniach systemowych (jeśli dotyczy).
+
+---
+
+### Analiza pliku: `src/ui/widgets/filter_panel.py`
+
+**Identyfikacja pliku:**
+Plik `src/ui/widgets/filter_panel.py` definiuje widget `FilterPanel`, który jest używany w interfejsie użytkownika do filtrowania elementów wyświetlanych w galerii. Umożliwia filtrowanie na podstawie minimalnej liczby gwiazdek oraz tagu koloru.
+
+**Potencjalne problemy:**
+
+1.  **Krytyczne błędy:**
+
+    - Brak bezpośrednich krytycznych błędów widocznych w kodzie. Widget jest stosunkowo prosty.
+    - Potencjalny problem mógłby wystąpić, gdyby `app_config.PREDEFINED_COLORS_FILTER` było puste lub miało nieprawidłową strukturę, ale zakłada się, że `app_config` dostarcza poprawne dane.
+
+2.  **Obszary do optymalizacji:**
+
+    - **Wydajność:** Dla obecnej liczby opcji filtrowania, wydajność nie powinna stanowić problemu. Jeśli liczba filtrów lub opcji w filtrach znacznie by wzrosła, sposób ich tworzenia i zarządzania mógłby wymagać optymalizacji.
+    - **Rozszerzalność:** Dodawanie nowych typów filtrów (np. filtr po dacie, po nazwie pliku) wymagałoby modyfikacji metody `_init_ui` oraz `get_filter_criteria`. Można by rozważyć bardziej dynamiczny sposób tworzenia filtrów, np. na podstawie konfiguracji.
+
+3.  **Potrzeba refaktoryzacji:**
+    - **Stałe wartości:** Wysokość panelu (`self.setFixedHeight(60)`) jest zahardcodowana. Można by ją przenieść do stałej lub umożliwić jej konfigurację, jeśli byłaby taka potrzeba.
+    - **Logika `get_filter_criteria`:** Wartości domyślne (`min_stars = 0`, `req_color = "ALL"`) są przypisywane, jeśli `currentData()` zwróci `None`. Jest to bezpieczne, ale można by rozważyć inicjalizację QComboBox tak, aby zawsze miały wybraną poprawną wartość domyślną, eliminując potrzebę sprawdzania `None`.
+    - **Stylizacja:** Podobnie jak inne widgety, można by rozważyć zastosowanie stylów z zewnętrznego arkusza `styles.qss` zamiast polegania wyłącznie na domyślnych stylach Qt, aby zapewnić spójny wygląd aplikacji.
+    - **Typowanie:** Plik używa type hintów, co jest dobrą praktyką. Należy utrzymać ich spójność.
+
+**Plan testów:**
+
+1.  **Testy jednostkowe/funkcjonalne widgetu:**
+
+    - **Inicjalizacja:** Sprawdzenie, czy widget i wszystkie jego kontrolki są poprawnie tworzone.
+    - **`update_controls`:**
+      - Test z `file_pair = None` (kontrolki powinny być wyłączone, pola puste/domyślne).
+      - Test z poprawnym obiektem `FilePair` (sprawdzenie, czy nazwa, gwiazdki, tag koloru są poprawnie wyświetlane).
+    - **Interakcja z kontrolkami:**
+      - Edycja nazwy pliku w `base_name_edit`.
+      - Klikanie przycisków gwiazdek (sprawdzenie wizualnej zmiany i wewnętrznego stanu `_current_stars`).
+      - Zmiana wyboru w `color_tag_combo`.
+    - **`_apply_changes`:**
+      - Sprawdzenie, czy zmiany z UI (nazwa, gwiazdki, kolor) są poprawnie odzwierciedlane w obiekcie `FilePair` po kliknięciu "Zastosuj".
+      - Sprawdzenie, czy sygnał `metadata_changed` jest emitowany z poprawnym `FilePair`.
+    - **`_revert_changes`:**
+      - Sprawdzenie, czy zmiany w UI są cofane do stanu z `_current_file_pair` po kliknięciu "Anuluj".
+
+2.  **Testy integracyjne (z `MainWindow` lub innym komponentem zarządzającym):**
+
+    - Sprawdzenie, czy widget jest poprawnie wyświetlany i aktualizowany przy wyborze różnych `FilePair` w aplikacji.
+    - Weryfikacja, czy sygnał `metadata_changed` jest poprawnie odbierany i czy zmiany są zapisywane (np. przez `MetadataManager` i `FileOperations`).
+    - Testowanie walidacji nazwy pliku (po jej zaimplementowaniu) – czy nieprawidłowe nazwy są blokowane lub zgłaszane.
+
+3.  **Testy UI (manualne):**
+    - Wizualna weryfikacja wyglądu i działania kontrolek.
+    - Testowanie płynności interakcji.
+    - Sprawdzenie obsługi przypadków, gdy `FilePair` nie ma podglądu (ścieżka podglądu powinna być odpowiednio wyświetlona lub ukryta).
+
+### 📊 Status tracking
+
+- [ ] Kod zaimplementowany (analiza istniejącego kodu)
+- [ ] Testy podstawowe (do napisania i przeprowadzenia)
+- [ ] Testy integracji (do napisania i przeprowadzenia)
+- [ ] Dokumentacja zaktualizowana
+- [ ] Gotowe do wdrożenia (po ewentualnych poprawkach i testach)
+
+---
