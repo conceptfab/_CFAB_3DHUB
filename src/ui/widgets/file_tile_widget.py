@@ -157,11 +157,11 @@ class FileTileWidget(QWidget):
             /* ▼▼▼ GŁÓWNY WYGLĄD KAFELKA ▼▼▼ */
             FileTileWidget {
                 /* KOLOR TŁA KAFELKA - zmień na jasny/ciemny według potrzeb */
-                background-color: #FFFFFF !important;     /* BIAŁY - zmień na #1E1E1E dla ciemnego */
+                background-color: #1E1E1E !important;     /* BIAŁY - zmień na #1E1E1E dla ciemnego */
 
                 /* OBRAMOWANIE KAFELKA */
-                border: 3px solid #333333 !important;     /* Szare obramowanie */
-                border-radius: 8px !important;            /* Zaokrąglone rogi */
+                border: 1px solid #1E1E1E  !important;     /* Szare obramowanie */
+                border-radius: 4px !important;            /* Zaokrąglone rogi */
 
                 /* ODSTĘPY WEWNĘTRZNE I ZEWNĘTRZNE */
                 padding: 2px !important;                  /* Wewnętrzne odstępy */
@@ -171,7 +171,7 @@ class FileTileWidget(QWidget):
             /* ▼▼▼ HOVER - NAJECHANIE MYSZĄ ▼▼▼ */
             FileTileWidget:hover {
                 /* KOLOR TŁA PO NAJECHANIU */
-                background-color: #F0F0F0 !important;     /* Jasnoszary hover - zmień na #2A2A2A dla ciemnego */
+                background-color: #2A2A2A !important;     /* Ciemnoszary hover - zmień na #F0F0F0 dla jasnego */
 
                 /* OBRAMOWANIE PO NAJECHANIU */
                 border: 3px solid #4a90e2 !important;     /* Niebieskie obramowanie hover */
@@ -180,30 +180,24 @@ class FileTileWidget(QWidget):
             /* ▼▼▼ ALTERNATYWNY SELEKTOR - BACKUP ▼▼▼ */
             QWidget#FileTileWidget {
                 /* Te same style co wyżej - dla pewności że zadziałają */
-                background-color: #FFFFFF !important;     /* BIAŁY - zmień na #1E1E1E dla ciemnego */
-                border: 3px solid #333333 !important;     /* Szare obramowanie */
-                border-radius: 8px !important;            /* Zaokrąglone rogi */
+                background-color: #1E1E1E !important;     /* CIEMNY - zmień na #FFFFFF dla jasnego */
+                border: 1px solid #1E1E1E !important;     /* Subtelne obramowanie - takie samo jak główny selektor */
+                border-radius: 4px !important;            /* Zaokrąglone rogi - takie samo jak główny selektor */
                 padding: 2px !important;                  /* Wewnętrzne odstępy */
                 margin: 2px !important;                   /* Zewnętrzne odstępy */
             }
             QWidget#FileTileWidget:hover {
-                background-color: #F0F0F0 !important;     /* Jasnoszary hover - zmień na #2A2A2A dla ciemnego */
+                background-color: #2A2A2A !important;     /* Ciemnoszary hover - zmień na #F0F0F0 dla jasnego */
                 border: 3px solid #4a90e2 !important;     /* Niebieskie obramowanie hover */
             }
 
             /* ▼▼▼ DZIEDZICZENIE DLA ELEMENTÓW WEWNĘTRZNYCH ▼▼▼ */
-            QWidget {
-                /* Elementy wewnątrz dziedziczą tło z rodzica */
+            FileTileWidget QWidget {
+                /* Tylko elementy QWidget WEWNĄTRZ FileTileWidget dziedziczą tło z rodzica */
                 background-color: inherit !important;
             }
         """
         self.setStyleSheet(super_aggressive_stylesheet)
-
-        # KURWA DEBUGOWANIE
-        logging.error(
-            f"🔴 USTAWIONO SUPER AGRESYWNY STYLESHEET DLA: {self.objectName()}"
-        )
-        print(f"🔴 USTAWIONO SUPER AGRESYWNY STYLESHEET DLA: {self.objectName()}")
 
         # Ustawienie dodatkowych właściwości
         self.setAutoFillBackground(True)
@@ -250,7 +244,7 @@ class FileTileWidget(QWidget):
             f"""
             QLabel {{
                 /* ▼▼▼ NORMALNY STAN TEKSTU ▼▼▼ */
-                color: #000000;                      /* CZARNY tekst - zmień na #FFFFFF dla ciemnego tła */
+                color: #FFFFFF;                      /* BIAŁY tekst - zmień na #000000 dla jasnego tła */
                 font-weight: bold;                   /* Pogrubiona czcionka */
                 font-size: {base_font_size}px;       /* Dynamiczny rozmiar czcionki */
                 padding: 2px;                        /* Odstęp wokół tekstu */
@@ -389,7 +383,7 @@ class FileTileWidget(QWidget):
             """
             QLabel {
                 /* ▼▼▼ PODSTAWOWY WYGLĄD TEKSTU NAZWY ▼▼▼ */
-                color: #000000;                      /* CZARNY tekst - zmień na #FFFFFF dla ciemnego tła */
+                color: #FFFFFF;                      /* BIAŁY tekst - zmień na #000000 dla jasnego tła */
                 font-weight: bold;                   /* Pogrubiona czcionka */
                 padding: 2px;                        /* Odstęp wokół tekstu */
                 border-radius: 2px;                  /* Zaokrąglone rogi */
