@@ -133,14 +133,19 @@ class FileTileWidget(QWidget):
         """
         super().__init__(parent)
         self.file_pair = file_pair
-        self._file_pair = file_pair  # Dodanie _file_pair jako alias dla file_pair
+        self._file_pair = file_pair
         self.thumbnail_size = default_thumbnail_size
         self.original_thumbnail: QPixmap | None = None
 
         # Wątek i worker do ładowania miniatur
         self.thumbnail_thread: QThread | None = None
         self.thumbnail_worker: ThumbnailLoaderWorker | None = None
-        self._current_worker_id = 0  # Dodajemy identyfikator bieżącego workera
+        self._current_worker_id = 0
+
+        # Nowe flagi i zmienne do obsługi kliknięć i przeciągania
+        self.press_pos = None
+        self.maybe_drag = False
+        self.drag_active = False
 
         # Ustawienie podstawowych właściwości widgetu
         self.setObjectName("FileTileWidget")
@@ -158,8 +163,6 @@ class FileTileWidget(QWidget):
             }
         """
         )
-
-        # Ustaw stały rozmiar całego kafelka
         self.setFixedSize(self.thumbnail_size[0], self.thumbnail_size[1])
 
         # Inicjalizacja UI
@@ -171,11 +174,9 @@ class FileTileWidget(QWidget):
         # Asynchroniczne ładowanie miniatury
         self._load_thumbnail_async()
 
-        # MODIFICATION: Install event filters for clickable labels
-        self.thumbnail_label.installEventFilter(self)
-        self.filename_label.installEventFilter(
-            self
-        )  # POPRAWKA: name_label -> filename_label
+        # Usuwamy eventFilter, jeśli cała logika kliknięć jest w mouseReleaseEvent
+        # self.thumbnail_label.installEventFilter(self)
+        # self.filename_label.installEventFilter(self)
 
         # Ustawienie danych z FilePair
         self.update_data(file_pair)
@@ -759,43 +760,249 @@ class FileTileWidget(QWidget):
                     return True
         return super().eventFilter(obj, event)
 
-    # MODIFICATION: Add drag support
-    def mousePressEvent(self, event):
-        """
-        Obsługuje zdarzenie naciśnięcia przycisku myszy.
-        Przygotowuje możliwe rozpoczęcie operacji drag & drop.
-        """
+    # --- Drag and Drop ---
+    def mousePressEvent(self, event: QEvent):
         if event.button() == Qt.MouseButton.LeftButton:
-            # Zapisz pozycję początkową dla porównania przy mouseMoveEvent
-            self.drag_start_position = event.position()
+            self.press_pos = event.pos()
+            self.maybe_drag = True
+            self.drag_active = False  # Zresetuj flagę aktywnego przeciągania
+            # Nie wywołujemy super().mousePressEvent(event) od razu,
+            # aby dać szansę mouseReleaseEvent na obsłużenie "czystego" kliknięcia.
+            # event.accept() # Można rozważyć, jeśli chcemy całkowicie przejąć zdarzenie
+        else:
+            # Dla innych przycisków myszy, zachowaj standardowe działanie
+            super().mousePressEvent(event)
 
-        # Wywołaj domyślną implementację, aby zachować standardową funkcjonalność
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        """
-        Obsługuje zdarzenie ruchu myszy.
-        Inicjuje operację drag & drop jeśli spełnione są warunki.
-        """
-        # Sprawdź czy lewy przycisk myszy jest wciśnięty
-        if not (event.buttons() & Qt.MouseButton.LeftButton):
+    def mouseMoveEvent(self, event: QEvent):
+        # Jeśli nie było wciśnięcia lewego przycisku lub nie jest to potencjalne przeciąganie, ignoruj
+        if not self.maybe_drag or not (event.buttons() & Qt.MouseButton.LeftButton):
+            super().mouseMoveEvent(event)
             return
 
-        # Sprawdź, czy przesunięcie jest wystarczająco duże, aby rozpocząć przeciąganie
-        if not hasattr(self, "drag_start_position"):
+        # Jeśli przeciąganie jest już aktywne, po prostu przekaż zdarzenie
+        if self.drag_active:
+            super().mouseMoveEvent(event)
             return
 
-        # Oblicz odległość od początku kliknięcia
-        # Jeśli jest większa niż minimalny dystans, rozpocznij drag
-        distance = (event.position() - self.drag_start_position).manhattanLength()
-        if distance < QApplication.startDragDistance():
-            return
+        # Sprawdź, czy ruch przekroczył próg rozpoczęcia przeciągania
+        if (
+            event.pos() - self.press_pos
+        ).manhattanLength() >= QApplication.instance().startDragDistance():
+            # Sprawdź, czy element pod kursorem w momencie naciśnięcia pozwala na przeciąganie
+            # (tj. nie jest to miniatura ani nazwa pliku, które mają własne akcje na kliknięcie)
+            target_widget_at_press = self.childAt(self.press_pos)
 
-        # Stwórz i skonfiguruj obiekt do przeciągania
-        drag = QDrag(self)
-        mime_data = QMimeData()
+            # Rozpocznij przeciąganie, jeśli nie kliknięto bezpośrednio na miniaturę lub nazwę
+            # LUB jeśli kliknięto na obszar, który nie jest żadnym z tych widgetów (np. puste tło kafelka)
+            # Można też dodać dedykowany "uchwyt" i sprawdzać go tutaj.
+            if target_widget_at_press not in [
+                self.thumbnail_label,
+                self.filename_label,
+            ]:
+                self.drag_active = True  # Oznacz, że przeciąganie jest aktywne
 
-        # Serializuj identyfikator obiektu FilePair do formy, która może być przekazana
-        file_id = (
-            f"{self.file_pair.get_archive_path()}|{self.file_pair.get_preview_path()}"
-        )
+                if (
+                    not self.file_pair
+                    or not self.file_pair.archive_path
+                    or not self.file_pair.preview_path
+                ):
+                    logging.warning(
+                        "Próba przeciągnięcia kafelka bez kompletnej pary plików."
+                    )
+                    self.maybe_drag = False  # Anuluj potencjalne przeciąganie
+                    # Nie ma potrzeby wywoływania super().mouseMoveEvent(event) tutaj, bo drag nie ruszył
+                    return
+
+                drag = QDrag(self)
+                mime_data = QMimeData()
+                urls = [
+                    QUrl.fromLocalFile(self.file_pair.archive_path),
+                    QUrl.fromLocalFile(self.file_pair.preview_path),
+                ]
+                mime_data.setUrls(urls)
+                drag.setMimeData(mime_data)
+
+                pixmap = self.thumbnail_label.pixmap()  # Użyj aktualnej miniatury
+                if pixmap and not pixmap.isNull():
+                    scaled_pixmap = pixmap.scaled(
+                        QSize(100, 100),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    drag.setPixmap(scaled_pixmap)
+                    drag.setHotSpot(scaled_pixmap.rect().center())
+                else:
+                    # Fallback, jeśli pixmapa nie jest dostępna (np. błąd ładowania)
+                    # Można użyć prostokąta jako placeholdera
+                    placeholder_pixmap = QPixmap(QSize(100, 100))
+                    placeholder_pixmap.fill(Qt.GlobalColor.lightGray)
+                    drag.setPixmap(placeholder_pixmap)
+                    drag.setHotSpot(event.pos() - self.rect().topLeft())
+
+                logging.debug(
+                    f"Rozpoczęcie przeciągania dla: {self.file_pair.base_name} z URLami: {[url.toString() for url in urls]}"
+                )
+
+                drop_action = drag.exec(Qt.DropAction.MoveAction)
+
+                if drop_action == Qt.DropAction.MoveAction:
+                    logging.debug(
+                        f"Operacja przeciągania zakończona sukcesem (MoveAction) dla {self.file_pair.base_name}"
+                    )
+                else:
+                    logging.debug(
+                        f"Operacja przeciągania anulowana lub nie powiodła się dla {self.file_pair.base_name}"
+                    )
+
+                # Niezależnie od wyniku, przeciąganie się zakończyło (lub nie zaczęło poprawnie)
+                self.maybe_drag = False
+                self.drag_active = False  # Już nie jest aktywne
+                self.press_pos = None
+                # Nie ma potrzeby wywoływania super().mouseMoveEvent(event) po drag.exec()
+                return  # Zakończ przetwarzanie tego zdarzenia ruchu
+            else:
+                # Jeśli kliknięto na miniaturę/nazwę, ale ruch był wystarczający do drag,
+                # to traktujemy to jako anulowanie "kliknięcia" i nie rozpoczynamy drag.
+                # Użytkownik musi kliknąć "obok" tych elementów, aby przeciągnąć.
+                self.maybe_drag = False  # Anuluj potencjalne przeciąganie
+                # Można by tu wywołać super().mouseMoveEvent(event), ale prawdopodobnie nie jest to konieczne
+                # bo nie chcemy standardowego zachowania przeciągania dla tych elementów.
+                return
+
+        # Jeśli self.maybe_drag jest True, ale dystans jest wciąż za mały,
+        # lub jeśli przeciąganie nie zostało aktywowane z innych powodów,
+        # przekaż zdarzenie do bazowej implementacji.
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Sprawdź, czy to było "czyste" kliknięcie (nie rozpoczęto przeciągania)
+            if self.maybe_drag and not self.drag_active and self.press_pos is not None:
+                # Sprawdź, czy puszczenie przycisku nastąpiło blisko miejsca naciśnięcia
+                # i czy nie było znaczącego ruchu (dodatkowy warunek, jeśli startDragDistance jest małe)
+                if (
+                    event.pos() - self.press_pos
+                ).manhattanLength() < QApplication.instance().startDragDistance():
+                    clicked_widget = self.childAt(
+                        self.press_pos
+                    )  # Sprawdź, co było pod kursorem przy naciśnięciu
+
+                    if clicked_widget == self.thumbnail_label:
+                        if self.file_pair:
+                            logging.debug(
+                                f"Kliknięcie (Release) na miniaturę: {self.file_pair.base_name}"
+                            )
+                            self.preview_image_requested.emit(self.file_pair)
+                        # event.accept() # Akceptujemy, aby nie było dalej przetwarzane
+                        # Reset flag po obsłużeniu kliknięcia
+                        self.maybe_drag = False
+                        self.press_pos = None
+                        super().mouseReleaseEvent(
+                            event
+                        )  # Wywołaj bazową, aby zakończyć cykl zdarzenia
+                        return
+                    elif clicked_widget == self.filename_label:
+                        if self.file_pair:
+                            logging.debug(
+                                f"Kliknięcie (Release) na nazwę pliku: {self.file_pair.base_name}"
+                            )
+                            self.archive_open_requested.emit(self.file_pair)
+                        # event.accept()
+                        self.maybe_drag = False
+                        self.press_pos = None
+                        super().mouseReleaseEvent(event)
+                        return
+
+            # Jeśli doszło do przeciągania (drag_active było True) lub kliknięcie nie zostało obsłużone powyżej
+            # Zresetuj flagi
+            self.maybe_drag = False
+            self.drag_active = False
+            self.press_pos = None
+            super().mouseReleaseEvent(event)
+        else:
+            # Dla innych przycisków myszy
+            super().mouseReleaseEvent(event)
+
+    # --- Koniec Drag and Drop ---
+
+    def _on_favorite_changed(self, is_favorite: bool):
+        if self._file_pair:
+            self._file_pair.set_favorite_file(is_favorite)
+            # Odśwież tylko kontrolki metadanych, aby uniknąć ponownego ładowania miniatury
+            self.metadata_controls.update_favorite_display(is_favorite)
+            self.file_pair_updated.emit(self._file_pair)
+            logging.debug(
+                f"FileTileWidget: Zmieniono status ulubionych dla {self._file_pair.get_display_name()} na {is_favorite}"
+            )
+
+    def _on_stars_changed(self, stars: int):
+        if self._file_pair:
+            self._file_pair.set_stars(stars)
+            self.metadata_controls.update_stars_display(stars)
+            self.file_pair_updated.emit(self._file_pair)
+            logging.debug(
+                f"FileTileWidget: Zmieniono liczbę gwiazdek dla {self._file_pair.get_display_name()} na {stars}"
+            )
+
+    def _on_color_tag_changed(self, color_hex: str):
+        if self._file_pair:
+            self._file_pair.set_color_tag(color_hex)
+            # Odśwież kontrolki metadanych i ramkę miniatury
+            self.metadata_controls.update_color_tag_display(color_hex)
+            self._update_thumbnail_border_color(color_hex)
+
+            # Emituj sygnał, że tag koloru został zmieniony
+            self.color_tag_changed.emit(self._file_pair, color_hex)
+            self.file_pair_updated.emit(self._file_pair)
+
+            logging.debug(
+                f"FileTileWidget: Zmieniono tag koloru dla {self._file_pair.get_display_name()} na {color_hex}"
+            )
+
+    # Usunięte metody update_favorite_status, update_stars_display, update_color_tag_display
+    # Zostały przeniesione/zastąpione przez logikę w MetadataControlsWidget
+    # i bezpośrednie wywołania z _update_static_data
+
+    def _create_context_menu(self) -> QMenu:
+        """Tworzy menu kontekstowe dla kafelka."""  # Poprawiony komentarz
+        menu = QMenu(self)
+
+        # Przykładowe akcje - dostosuj według potrzeb
+        action_open = menu.addAction("Otwórz")
+        action_preview = menu.addAction("Podgląd")
+        action_favorite = menu.addAction("Dodaj do ulubionych")
+        action_remove_favorite = menu.addAction("Usuń z ulubionych")
+        action_properties = menu.addAction("Właściwości")
+
+        # Rozdzielacz
+        menu.addSeparator()
+
+        # Akcja do wyjścia
+        action_exit = menu.addAction("Zamknij")
+
+        # Ustawienia akcji domyślnych (np. dla podwójnego kliknięcia)
+        action_open.setShortcut("Ctrl+O")
+        action_preview.setShortcut("Ctrl+P")
+
+        # Połączenie sygnałów akcji z odpowiednimi slotami
+        action_open.triggered.connect(self.open_file)
+        action_preview.triggered.connect(self.preview_image)
+        action_favorite.triggered.connect(self.add_to_favorites)
+        action_remove_favorite.triggered.connect(self.remove_from_favorites)
+        action_properties.triggered.connect(self.show_properties)
+        action_exit.triggered.connect(self.close)
+
+        return menu
+
+    # MODIFICATION: New method to emit favorite_toggled signal
+    def _emit_favorite_toggled_signal(self):
+        """Emituje sygnał zmiany statusu ulubionego."""
+        # Ta metoda może być już niepotrzebna jeśli logika jest w MetadataControlsWidget
+        # self.favorite_toggled.emit(self.file_pair)
+        pass
+
+    # Usunięte metody _on_star_button_clicked, update_stars_display
+    # Logika gwiazdek jest teraz w MetadataControlsWidget
+
+    # Usunięte metody _on_color_combo_activated, update_color_tag_display
+    # Logika tagów kolorów jest teraz w MetadataControlsWidget

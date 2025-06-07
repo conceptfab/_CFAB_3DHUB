@@ -4,13 +4,15 @@ Manager operacji na plikach w interfejsie użytkownika.
 
 import logging
 import os
-from typing import List
+from typing import List, Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QInputDialog, QListWidget, QMenu, QMessageBox, QWidget
 
 from src.logic import file_operations
 from src.models.file_pair import FilePair
+
+logger = logging.getLogger(__name__)
 
 
 class FileOperationsUI:
@@ -42,7 +44,9 @@ class FileOperationsUI:
         # Wyświetlenie menu w odpowiedniej pozycji
         menu.exec(widget.mapToGlobal(position))
 
-    def rename_file_pair(self, file_pair: FilePair, widget: QWidget):
+    def rename_file_pair(
+        self, file_pair: FilePair, widget: QWidget
+    ) -> Optional[FilePair]:
         """
         Rozpoczyna proces zmiany nazwy dla pary plików.
         """
@@ -218,3 +222,96 @@ class FileOperationsUI:
                 logging.warning(
                     "Funkcja open_file_location nie została zaimplementowana"
                 )
+
+    def move_file_pair_ui(
+        self, file_pair_to_move: FilePair, target_folder_path: str
+    ) -> Optional[FilePair]:
+        """
+        Obsługuje przenoszenie pary plików do nowego folderu z obsługą UI.
+
+        Args:
+            file_pair_to_move: Para plików do przeniesienia.
+            target_folder_path: Ścieżka do folderu docelowego.
+
+        Returns:
+            Nowy obiekt FilePair z zaktualizowanymi ścieżkami po pomyślnym przeniesieniu,
+            lub None w przypadku niepowodzenia.
+        """
+        if not file_pair_to_move or not target_folder_path:
+            logger.warning(
+                "Próba przeniesienia nieprawidłowej pary plików lub do nieprawidłowej lokalizacji."
+            )
+            return None
+
+        original_archive_path = file_pair_to_move.archive_path
+        original_preview_path = file_pair_to_move.preview_path
+
+        try:
+            logger.info(
+                f"Próba przeniesienia pary plików: '{file_pair_to_move.base_name}' "
+                f"do folderu: '{target_folder_path}'"
+            )
+
+            # Sprawdzenie, czy folder docelowy jest taki sam jak folder źródłowy
+            source_folder_path = os.path.dirname(file_pair_to_move.archive_path)
+            if os.path.abspath(source_folder_path) == os.path.abspath(
+                target_folder_path
+            ):
+                QMessageBox.information(
+                    self.parent_window,
+                    "Informacja",
+                    "Plik już znajduje się w folderze docelowym.",
+                )
+                return (
+                    file_pair_to_move  # Zwracamy oryginalny obiekt, bo nie było zmiany
+                )
+
+            new_file_pair = file_operations.move_file_pair(
+                file_pair_to_move, target_folder_path
+            )
+
+            QMessageBox.information(
+                self.parent_window,
+                "Sukces",
+                f"Pomyślnie przeniesiono '{new_file_pair.base_name}' "
+                f"do '{target_folder_path}'.",
+            )
+            logger.info(
+                f"Pomyślnie przeniesiono parę plików. Nowe ścieżki: "
+                f"Archiwum: '{new_file_pair.archive_path}', "
+                f"Podgląd: '{new_file_pair.preview_path}'"
+            )
+            return new_file_pair
+
+        except FileExistsError:
+            error_msg = (
+                f"Plik o tej samej nazwie już istnieje w folderze docelowym: "
+                f"'{target_folder_path}'. Przenoszenie nie powiodło się."
+            )
+            QMessageBox.warning(self.parent_window, "Błąd przenoszenia", error_msg)
+            logger.warning(
+                f"{error_msg} Oryginalne ścieżki: Archiwum: '{original_archive_path}', Podgląd: '{original_preview_path}'"
+            )
+            return None
+        except OSError as e:
+            error_msg = (
+                f"Wystąpił błąd systemu plików podczas przenoszenia "
+                f"'{file_pair_to_move.base_name}' do '{target_folder_path}':\n{e}"
+            )
+            QMessageBox.critical(self.parent_window, "Błąd systemu plików", error_msg)
+            logger.error(
+                f"{error_msg} Oryginalne ścieżki: Archiwum: '{original_archive_path}', Podgląd: '{original_preview_path}'",
+                exc_info=True,
+            )
+            return None
+        except Exception as e:
+            error_msg = (
+                f"Wystąpił nieoczekiwany błąd podczas przenoszenia "
+                f"'{file_pair_to_move.base_name}':\n{e}"
+            )
+            QMessageBox.critical(self.parent_window, "Nieoczekiwany błąd", error_msg)
+            logger.error(
+                f"{error_msg} Oryginalne ścieżki: Archiwum: '{original_archive_path}', Podgląd: '{original_preview_path}'",
+                exc_info=True,
+            )
+            return None

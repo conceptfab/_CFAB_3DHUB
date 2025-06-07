@@ -4,6 +4,7 @@ Główne okno aplikacji - zrefaktoryzowana wersja.
 
 import logging
 import os
+from typing import Optional
 
 from PyQt6.QtCore import QDir, Qt, QThread, QTimer
 from PyQt6.QtGui import QFileSystemModel, QPixmap
@@ -301,9 +302,7 @@ class MainWindow(QMainWindow):
         self.gallery_manager = GalleryManager(self.tiles_container, self.tiles_layout)
 
         # Directory Tree Manager
-        self.directory_tree_manager = DirectoryTreeManager(
-            self.folder_tree, self.file_system_model, self
-        )
+        self.directory_tree_manager = DirectoryTreeManager(self.folder_tree, self)
 
         # File Operations UI
         self.file_operations_ui = FileOperationsUI(self)
@@ -820,3 +819,103 @@ class MainWindow(QMainWindow):
             # Odśwież UI
             self._update_unpaired_files_lists()
             self._apply_filters_and_update_view()
+
+    def handle_file_drop_on_folder(
+        self, source_file_paths: list[str], target_folder_path: str
+    ) -> bool:
+        """
+        Obsługuje upuszczenie plików na folder w drzewie katalogów.
+
+        Args:
+            source_file_paths: Lista ścieżek do plików źródłowych (archiwum i podgląd).
+            target_folder_path: Ścieżka do folderu docelowego.
+
+        Returns:
+            True jeśli operacja się powiodła, False w przeciwnym razie.
+        """
+        logging.debug(
+            f"Otrzymano żądanie przeniesienia plików: {source_file_paths} "
+            f"do folderu: {target_folder_path}"
+        )
+
+        if not source_file_paths or len(source_file_paths) != 2:
+            logging.warning(
+                "Nieprawidłowa liczba plików źródłowych do przeniesienia: "
+                f"{len(source_file_paths)}"
+            )
+            QMessageBox.warning(
+                self,
+                "Błąd Przenoszenia",
+                "Nie udało się zidentyfikować pary plików do przeniesienia.",
+            )
+            return False
+
+        # Zidentyfikuj FilePair na podstawie ścieżek źródłowych
+        # Zakładamy, że jedna ze ścieżek to archiwum, a druga to podgląd
+        # Musimy znaleźć, która jest która i czy pasują do istniejącej pary
+
+        original_file_pair: Optional[FilePair] = None
+
+        # Normalizuj ścieżki, aby uniknąć problemów z porównywaniem
+        normalized_source_paths = {normalize_path(p) for p in source_file_paths}
+
+        for fp in self.all_file_pairs:
+            fp_paths = {
+                normalize_path(fp.archive_path),
+                normalize_path(fp.preview_path),
+            }
+            if fp_paths == normalized_source_paths:
+                original_file_pair = fp
+                break
+
+        if not original_file_pair:
+            logging.warning(
+                f"Nie znaleziono pasującej pary plików dla: {source_file_paths}"
+            )
+            QMessageBox.warning(
+                self,
+                "Błąd Przenoszenia",
+                "Nie udało się zidentyfikować oryginalnej pary plików w aplikacji.",
+            )
+            return False
+
+        logging.info(
+            f"Znaleziono parę plików do przeniesienia: {original_file_pair.base_name}"
+        )
+
+        # Wywołaj metodę UI do przenoszenia
+        new_file_pair = self.file_operations_ui.move_file_pair_ui(
+            original_file_pair, target_folder_path
+        )
+
+        if new_file_pair:
+            # Aktualizacja self.all_file_pairs
+            try:
+                self.all_file_pairs.remove(original_file_pair)
+                self.all_file_pairs.append(new_file_pair)
+                logging.info(
+                    f"Zaktualizowano listę all_file_pairs. Usunięto: "
+                    f"{original_file_pair.base_name}, dodano: {new_file_pair.base_name}"
+                )
+            except ValueError:
+                logging.error(
+                    f"Nie udało się usunąć oryginalnej pary plików "
+                    f"{original_file_pair.base_name} z listy all_file_pairs."
+                )
+                # Mimo to kontynuujemy, bo pliki zostały przeniesione
+
+            # Odśwież widok galerii
+            self._apply_filters_and_update_view()
+
+            # Zapisz metadane
+            self._save_metadata()
+
+            logging.info(
+                f"Pomyślnie przeniesiono i zaktualizowano UI dla {new_file_pair.base_name}"
+            )
+            return True
+        else:
+            logging.warning(
+                f"Przenoszenie pary plików {original_file_pair.base_name} nie powiodło się."
+            )
+            return False

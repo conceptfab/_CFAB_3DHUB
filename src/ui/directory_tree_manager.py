@@ -3,16 +3,58 @@ Manager drzewa katalogów - zarządzanie folderami i drzewem nawigacji.
 """
 
 import logging
-import os
+import os  # Dodano brakujący import os
 from typing import List
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QFileSystemModel
-from PyQt6.QtWidgets import QInputDialog, QMenu, QMessageBox, QTreeView
+from PyQt6.QtCore import QDir, QEvent, QMimeData, QModelIndex, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import (
+    QAction,
+    QColor,
+    QDragEnterEvent,
+    QDragLeaveEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QFileSystemModel,
+    QMouseEvent,
+)
+from PyQt6.QtWidgets import (
+    QApplication,
+    QInputDialog,
+    QMenu,
+    QMessageBox,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QTreeView,
+)
 
 from src.logic import file_operations
 from src.logic.scanner import scan_folder_for_pairs
 from src.utils.path_utils import normalize_path
+
+logger = logging.getLogger(__name__)  # Dodano inicjalizację loggera
+
+
+# Definicja delegata do podświetlania celu upuszczania
+class DropHighlightDelegate(QStyledItemDelegate):  # Definicja klasy
+    def __init__(self, directory_tree_manager, parent=None):
+        super().__init__(parent)
+        self.directory_tree_manager = directory_tree_manager
+
+    def paint(self, painter, option, index):
+        # Najpierw rysuj element standardowo
+        super().paint(painter, option, index)
+
+        # Jeśli ten indeks jest aktualnym celem upuszczenia, narysuj podświetlenie
+        if (
+            self.directory_tree_manager.highlighted_drop_index.isValid()
+            and index == self.directory_tree_manager.highlighted_drop_index
+        ):
+            # Użyj półprzezroczystego koloru do podświetlenia
+            # Nie przesłaniaj całkowicie podświetlenia zaznaczenia, jeśli element jest również zaznaczony
+            highlight_color = QColor(
+                0, 120, 215, 70
+            )  # Półprzezroczysty niebieski (np. styl VS Code)
+            painter.fillRect(option.rect, highlight_color)
 
 
 class DirectoryTreeManager:
@@ -20,13 +62,162 @@ class DirectoryTreeManager:
     Klasa zarządzająca drzewem katalogów i operacjami na folderach.
     """
 
-    def __init__(
-        self, folder_tree: QTreeView, file_system_model: QFileSystemModel, parent_window
-    ):
+    def __init__(self, folder_tree: QTreeView, parent_window):
         self.folder_tree = folder_tree
-        self.file_system_model = file_system_model
         self.parent_window = parent_window
+        self.model = QFileSystemModel()
+        self.model.setRootPath(QDir.rootPath())
+        # Filtrowanie, aby pokazywać tylko katalogi
+        self.model.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot)
+
+        self.folder_tree.setModel(self.model)
+        self.folder_tree.setRootIndex(self.model.index(QDir.currentPath()))
+        self.folder_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.folder_tree.customContextMenuRequested.connect(
+            self.show_folder_context_menu
+        )
+
+        # Ustawienia Drag and Drop
+        self.folder_tree.setDragEnabled(False)  # Drzewo samo nie inicjuje przeciągania
+        self.folder_tree.setAcceptDrops(True)
+        self.folder_tree.setDropIndicatorShown(True)  # Standardowy wskaźnik linii
+
+        # Podłączanie eventów drag and drop do niestandardowych slotów
+        self.folder_tree.dragEnterEvent = self._drag_enter_event
+        self.folder_tree.dragMoveEvent = self._drag_move_event
+        self.folder_tree.dropEvent = self._drop_event
+        self.folder_tree.dragLeaveEvent = (
+            self._drag_leave_event
+        )  # Dodano obsługę dragLeaveEvent
+
+        # Inicjalizacja dla podświetlania celu upuszczania
+        self.highlighted_drop_index = QModelIndex()
+        self.drop_delegate = DropHighlightDelegate(
+            self, self.folder_tree
+        )  # Przekazanie self (DirectoryTreeManager)
+        self.folder_tree.setItemDelegate(self.drop_delegate)
+
+        # Włączanie obsługi drag and drop dla drzewa folderów
+        self.folder_tree.setAcceptDrops(True)
+        self.folder_tree.setDropIndicatorShown(True)
+
+        self.current_scan_path: str | None = None
         self._main_working_directory = None
+        # Podłączenie event handlerów dla drag and drop
+        self.folder_tree.dragEnterEvent = self._drag_enter_event
+        self.folder_tree.dragMoveEvent = (
+            self._drag_move_event
+        )  # dragMoveEvent nie wymaga specjalnego typu, QEvent wystarczy
+        self.folder_tree.dropEvent = self._drop_event
+
+    def _update_highlight(self, new_index: QModelIndex):
+        """Aktualizuje podświetlony element docelowy upuszczania."""
+        if self.highlighted_drop_index == new_index:
+            return  # Bez zmian
+
+        old_highlight = self.highlighted_drop_index
+        self.highlighted_drop_index = new_index
+
+        if old_highlight.isValid():
+            self.folder_tree.update(old_highlight)  # Odśwież stary element
+        if self.highlighted_drop_index.isValid():
+            self.folder_tree.update(self.highlighted_drop_index)  # Odśwież nowy element
+
+    def _clear_highlight(self):
+        """Czyści podświetlenie elementu docelowego upuszczania."""
+        self._update_highlight(QModelIndex())
+
+    def _drag_enter_event(self, event: QDragEnterEvent):
+        # Sprawdzamy, czy przeciągane dane zawierają URL-e (pliki)
+        if event.mimeData().hasUrls():
+            # Sprawdź, czy przeciągane są pliki (a nie np. tekst)
+            # Ta walidacja może być bardziej szczegółowa w _drag_move_event
+            event.acceptProposedAction()
+        else:
+            event.ignore()  # Ignorujemy w przeciwnym razie
+
+    def _drag_move_event(self, event: QDragMoveEvent):
+        if not event.mimeData().hasUrls():
+            event.ignore()
+            self._update_highlight(
+                QModelIndex()
+            )  # Wyczyść podświetlenie, jeśli dane są nieprawidłowe
+            return
+
+        index_under_mouse = self.folder_tree.indexAt(event.position().toPoint())
+        is_valid_target_folder = False
+
+        if index_under_mouse.isValid() and self.model.isDir(index_under_mouse):
+            # Sprawdź, czy to katalog (już sprawdzone przez isDir)
+            # Można dodać dodatkowe warunki, np. czy folder jest zapisywalny
+            is_valid_target_folder = True
+
+        if is_valid_target_folder:
+            event.acceptProposedAction()
+            self._update_highlight(index_under_mouse)
+        else:
+            event.ignore()
+            self._update_highlight(
+                QModelIndex()
+            )  # Wyczyść podświetlenie, jeśli nie jest to prawidłowy cel
+
+    def _drag_leave_event(self, event: QDragLeaveEvent):  # Poprawiono typ eventu
+        """Obsługuje zdarzenie opuszczenia obszaru przeciągania przez kursor."""
+        self._clear_highlight()
+        event.accept()  # Zaakceptuj zdarzenie
+
+    def _drop_event(self, event: QDropEvent):
+        # Na końcu, po przetworzeniu upuszczenia lub w bloku finally, jeśli istnieje ryzyko wyjątku
+        self._clear_highlight()
+
+        if not event.mimeData().hasUrls():
+            self._clear_highlight()  # Dodatkowe czyszczenie na wszelki wypadek
+            event.ignore()
+            return
+
+        index = self.folder_tree.indexAt(event.position().toPoint())
+        if not index.isValid() or not self.model.isDir(index):
+            self._clear_highlight()  # Dodatkowe czyszczenie
+            event.ignore()
+            return
+
+        target_folder_path = self.model.filePath(index)
+        source_file_paths = [url.toLocalFile() for url in event.mimeData().urls()]
+
+        valid_files_dragged = True
+        for path in source_file_paths:
+            # Używamy os.path.isfile() do sprawdzania czy to plik
+            if not os.path.isfile(path):
+                valid_files_dragged = False
+                break
+
+        if not valid_files_dragged:
+            self._clear_highlight()
+            event.ignore()
+            logger.debug(
+                "Upuszczono nieprawidłowe dane (nie pliki lub foldery). Ignorowanie."
+            )
+            return
+
+        logger.info(
+            f"Upuszczono pliki: {source_file_paths} na folder: {target_folder_path}"
+        )
+
+        # Wywołanie metody w MainWindow do obsługi logiki przenoszenia
+        if self.parent_window and hasattr(
+            self.parent_window, "handle_file_drop_on_folder"
+        ):
+            self.parent_window.handle_file_drop_on_folder(
+                source_file_paths, target_folder_path
+            )
+            event.acceptProposedAction()
+        else:
+            logger.warning(
+                "Nie znaleziono metody handle_file_drop_on_folder w oknie nadrzędnym."
+            )
+            event.ignore()
+
+        self._clear_highlight()  # Ostateczne czyszczenie
 
     def init_directory_tree(self, current_working_directory: str):
         """
@@ -46,9 +237,7 @@ class DirectoryTreeManager:
             )
 
             # Ustaw główny folder roboczy jako root
-            root_index = self.file_system_model.setRootPath(
-                self._main_working_directory
-            )
+            root_index = self.model.setRootPath(self._main_working_directory)
             self.folder_tree.setRootIndex(root_index)
 
             # Rozwiń automatycznie wszystkie foldery które zawierają pliki
@@ -72,9 +261,7 @@ class DirectoryTreeManager:
             )
 
             # Ustaw główny folder roboczy jako root
-            root_index = self.file_system_model.setRootPath(
-                self._main_working_directory
-            )
+            root_index = self.model.setRootPath(self._main_working_directory)
             self.folder_tree.setRootIndex(root_index)
 
             # Rozwiń automatycznie wszystkie foldery które zawierają pliki
@@ -89,7 +276,7 @@ class DirectoryTreeManager:
             )
 
         # Zawsze zaznacz aktualny folder w drzewie
-        current_index = self.file_system_model.index(current_working_directory)
+        current_index = self.model.index(current_working_directory)
         if current_index.isValid():
             # Rozwiń ścieżkę do aktualnego folderu PRZED zaznaczeniem
             parent = current_index.parent()
@@ -144,7 +331,7 @@ class DirectoryTreeManager:
         """
         try:
             for folder_path in folders_with_files:
-                folder_index = self.file_system_model.index(folder_path)
+                folder_index = self.model.index(folder_path)
                 if folder_index.isValid():
                     # Rozwiń ścieżkę do tego folderu
                     parent = folder_index.parent()
@@ -167,7 +354,7 @@ class DirectoryTreeManager:
             return
 
         # Pobierz ścieżkę do wybranego folderu
-        folder_path = self.file_system_model.filePath(index)
+        folder_path = self.model.filePath(index)
 
         # Tworzenie menu kontekstowego
         context_menu = QMenu()
@@ -200,7 +387,7 @@ class DirectoryTreeManager:
             if created_path:
                 logging.info(f"Utworzono folder: {created_path}")
                 # Odświeżenie widoku drzewa
-                self.file_system_model.refresh()
+                self.model.refresh()
             else:
                 QMessageBox.warning(
                     self.parent_window,
@@ -229,7 +416,7 @@ class DirectoryTreeManager:
                     f"Zmieniono nazwę folderu z '{folder_path}' na '{new_path}'"
                 )
                 # Odświeżenie widoku drzewa
-                self.file_system_model.refresh()
+                self.model.refresh()
             else:
                 QMessageBox.warning(
                     self.parent_window,
@@ -286,7 +473,7 @@ class DirectoryTreeManager:
             if success:
                 logging.info(f"Usunięto folder: {folder_path}")
                 # Odświeżenie widoku drzewa
-                self.file_system_model.refresh()
+                self.model.refresh()
                 return True
             else:
                 QMessageBox.warning(
@@ -322,7 +509,7 @@ class DirectoryTreeManager:
         """
         Obsługuje kliknięcie elementu w drzewie folderów.
         """
-        folder_path = self.file_system_model.filePath(index)
+        folder_path = self.model.filePath(index)
         if folder_path and os.path.isdir(folder_path):
             # Sprawdź, czy nie kliknięto tego samego folderu
             if normalize_path(folder_path) == normalize_path(current_working_directory):

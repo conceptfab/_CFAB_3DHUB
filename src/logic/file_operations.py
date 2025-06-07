@@ -436,101 +436,156 @@ def delete_file_pair(archive_path: str, preview_path: str | None) -> bool:
     return success
 
 
-def move_file_pair(
-    old_archive_path: str, old_preview_path: str | None, new_target_directory: str
-) -> tuple[str, str | None] | None:
+def move_file_pair(file_pair: FilePair, new_target_directory: str) -> FilePair | None:
     """
-    Przenosi parę plików (archiwum i podgląd) do nowego katalogu.
+    Przenosi parę plików (archiwum i opcjonalny podgląd) do nowego katalogu.
+    Zachowuje oryginalne nazwy plików.
 
     Args:
-        old_archive_path (str): Aktualna ścieżka do pliku archiwum.
-        old_preview_path (str | None): Aktualna ścieżka do pliku podglądu.
+        file_pair (FilePair): Obiekt FilePair do przeniesienia.
         new_target_directory (str): Ścieżka do katalogu docelowego.
 
     Returns:
-        tuple[str, str | None] | None: Krotka z nowymi, absolutnymi ścieżkami
-                                      (archiwum, podgląd) lub None w przypadku błędu.
+        FilePair | None: Nowy obiekt FilePair z zaktualizowanymi ścieżkami po przeniesieniu,
+                       lub None w przypadku błędu.
     """
-    # Normalizacja ścieżek
-    old_archive_path = normalize_path(old_archive_path)
-    if old_preview_path:
-        old_preview_path = normalize_path(old_preview_path)
+    # Normalizacja ścieżki docelowej
     new_target_directory = normalize_path(new_target_directory)
 
     logger.debug(
-        f"Próba przeniesienia pary: A='{old_archive_path}', P='{old_preview_path}' do folderu '{new_target_directory}'"
+        f"Próba przeniesienia pary plików: A='{file_pair.archive_path}', "
+        f"P='{file_pair.preview_path}' do '{new_target_directory}'"
     )
+
     if not os.path.isdir(new_target_directory):
         logger.error(f"Katalog docelowy '{new_target_directory}' nie istnieje.")
         return None
 
     # Przygotowanie nowych ścieżek
-    archive_filename = os.path.basename(old_archive_path)
     new_archive_path = normalize_path(
-        os.path.join(new_target_directory, archive_filename)
+        os.path.join(new_target_directory, os.path.basename(file_pair.archive_path))
     )
     new_preview_path = None
-
-    if old_preview_path:
-        preview_filename = os.path.basename(old_preview_path)
+    if file_pair.preview_path:
         new_preview_path = normalize_path(
-            os.path.join(new_target_directory, preview_filename)
+            os.path.join(new_target_directory, os.path.basename(file_pair.preview_path))
         )
 
-    # Sprawdzenie, czy pliki docelowe już nie istnieją
-    if os.path.exists(new_archive_path):
-        logger.error(f"Plik '{new_archive_path}' już istnieje w lokalizacji docelowej.")
-        return None
-    if new_preview_path and os.path.exists(new_preview_path):
-        logger.error(f"Plik '{new_preview_path}' już istnieje w lokalizacji docelowej.")
-        return None
+    # Sprawdzenie, czy pliki o takich nazwach już istnieją w katalogu docelowym
+    # (z wyjątkiem sytuacji, gdy przenosimy plik na samego siebie - co powinno być obsłużone wcześniej)
+    if os.path.exists(new_archive_path) and normalize_path(
+        new_archive_path
+    ) != normalize_path(file_pair.archive_path):
+        logger.error(
+            f"Plik archiwum '{new_archive_path}' już istnieje w katalogu docelowym."
+        )
+        raise FileExistsError(
+            f"Plik archiwum '{os.path.basename(new_archive_path)}' już istnieje w folderze docelowym."
+        )
 
-    # Lista wykonanych operacji do potencjalnego cofnięcia
+    if (
+        new_preview_path
+        and os.path.exists(new_preview_path)
+        and file_pair.preview_path
+        and normalize_path(new_preview_path) != normalize_path(file_pair.preview_path)
+    ):
+        logger.error(
+            f"Plik podglądu '{new_preview_path}' już istnieje w katalogu docelowym."
+        )
+        raise FileExistsError(
+            f"Plik podglądu '{os.path.basename(new_preview_path)}' już istnieje w folderze docelowym."
+        )
+
+    # Zmienna do śledzenia operacji, które trzeba cofnąć w przypadku błędu
     operations_done = []
 
     try:
-        # Przenosimy archiwum
-        shutil.move(old_archive_path, new_archive_path)
-        logger.info(f"Przeniesiono: '{old_archive_path}' -> '{new_archive_path}'")
-        operations_done.append(("archive", old_archive_path, new_archive_path))
+        # Przeniesienie pliku archiwum
+        # Sprawdzamy, czy ścieżka źródłowa i docelowa są różne przed próbą przeniesienia
+        if normalize_path(file_pair.archive_path) != normalize_path(new_archive_path):
+            shutil.move(file_pair.archive_path, new_archive_path)
+            logger.info(
+                f"Przeniesiono archiwum: '{file_pair.archive_path}' -> '{new_archive_path}'"
+            )
+            operations_done.append(
+                ("archive", file_pair.archive_path, new_archive_path)
+            )
+        else:
+            logger.debug(
+                f"Ścieżka archiwum '{file_pair.archive_path}' jest taka sama jak docelowa, pomijanie przenoszenia."
+            )
 
-        # Przenosimy podgląd, jeśli istnieje
-        if old_preview_path and new_preview_path:
-            try:
-                shutil.move(old_preview_path, new_preview_path)
-                logger.info(
-                    f"Przeniesiono: '{old_preview_path}' -> '{new_preview_path}'"
+        # Przeniesienie pliku podglądu, jeśli istnieje
+        if file_pair.preview_path and new_preview_path:
+            # Sprawdzamy, czy ścieżka źródłowa i docelowa są różne przed próbą przeniesienia
+            if normalize_path(file_pair.preview_path) != normalize_path(
+                new_preview_path
+            ):
+                try:
+                    shutil.move(file_pair.preview_path, new_preview_path)
+                    logger.info(
+                        f"Przeniesiono podgląd: '{file_pair.preview_path}' -> '{new_preview_path}'"
+                    )
+                    operations_done.append(
+                        ("preview", file_pair.preview_path, new_preview_path)
+                    )
+                except Exception as e_preview:
+                    logger.error(
+                        f"Błąd przenoszenia podglądu '{file_pair.preview_path}' do '{new_preview_path}': {e_preview}. Przywracanie poprzednich zmian."
+                    )
+                    # Przywrócenie wszystkich dokonanych zmian w kolejności odwrotnej
+                    for op_type, old_path, moved_path in reversed(operations_done):
+                        try:
+                            shutil.move(moved_path, old_path)
+                            logger.info(
+                                f"Przywrócono plik {op_type}: '{moved_path}' -> '{old_path}'"
+                            )
+                        except Exception as rollback_error:
+                            logger.critical(
+                                f"KRYTYCZNY BŁĄD: Nie udało się przywrócić pliku {op_type} z '{moved_path}' na '{old_path}': {rollback_error}"
+                            )
+                    return None
+            else:
+                logger.debug(
+                    f"Ścieżka podglądu '{file_pair.preview_path}' jest taka sama jak docelowa, pomijanie przenoszenia."
                 )
-                operations_done.append(("preview", old_preview_path, new_preview_path))
-            except Exception as e_preview:
-                logger.error(
-                    f"Błąd przenoszenia podglądu '{old_preview_path}': {e_preview}. Przywracanie poprzednich operacji."
-                )
-                # Przywrócenie wszystkich wykonanych operacji w odwrotnej kolejności
-                for op_type, source_path, target_path in reversed(operations_done):
-                    try:
-                        shutil.move(target_path, source_path)
-                        logger.info(
-                            f"Przywrócono pozycję: '{target_path}' -> '{source_path}'"
-                        )
-                    except Exception as rollback_error:
-                        logger.critical(
-                            f"KRYTYCZNY BŁĄD: Nie udało się przywrócić {op_type} z '{target_path}' do '{source_path}': {rollback_error}"
-                        )
-                return None
 
-        return new_archive_path, new_preview_path
+        # Utworzenie nowego obiektu FilePair z zaktualizowanymi ścieżkami
+        # Ważne: working_directory dla nowego FilePair powinno być katalogiem docelowym
+        # lub wspólnym katalogiem nadrzędnym, jeśli tak jest zdefiniowana logika aplikacji.
+        # Tutaj zakładamy, że working_directory to katalog, w którym znajdują się pliki.
+        # Jeśli logika jest inna, trzeba to dostosować.
+        # Na podstawie poprzedniej implementacji, wydaje się, że working_directory
+        # odnosi się do głównego katalogu skanowania, a nie bezpośredniego folderu pliku.
+        # Dlatego zachowujemy oryginalne working_directory z file_pair.
+        moved_file_pair = FilePair(
+            archive_path=new_archive_path,
+            preview_path=new_preview_path,
+            working_directory=file_pair.working_directory,  # Zachowujemy oryginalne working_directory
+        )
+        logger.info(
+            f"Pomyślnie przeniesiono parę plików. Nowe ścieżki: A='{moved_file_pair.archive_path}', P='{moved_file_pair.preview_path}'"
+        )
+        return moved_file_pair
 
+    except FileExistsError as e_exists:
+        logger.error(f"Błąd przenoszenia - plik już istnieje: {e_exists}")
+        # Nie ma potrzeby rollbacku, bo FileExistsError jest rzucany PRZED operacjami na plikach
+        raise  # Przekazujemy wyjątek dalej, aby obsłużyć go w UI
     except Exception as e:
-        logger.error(f"Błąd podczas przenoszenia archiwum '{old_archive_path}': {e}")
-        # Przywrócenie wszystkich wykonanych operacji w odwrotnej kolejności
-        for op_type, source_path, target_path in reversed(operations_done):
+        logger.error(
+            f"Nieoczekiwany błąd podczas przenoszenia plików do '{new_target_directory}': {e}"
+        )
+        # Przywrócenie wszystkich dokonanych zmian w kolejności odwrotnej
+        for op_type, old_path, moved_path in reversed(operations_done):
             try:
-                shutil.move(target_path, source_path)
-                logger.info(f"Przywrócono pozycję: '{target_path}' -> '{source_path}'")
+                shutil.move(moved_path, old_path)
+                logger.info(
+                    f"Przywrócono plik {op_type}: '{moved_path}' -> '{old_path}'"
+                )
             except Exception as rollback_error:
                 logger.critical(
-                    f"KRYTYCZNY BŁĄD: Nie udało się przywrócić {op_type} z '{target_path}' do '{source_path}': {rollback_error}"
+                    f"KRYTYCZNY BŁĄD: Nie udało się przywrócić pliku {op_type} z '{moved_path}' na '{old_path}': {rollback_error}"
                 )
         return None
 
