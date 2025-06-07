@@ -32,7 +32,7 @@
     - **Zbieranie plików:** W `_walk_directory` najpierw przetwarzane są pliki, a potem foldery. To standardowe podejście. Można by rozważyć przetwarzanie plików i folderów w jednej pętli po `os.scandir`, jeśli miałoby to przynieść korzyści (np. minimalnie mniejszy narzut na iterację), ale obecne rozwiązanie jest czytelne.
 
 3.  **Refaktoryzacja:**
-    - **Przeniesienie do wątku roboczego:** Cała logika skanowania (`scan_folder_for_pairs` i funkcje pomocnicze) powinna być hermetyzowana w klasie dziedziczącej po `QRunnable` (lub podobnej) i zarządzana przez `src.ui.delegates.workers.QThreadPool`. To pozwoli na asynchroniczne wykonywanie skanowania i efektywne raportowanie postępu/wyników do UI za pomocą sygnałów.
+    - **Przeniesienie do wątków roboczych:** Cała logika skanowania (`scan_folder_for_pairs` i funkcje pomocnicze) powinna być hermetyzowana w klasie dziedziczącej po `QRunnable` (lub podobnej) i zarządzana przez `src.ui.delegates.workers.QThreadPool`. To pozwoli na asynchroniczne wykonywanie skanowania i efektywne raportowanie postępu/wyników do UI za pomocą sygnałów.
       - Klasa Workera powinna przyjmować parametry skanowania (ścieżka, głębokość, strategia, etc.) w konstruktorze.
       - Powinna emitować sygnały: `progress_updated(int percent, str message)`, `scan_finished(list_file_pairs, list_unpaired_archives, list_unpaired_previews)`, `scan_error(str error_message)`, `scan_interrupted()`.
     - **Typowanie:** Plik już używa type hints, co jest bardzo dobre. Należy utrzymać i weryfikować ich poprawność.
@@ -185,7 +185,7 @@ _Analiza pliku `src/logic/scanner.py` zakończona._
 **Test integracji (po refaktoryzacji do wątków):**
 
 1.  **Operacje z UI:**
-    - Wykonaj wszystkie operacje na plikach/folderach/parach z poziomu UI.
+    - Wykonaj wszystkie operacje na plikach/folderach/par z poziomu UI.
     - Sprawdź, czy pasek postępu (jeśli dotyczy długich operacji) i komunikaty o statusie są poprawnie wyświetlane.
     - Sprawdź, czy UI pozostaje responsywne podczas operacji.
     - Przetestuj anulowanie długotrwałych operacji.
@@ -685,79 +685,6 @@ _Analiza pliku `src/ui/main_window.py` zakończona._
 
 ---
 
-_Analiza pliku `src/main.py` zakończona._
-
-## ETAP 9: run_app.py
-
-### 📋 Identyfikacja
-
-- **Plik główny:** `run_app.py`
-- **Priorytet:** 🟡 ŚREDNI (główny skrypt uruchomieniowy, ale prosta logika)
-- **Zależności:**
-  - `os` (standardowa biblioteka)
-  - `sys` (standardowa biblioteka)
-  - `logging` (standardowa biblioteka, używana warunkowo)
-  - `src.main.main` (moduł projektu)
-
-### 🔍 Analiza problemów
-
-1.  **Błędy krytyczne/Potencjalne problemy:**
-
-    - **Modyfikacja `sys.path`:** Skrypt poprawnie modyfikuje `sys.path`, aby umożliwić importy z katalogu `src`. Jest to kluczowe dla działania aplikacji i wydaje się być zaimplementowane prawidłowo. Należy jednak upewnić się, że `os.path.abspath(__file__)` zawsze zwraca oczekiwaną ścieżkę, niezależnie od sposobu uruchomienia skryptu (np. z innego katalogu roboczego).
-    - **Obsługa wyjątków przy starcie:** Podobnie jak w `src/main.py`, brakuje globalnego bloku `try...except` wokół wywołania `main()` w funkcji `run()`. Błąd podczas inicjalizacji `src.main.main` (np. problem z importem wewnątrz `src.main` lub błąd w `setup_logging`) mógłby zakończyć działanie skryptu bez czytelnego komunikatu.
-
-2.  **Optymalizacje:**
-
-    - **Obsługa argumentów linii poleceń:** Skrypt obsługuje argument `--debug` do włączania szczegółowego logowania dla modułu `src.logic.scanner`. Można rozważyć użycie modułu `argparse` dla bardziej zaawansowanego i elastycznego parsowania argumentów, jeśli w przyszłości pojawi się potrzeba dodania innych opcji uruchomieniowych.
-    - **Logowanie:** Komunikat `print(f"Root in path: {_PROJECT_ROOT}")` jest przydatny do debugowania problemów ze ścieżkami. Można go przenieść do standardowego systemu logowania (np. z poziomem INFO lub DEBUG), aby był spójny z resztą logów aplikacji.
-    - **Kolejność importów:** Import `src.main import main` jest oznaczony `# noqa: E402` z powodu umieszczenia go po modyfikacji `sys.path`. Jest to akceptowalne i powszechnie stosowane obejście dla E402 w takich przypadkach.
-
-3.  **Refaktoryzacja:**
-
-    - **Globalny try-except w `run()`:** Zaleca się opakowanie wywołania `main()` w funkcji `run()` w blok `try...except Exception as e:` w celu logowania wszelkich nieprzechwyconych wyjątków i ewentualnego wyświetlenia komunikatu błędu użytkownikowi. To zwiększyłoby odporność skryptu uruchomieniowego.
-    - **Struktura funkcji `run()`:** Obecna struktura jest czytelna. Warunkowe ustawianie poziomu logowania jest jasno zaimplementowane.
-
-### 🧪 Plan testów
-
-**Test funkcjonalności podstawowej:**
-
-1.  **Standardowe uruchomienie:**
-    - Uruchom `python run_app.py`.
-    - Sprawdź, czy aplikacja (`src.main.main()`) uruchamia się poprawnie.
-    - Zweryfikuj, czy komunikat `Root in path: ...` jest wyświetlany.
-    - Sprawdź, czy domyślny poziom logowania jest stosowany (np. INFO).
-2.  **Uruchomienie z opcją `--debug`:**
-    - Uruchom `python run_app.py --debug`.
-    - Sprawdź, czy komunikat `TRYB DEBUGOWANIA WŁĄCZONY...` jest wyświetlany.
-    - Zweryfikuj (np. poprzez sprawdzenie logów lub zachowania aplikacji), czy poziom logowania dla `src.logic.scanner` został ustawiony na `DEBUG`.
-3.  **Uruchomienie z innego katalogu roboczego:**
-    - Zmień bieżący katalog na inny niż katalog projektu (np. `cd ..`).
-    - Uruchom skrypt używając pełnej lub względnej ścieżki (np. `python _CFAB_3DHUB/run_app.py`).
-    - Sprawdź, czy aplikacja nadal uruchamia się poprawnie (testuje to poprawność modyfikacji `sys.path`).
-
-**Test obsługi błędów (po implementacji globalnego try-except w `run()`):**
-
-1.  **Błąd importu `src.main`:**
-    - Tymczasowo zmień nazwę pliku `src/main.py` lub wprowadź w nim błąd składniowy uniemożliwiający import.
-    - Uruchom `python run_app.py`.
-    - Sprawdź, czy błąd `ImportError` (lub podobny) jest przechwytywany, logowany, i czy skrypt kończy działanie w kontrolowany sposób.
-2.  **Błąd wykonania `main()` z `src.main`:**
-
-    - Wprowadź tymczasowy błąd (np. `raise Exception("Error in main()")`) na początku funkcji `main()` w pliku `src/main.py`.
-    - Uruchom `python run_app.py`.
-
-      - Sprawdź, czy wyjątek jest przechwytywany przez handler w `run_app.py`, logowany, i czy skrypt informuje o błędzie/kończy działanie.
-
-### 📊 Status tracking
-
-- [ ] Kod zaimplementowany (np. globalny try-except w `run()`)
-- [ ] Testy podstawowe przeprowadzone
-- [ ] Testy obsługi błędów przeprowadzone
-- [ ] Dokumentacja zaktualizowana (jeśli dotyczy)
-- [ ] Gotowe do wdrożenia
-
----
-
 _Analiza pliku `run_app.py` zakończona._
 
 ## ETAP 10: `src/app_config.py`
@@ -786,7 +713,7 @@ _Analiza pliku `run_app.py` zakończona._
 2.  **Powtarzające się bloki `try-except` w `_load_config`**: Bloki `except json.JSONDecodeError` i `except IOError` mają identyczną logikę (logowanie błędu i zwracanie `DEFAULT_CONFIG`). Można je połączyć w jeden blok `except (json.JSONDecodeError, IOError) as e:`.
 3.  **Eksport dla kompatybilności wstecznej**: Sekcja na końcu pliku (`# --- Eksport funkcji i stałych dla kompatybilności wstecznej ---`) jest dobrym rozwiązaniem tymczasowym, ale docelowo kod korzystający z tych eksportowanych elementów powinien zostać zrefaktoryzowany, aby bezpośrednio korzystać z instancji `config` i jej metod/właściwości. Zmniejszy to globalny stan i poprawi enkapsulację.
 4.  **Nazewnictwo**: `predefined_colors_filter` jako właściwość zwracająca `OrderedDict` z `predefined_colors` jest nieco myląca. Nazwa sugeruje, że może to być jakiś mechanizm filtrowania, a nie tylko uporządkowana wersja słownika. Może `ordered_predefined_colors` byłoby jaśniejsze.
-5.  **Typowanie**: Plik używa type hintów, co jest dobre. Należy zapewnić ich spójność i kompletność.
+5.  **Typowanie**: Plik używa type hints, co jest dobrą praktyką. Należy zapewnić ich spójność i kompletność.
 6.  **Stałe dla kryteriów specjalnych**: Wartości stringowe jak `"ALL"` i `"__NONE__` dla `required_color_tag` mogłyby być zdefiniowane jako stałe (np. `COLOR_FILTER_ALL = "ALL"`, `COLOR_FILTER_NONE = "__NONE__"`) dla lepszej czytelności i uniknięcia literówek.
 7.  **Domyślna instancja `config`**: Tworzenie globalnej instancji `config = AppConfig()` na poziomie modułu jest powszechną praktyką, ale może utrudniać testowanie i prowadzić do problemów, jeśli różne części aplikacji potrzebowałyby różnych konfiguracji (choć w tym przypadku wydaje się to mało prawdopodobne). Wstrzykiwanie zależności (dependency injection) mogłoby być alternatywą w bardziej złożonych systemach.
 
@@ -796,7 +723,7 @@ _Analiza pliku `run_app.py` zakończona._
 
 ### Plan Testów
 
-1.  **Testy jednostkowe dla `AppConfig`**:
+1.  **Testy jednostkowe dla `AppConfig`:**
 
     - **Inicjalizacja**:
       - Sprawdzenie, czy `AppConfig` poprawnie tworzy domyślny plik konfiguracyjny, jeśli nie istnieje.
@@ -874,7 +801,7 @@ _Analiza pliku `run_app.py` zakończona._
 #### Refaktoryzacja i Czytelność Kodu:
 
 1.  **Złożoność warunku filtrowania kolorów**: Logika sprawdzania `required_color_tag` (`"ALL"`, `"__NONE__"`, konkretny kolor) jest nieco rozbudowana. Można by ją uprościć lub uczynić bardziej czytelną, np. przez wydzielenie do osobnej funkcji pomocniczej.
-2.  **Typowanie**: Plik używa type hintów, co jest dobre. Należy zapewnić ich spójność i kompletność.
+2.  **Typowanie**: Plik używa type hints, co jest dobrą praktyką. Należy zapewnić ich spójność i kompletność.
 3.  **Stałe dla kryteriów specjalnych**: Wartości stringowe jak `"ALL"` i `"__NONE__` dla `required_color_tag` mogłyby być zdefiniowane jako stałe (np. `COLOR_FILTER_ALL = "ALL"`, `COLOR_FILTER_NONE = "__NONE__"`) dla lepszej czytelności i uniknięcia literówek.
 4.  **Obsługa `None` w `pair_color_tag`**: Jak wspomniano, bezpośrednie sprawdzenie `if pair_color_tag is None:` przed próbą użycia metod stringowych byłoby bezpieczniejsze.
 
@@ -914,7 +841,7 @@ _Analiza pliku `run_app.py` zakończona._
     - **Nieprawidłowe typy w `filter_criteria`** (jeśli nie ma walidacji na wejściu, jak funkcja się zachowa – idealnie powinna zgłosić błąd lub zignorować nieprawidłowe kryterium).
 
 2.  **Testy integracyjne**:
-    - Sprawdzenie, czy zmiana filtrów w UI (np. w `FilterPanel`) poprawnie wywołuje `filter_file_pairs` i czy `GalleryManager` aktualizuje widok zgodnie z wynikami filtrowania.
+    - Sprawdzenie, czy zmiana filtrów w UI (jeśli w `FilterPanel`) poprawnie wywołuje `filter_file_pairs` i czy `GalleryManager` aktualizuje widok zgodnie z wynikami filtrowania.
     - Testowanie responsywności UI podczas filtrowania dużej liczby elementów.
 
 ### Śledzenie postępów
@@ -956,7 +883,7 @@ _Analiza pliku `run_app.py` zakończona._
       - `Qt.TransformationMode.SmoothTransformation` jest używane dla jakości, ale `FastTransformation` mogłoby być szybsze dla miniaturek, gdzie wydajność jest kluczowa. Można rozważyć uczynienie tego konfigurowalnym lub zmianę na `FastTransformation`.
       - Tworzenie placeholdera `QPixmap` jest dobrym fallbackiem.
     - **Pobieranie rozmiaru archiwum (`get_archive_size`):**
-      - Jeśli plik nie istnieje, `self.archive_size_bytes` jest ustawiane na `0`. Może to być mylące, gdyż `0` może oznaczać pusty plik. Lepsze byłoby pozostawienie `None` lub użycie dedykowanej wartości oznaczającej błąd/brak pliku, chociaż obecne logowanie ostrzeżenia jest pomocne.
+      - Jeśli plik nie istnieje, `self.archive_size_bytes` jest ustawiane na `0`. Może to być mylące, gdyż `0` może oznaczać pusty plik. Lepszym rozwiązaniem byłoby pozostawienie `None` lub użycie dedykowanej wartości oznaczającej błąd/brak pliku, chociaż obecne logowanie ostrzeżenia jest pomocne.
 
 2.  **Optymalizacje:**
 
@@ -1006,7 +933,7 @@ _Analiza pliku `run_app.py` zakończona._
 ---
 
 <details>
-<summary>Analiza <code>src/models/file_pair.py</code> - Średni priorytet</summary>
+<summary>Analiza pliku `src/models/file_pair.py` - Średni priorytet</summary>
 
 ### Identyfikacja
 
@@ -1021,7 +948,7 @@ _Analiza pliku `run_app.py` zakończona._
 - **Błędy krytyczne (potencjalne):**
   - Niespójność danych, jeśli obiekt `FilePair` jest modyfikowany z wielu miejsc bez odpowiedniej synchronizacji lub mechanizmów walidacji.
   - Błędy przy serializacji/deserializacji obiektu, jeśli jest taka potrzeba (np. do zapisu stanu).
-- **Optymalizacje:**
+- **Obszary do optymalizacji:**
   - Upewnienie się, że model jest jak najbardziej "lekki" i zawiera tylko niezbędne dane, aby nie spowalniać operacji na dużych listach obiektów.
   - Rozważenie użycia `__slots__` dla optymalizacji zużycia pamięci, jeśli tworzonych jest bardzo dużo instancji `FilePair`.
   - Zapewnienie metod do łatwego dostępu i modyfikacji atrybutów, z ewentualną walidacją.
@@ -1040,7 +967,7 @@ _Analiza pliku `run_app.py` zakończona._
   - Testowanie logiki biznesowej zawartej w modelu (np. metody porównujące, metody zwracające przetworzone dane).
   - Testowanie obsługi przypadków brzegowych (np. brakujące dane, niepoprawne typy danych).
 - **Testy integracyjne:**
-  - Sprawdzenie, jak model `FilePair` jest używany przez inne komponenty (np. `scanner.py`, `gallery_manager.py`) i czy integracja jest poprawna.
+  - Sprawdzenie, jak model `FilePair` jest używany przez inne komponenty (np. `scanner.py`, `gallery_manager.py`) and czy integracja jest poprawna.
 - **Testy UI (manualne lub zautomatyzowane):**
   - Pośrednio, poprzez testowanie komponentów UI, które wyświetlają dane z obiektów `FilePair`.
 
@@ -1053,60 +980,7 @@ _Analiza pliku `run_app.py` zakończona._
 </details>
 
 <details>
-<summary>Analiza <code>src/ui/directory_tree_manager.py</code> - Średni priorytet</summary>
-
-### Identyfikacja
-
-- **Nazwa pliku:** `directory_tree_manager.py`
-- **Priorytet:** Średni
-- **Opis:** Zarządza wyświetlaniem i nawigacją po strukturze folderów w interfejsie użytkownika.
-- **Kluczowe funkcjonalności:** Wyświetlanie drzewa katalogów, obsługa wyboru folderu, potencjalne odświeżanie drzewa.
-- **Zależności:** Prawdopodobnie `PyQt5/PySide2`, `src/logic/scanner.py` (pośrednio, do pobierania danych o katalogach).
-
-### Analiza problemów
-
-- **Błędy krytyczne (potencjalne):**
-  - Brak obsługi błędów przy dostępie do systemu plików (np. brak uprawnień, nieistniejące ścieżki).
-  - Problemy z wydajnością przy bardzo dużych strukturach katalogów, jeśli całe drzewo jest ładowane od razu, a nie np. leniwie (lazy loading).
-  - Możliwe blokowanie UI podczas ładowania/odświeżania drzewa, jeśli operacje te nie są wykonywane w osobnym wątku.
-- **Optymalizacje:**
-  - Implementacja leniwego ładowania (lazy loading) dla gałęzi drzewa, aby poprawić wydajność przy starcie i dla dużych struktur.
-  - Wykorzystanie osobnego wątku (`workers.py`) do operacji I/O związanych z odczytem struktury katalogów, aby uniknąć blokowania UI.
-  - Optymalizacja renderowania elementów drzewa, jeśli jest ono niestandardowe.
-  - Dodanie mechanizmu filtrowania lub wyszukiwania w drzewie katalogów.
-  - Możliwość zapamiętania ostatnio wybranej ścieżki lub rozwiniętych gałęzi.
-- **Refaktoryzacja:**
-  - Wydzielenie logiki pobierania danych o strukturze katalogów do osobnej klasy lub funkcji, jeśli jest ona mocno powiązana z UI.
-  - Upewnienie się, że sygnały i sloty są używane efektywnie do komunikacji z innymi komponentami (np. z galerią po wybraniu folderu).
-  - Zastosowanie typowania (type hints) dla poprawy czytelności i wsparcia analizy statycznej.
-  - Ujednolicenie nazewnictwa zmiennych i funkcji.
-
-### Plan testów
-
-- **Testy jednostkowe:**
-  - Testowanie logiki budowania modelu drzewa (jeśli jest oddzielona od widoku).
-  - Testowanie funkcji pomocniczych (np. do pobierania ikon, formatowania nazw).
-- **Testy integracyjne:**
-  - Testowanie interakcji z modelem danych (np. `QFileSystemModel` lub niestandardowym).
-  - Testowanie poprawnego emitowania sygnałów po wybraniu folderu.
-  - Testowanie reakcji na zmiany w systemie plików (jeśli zaimplementowano automatyczne odświeżanie).
-- **Testy UI (manualne lub zautomatyzowane):**
-  - Sprawdzenie poprawnego wyświetlania struktury katalogów.
-  - Testowanie nawigacji (rozwijanie/zwijanie gałęzi, wybór folderu).
-  - Testowanie responsywności UI podczas ładowania dużych drzew katalogów.
-  - Sprawdzenie obsługi przypadków brzegowych (puste foldery, foldery z dużą ilością podfolderów, brak dostępu).
-  - Testowanie działania z różnymi ścieżkami startowymi.
-
-### Śledzenie postępów
-
-- [ ] Analiza kodu zakończona. (Zakładając, że odczyt pliku był wystarczający do tej wstępnej analizy)
-- [ ] Zidentyfikowane problemy i sugestie zapisane.
-- [ ] Plan testów przygotowany.
-- [ ] (Opcjonalnie) Utworzone zadania w systemie śledzenia błędów/zadań.
-</details>
-
-<details>
-<summary>Analiza pliku: <code>src/ui/widgets/file_tile_widget.py</code></summary>
+<summary>Analiza <code>src/ui/widgets/file_tile_widget.py</code></summary>
 
 **Identyfikacja pliku:**
 Plik `src/ui/widgets/file_tile_widget.py` jest odpowiedzialny za renderowanie pojedynczego kafelka pliku w widoku galerii. Powinien wyświetlać miniaturkę, nazwę pliku i potencjalnie inne istotne metadane. Jest to kluczowy komponent wizualny dla `GalleryManager`, wpływający na interakcję użytkownika z listą plików.
@@ -1130,11 +1004,11 @@ Plik `src/ui/widgets/file_tile_widget.py` jest odpowiedzialny za renderowanie po
 **Plan testów:**
 
 1.  **Testy jednostkowe (jeśli widget ma własną logikę):**
-    - Testowanie tworzenia widgetu z różnymi typami danych wejściowych (prawidłowe, niekompletne, błędne dane z `FilePair`).
+    - Testowanie tworzenia widgetu z różnymi typami danych wejściowymi (prawidłowe, niekompletne, błędne dane z `FilePair`).
     - Testowanie metod dostępowych (gettery/settery), jeśli istnieją.
     - Testowanie logiki biznesowej zawartej w modelu (np. metody porównujące, metody zwracające przetworzone dane).
     - Testowanie obsługi przypadków brzegowych (np. brakujące dane, niepoprawne typy danych).
-2.  **Testy integracyjne (z `GalleryManager` i `ThumbnailCache`):**
+2.  **Testy integracyjne (z `GalleryManager` i `ThumbnailCache` po refaktoryzacji):**
     - Sprawdzenie, czy widget poprawnie wyświetla miniaturki dostarczane przez `ThumbnailCache`.
     - Testowanie poprawnego renderowania widgetu w kontekście siatki lub listy w `GalleryManager`.
     - Weryfikacja, czy interakcje z widgetem (np. kliknięcie) poprawnie wywołują odpowiednie akcje lub sygnały obsługiwane przez `GalleryManager`.
@@ -1169,20 +1043,20 @@ Plik `src/ui/widgets/filter_panel.py` definiuje widget `FilterPanel`, który jes
 3.  **Potrzeba refaktoryzacji:**
     - **Stałe wartości:** Wysokość panelu (`self.setFixedHeight(60)`) jest zahardcodowana. Można by ją przenieść do stałej lub umożliwić jej konfigurację, jeśli byłaby taka potrzeba.
     - **Logika `get_filter_criteria`:** Wartości domyślne (`min_stars = 0`, `req_color = "ALL"`) są przypisywane, jeśli `currentData()` zwróci `None`. Jest to bezpieczne, ale można by rozważyć inicjalizację QComboBox tak, aby zawsze miały wybraną poprawną wartość domyślną, eliminując potrzebę sprawdzania `None`.
-    - **Stylizacja:** Podobnie jak inne widgety, można by rozważyć zastosowanie stylów z zewnętrznego arkusza `styles.qss` zamiast polegania wyłącznie na domyślnych stylach Qt, aby zapewnić spójny wygląd aplikacji.
-    - **Typowanie:** Plik używa type hintów, co jest dobrą praktyką. Należy utrzymać ich spójność.
+    - **Stylizacja:** Zastosowanie zewnętrznych stylów (np. z `styles.qss` lub dedykowanego `tile_styles.py`) zamiast hardcodowania wartości stylów (kolory, czcionki, marginesy) bezpośrednio w kodzie widgetu. Umożliwi to łatwiejszą zmianę wyglądu i spójność.
+    - **Typowanie:** Plik używa type hints, co jest dobrą praktyką. Należy utrzymać ich spójność.
 
 **Plan testów:**
 
-1.  **Testy jednostkowe/funkcjonalne widgetu:**
+1.  **Testy funkcjonalności podstawowej:**
 
-    - **Inicjalizacja:** Sprawdzenie, czy widget i wszystkie jego kontrolki są poprawnie tworzone.
+    - **Inicjalizacja:** Sprawdzenie, czy widget i wszystkie jego kontrolki są poprawnie tworzone i wyświetlane.
     - **`update_controls`:**
       - Test z `file_pair = None` (kontrolki powinny być wyłączone, pola puste/domyślne).
       - Test z poprawnym obiektem `FilePair` (sprawdzenie, czy nazwa, gwiazdki, tag koloru są poprawnie wyświetlane).
     - **Interakcja z kontrolkami:**
       - Edycja nazwy pliku w `base_name_edit`.
-      - Klikanie przycisków gwiazdek (sprawdzenie wizualnej zmiany i wewnętrznego stanu `_current_stars`).
+      - Kliknięcie przycisków gwiazdki (sprawdzenie wizualnej zmiany i wewnętrznego stanu `_current_stars`).
       - Zmiana wyboru w `color_tag_combo`.
     - **`_apply_changes`:**
       - Sprawdzenie, czy zmiany z UI (nazwa, gwiazdki, kolor) są poprawnie odzwierciedlane w obiekcie `FilePair` po kliknięciu "Zastosuj".
@@ -1190,23 +1064,120 @@ Plik `src/ui/widgets/filter_panel.py` definiuje widget `FilterPanel`, który jes
     - **`_revert_changes`:**
       - Sprawdzenie, czy zmiany w UI są cofane do stanu z `_current_file_pair` po kliknięciu "Anuluj".
 
-2.  **Testy integracyjne (z `MainWindow` lub innym komponentem zarządzającym):**
+2.  **Testy obsługi błędów i przypadków brzegowych:**
 
-    - Sprawdzenie, czy widget jest poprawnie wyświetlany i aktualizowany przy wyborze różnych `FilePair` w aplikacji.
-    - Weryfikacja, czy sygnał `metadata_changed` jest poprawnie odbierany i czy zmiany są zapisywane (np. przez `MetadataManager` i `FileOperations`).
-    - Testowanie walidacji nazwy pliku (po jej zaimplementowaniu) – czy nieprawidłowe nazwy są blokowane lub zgłaszane.
+    - Przekazanie niepoprawnego typu zamiast `FilePair` do `set_file_pair` (jak widget zareaguje – idealnie powinien zalogować błąd lub zignorować).
+    - Test `update_color_tag_display` z niestandardowym `color_hex_string` (sprawdzenie logu i ustawienia na "Brak").
+    - Test `update_color_tag_display` z `color_hex_string = None` i `color_hex_string = ""_STRING_`.
 
-3.  **Testy UI (manualne):**
-    - Wizualna weryfikacja wyglądu i działania kontrolek.
-    - Testowanie płynności interakcji.
-    - Sprawdzenie obsługi przypadków, gdy `FilePair` nie ma podglądu (ścieżka podglądu powinna być odpowiednio wyświetlona lub ukryta).
-
-### 📊 Status tracking
-
-- [ ] Kod zaimplementowany (analiza istniejącego kodu)
-- [ ] Testy podstawowe (do napisania i przeprowadzenia)
-- [ ] Testy integracji (do napisania i przeprowadzenia)
-- [ ] Dokumentacja zaktualizowana
-- [ ] Gotowe do wdrożenia (po ewentualnych poprawkach i testach)
+3.  **Testy integracyjne (z `FileTileWidget` i `ThumbnailCache` po refaktoryzacji):**
+    - Sprawdzenie, czy widget poprawnie wyświetla miniaturki dostarczane przez `ThumbnailCache`.
+    - Testowanie poprawnego renderowania widgetu w kontekście siatki lub listy w `GalleryManager`.
+    - Weryfikacja, czy interakcje z widgetem (np. kliknięcie) poprawnie wywołują odpowiednie akcje lub sygnały obsługiwane przez `GalleryManager`.
+4.  **Testy wydajnościowe:**
+    - Wizualna ocena płynności animacji i przejść.
+    - Testowanie responsywności na różne interakcje użytkownika (kliknięcia, przeciąganie).
+    - Testowanie działania przy różnych rozdzielczościach i skalowaniu UI.
 
 ---
+
+## ETAP 17: Analiza `styles.qss`
+
+### 1. Identyfikacja
+
+- **Ścieżka Pliku:** `styles.qss`
+- **Priorytet:** Niski (zgodnie z `code_map.md`)
+- **Opis:** Arkusz stylów Qt (QSS) definiujący wygląd komponentów UI aplikacji.
+- **Zależności:** Wszystkie komponenty UI, które mają być stylizowane; `main_window.py` lub `main.py` do załadowania stylów.
+
+### 2. Analiza Problemów
+
+- **Błędy Krytyczne:**
+  - Błędy składni QSS uniemożliwiające wczytanie lub poprawne zastosowanie stylów.
+  - Nieprawidłowe selektory, które nie pasują do żadnych widgetów lub pasują do zbyt wielu, powodując nieoczekiwany wygląd.
+- **Potencjalne Problemy:**
+  - Niespójność stylów między różnymi częściami aplikacji.
+  - Zbyt skomplikowane lub nadmiarowe reguły, które mogą wpływać na wydajność renderowania (choć zazwyczaj niewielki wpływ).
+  - Brak komentarzy utrudniający zrozumienie i konserwację.
+  - Użycie "hardcoded" wartości (np. kolory, rozmiary czcionek), które powinny być zdefiniowane jako zmienne (jeśli QSS to wspiera lub poprzez preprocessing).
+  - Brak obsługi różnych stanów widgetów (np. `:hover`, `:disabled`, `:checked`).
+  - Niezaładowanie pliku stylów lub załadowanie go w nieprawidłowym momencie cyklu życia aplikacji.
+- **Optymalizacje:**
+  - Uproszczenie selektorów dla lepszej wydajności i czytelności.
+  - Grupowanie wspólnych stylów.
+  - Wykorzystanie dziedziczenia stylów tam, gdzie to możliwe.
+  - Organizacja pliku QSS w logiczne sekcje za pomocą komentarzy.
+  - Zastosowanie właściwości `qproperty-` do ustawiania niestandardowych właściwości, które mogą być używane w QSS.
+- **Refaktoryzacja:**
+  - Wprowadzenie zmiennych dla kolorów, czcionek, itp., poprzez komentarze i konwencję, a następnie zastępowane skryptem lub ręcznie, lub użycie mechanizmów Qt, jeśli dostępne (np. palety).
+  - Podział na mniejsze, zarządzalne pliki QSS, jeśli arkusz jest bardzo duży (choć dla pojedynczego `styles.qss` może to nie być konieczne, chyba że stanie się bardzo rozbudowany).
+  - Upewnienie się, że style są ładowane centralnie i tylko raz, np. w `main_window.py` lub `main.py`.
+
+### 3. Plan Testów
+
+- **Testy Funkcjonalne:**
+  - Weryfikacja, czy widgety kafelków poprawnie przyjmują i wyświetlają style.
+  - Testowanie wyglądu w różnych stanach widgetów (aktywny, nieaktywny, najechany myszką, zaznaczony, wyłączony itp.).
+  - Sprawdzenie, czy zmiany w pliku `styles.qss` są odzwierciedlane w aplikacji (najlepiej po ponownym uruchomieniu lub zaimplementowaniu mechanizmu przeładowywania stylów na żywo, jeśli to możliwe).
+- **Testy Wizualne:**
+  - Porównanie wyglądu UI z makietami lub oczekiwanym designem.
+  - Sprawdzenie spójności wizualnej pomiędzy różnymi oknami i dialogami aplikacji.
+- \*\*Testy Międzyplatformowe (jeśli dotyczy):
+  - Sprawdzenie, czy style wyglądają spójnie i poprawnie na różnych systemach operacyjnych, na których aplikacja ma działać, biorąc pod uwagę możliwe różnice w renderowaniu Qt.
+
+### 4. Śledzenie Postępów
+
+- [ ] Analiza zakończona
+- [ ] Identyfikacja problemów zakończona
+- [ ] Plan naprawczy zdefiniowany
+- [ ] Implementacja poprawek (jeśli dotyczy)
+- [ ] Testowanie wykonane
+- [ ] Dokumentacja zaktualizowana (jeśli dotyczy)
+
+---
+
+## ETAP 18: src/ui/widgets/tile_styles.py
+
+### 1. Identyfikacja
+
+- **Ścieżka Pliku:** `src\ui\widgets\tile_styles.py`
+- **Priorytet:** Niski (jeśli plik jest pusty, może być pozostałością lub miejscem na przyszłe style)
+- **Opis:** Prawdopodobnie moduł przeznaczony do definiowania stylów (QSS lub stałych Pythona) specyficznych dla widgetów kafelków (np. `FileTileWidget`). Obecnie plik jest pusty.
+- **Zależności:** Potencjalnie `FileTileWidget` lub inne widgety, które miałyby używać tych stylów. `styles.qss` jeśli style miałyby być tam przeniesione lub zintegrowane.
+
+### 2. Analiza Problemów
+
+- **Błędy Krytyczne:**
+  - Brak, ponieważ plik jest pusty.
+- **Potencjalne Problemy:**
+  - Jeśli plik jest importowany, a miał zawierać definicje, jego pusty stan może prowadzić do `ImportError` lub `AttributeError`, jeśli oczekiwane są konkretne stałe/funkcje.
+  - Niejasny cel pliku, jeśli nie jest używany. Może to być "martwy kod" lub pozostałość po refaktoryzacji.
+  - Jeśli style dla kafelków są zdefiniowane gdzie indziej (np. w głównym `styles.qss` lub bezpośrednio w kodzie widgetu), ten plik może być zbędny i wprowadzać zamieszanie.
+- **Optymalizacje:**
+  - Jeśli plik nie jest i nie będzie używany, powinien zostać usunięty, aby uprościć strukturę projektu.
+  - Jeśli jest przeznaczony na przyszłe style, można dodać komentarz wyjaśniający jego cel.
+  - Jeśli style kafelków są rozproszone, ten plik mógłby stać się centralnym miejscem do ich definiowania, poprawiając organizację.
+- **Refaktoryzacja:**
+  - Jeśli style są zdefiniowane w `FileTileWidget` lub innym miejscu, a ten plik miał je grupować, należy przenieść odpowiednie definicje stylów tutaj.
+  - Jeśli style są w `styles.qss`, a ten plik miałby zawierać dynamicznie generowane style lub stałe Pythona używane do stylizacji, należy to zaimplementować.
+  - Decyzja: Czy ten plik jest potrzebny? Jeśli tak, jaka jest jego dokładna rola (przechowywanie stringów QSS, stałych kolorów, dynamiczne generowanie stylów)?
+
+### 3. Plan Testów
+
+- **Testy Funkcjonalne:**
+  - Jeśli plik zostanie wypełniony stylami: Sprawdzić, czy widgety kafelków poprawnie przyjmują i wyświetlają te style.
+  - Jeśli plik jest importowany: Upewnić się, że jego pusty stan nie powoduje błędów podczas importu lub działania aplikacji.
+- **Przegląd Kodu:**
+  - Sprawdzić, czy `tile_styles.py` jest gdziekolwiek importowany w projekcie.
+  - Jeśli nie jest importowany i nie ma planów na jego użycie, rozważyć usunięcie.
+  - Jeśli jest importowany, zrozumieć, w jakim celu i czy jego pusty stan jest problemem.
+
+### 4. Śledzenie Statusu
+
+- [ ] Analiza zakończona
+- [ ] Identyfikacja problemów zakończona
+- [ ] Plan naprawczy zdefiniowany
+- [ ] Implementacja poprawek (jeśli dotyczy)
+- [ ] Testowanie wykonane
+- [ ] Dokumentacja zaktualizowana (jeśli dotyczy)
+</details>
