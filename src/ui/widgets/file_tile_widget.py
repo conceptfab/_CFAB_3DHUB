@@ -180,6 +180,32 @@ class FileTileWidget(QWidget):
         # Ustawienie danych z FilePair
         self.update_data(file_pair)
 
+    def _update_font_size(self):
+        """Aktualizuje rozmiar czcionki w zależności od rozmiaru kafelka."""
+        # Oblicz rozmiar czcionki na podstawie rozmiaru kafelka
+        base_font_size = max(8, min(18, int(self.thumbnail_size[0] / 12)))  # 8-18px
+
+        # Ustaw nowy stylesheet z dynamicznym rozmiarem czcionki
+        # Używamy jasno szarego koloru dla dobrej widoczności na ciemnym tle
+        self.filename_label.setStyleSheet(
+            f"""
+            QLabel {{
+                color: #E0E0E0;
+                font-weight: bold;
+                font-size: {base_font_size}px;
+                padding: 2px;
+                border-radius: 2px;
+                background-color: transparent;
+            }}
+            QLabel:hover {{
+                color: #FFFFFF;
+                font-weight: bold;
+                text-decoration: underline;
+                background-color: transparent;
+            }}
+        """
+        )
+
     def set_thumbnail_size(self, new_size: tuple[int, int]):
         """
         Ustawia nowy rozmiar całego kafelka i dostosowuje jego zawartość.
@@ -201,6 +227,9 @@ class FileTileWidget(QWidget):
 
             # Ustaw rozmiar etykiety miniatury
             self.thumbnail_label.setFixedSize(thumb_dimension, thumb_dimension)
+
+            # Skalowanie czcionki w zależności od rozmiaru kafelka
+            self._update_font_size()
 
             # Wymuś ponowne załadowanie miniatury
             self._current_worker_id += 1
@@ -291,22 +320,21 @@ class FileTileWidget(QWidget):
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
         # Dodanie stylu dla efektu hover - wyraźniejszy
+        # Używamy jasno szarego koloru dla dobrej widoczności na ciemnym tle
         self.filename_label.setStyleSheet(
             """
             QLabel {
-                color: #000000;
+                color: #E0E0E0;
                 font-weight: bold;
-                font-size: 14px;
-                padding: 4px;
-                border-radius: 3px;
-                background-color: rgba(255, 255, 255, 0.8);
+                padding: 2px;
+                border-radius: 2px;
+                background-color: transparent;
             }
             QLabel:hover {
-                color: #0066cc;
-                font-size: 14px;
+                color: #FFFFFF;
                 font-weight: bold;
                 text-decoration: underline;
-                background-color: rgba(200, 230, 255, 0.7);
+                background-color: transparent;
             }
         """
         )
