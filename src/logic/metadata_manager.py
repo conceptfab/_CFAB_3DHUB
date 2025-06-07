@@ -293,9 +293,14 @@ def save_metadata(
     Returns:
         bool: True jeśli zapisano pomyślnie, False w przypadku błędu.
     """
+    logging.info(f"💾 save_metadata wywołane - katalog: {working_directory}")
+    logging.info(f"📊 Zapisuję metadane dla {len(file_pairs_list)} par plików")
+
     metadata_path = get_metadata_path(working_directory)
     lock_path = get_lock_path(working_directory)
     metadata_dir = os.path.dirname(metadata_path)  # Pobieramy katalog z pełnej ścieżki
+
+    logging.info(f"📁 Ścieżka metadanych: {metadata_path}")
 
     # Wyłączamy blokadę plików - powoduje niepotrzebne opóźnienia
     # lock = FileLock(lock_path, timeout=LOCK_TIMEOUT)
@@ -303,6 +308,7 @@ def save_metadata(
     try:
         # with lock:  # Zakomentowane - bez blokady
         os.makedirs(metadata_dir, exist_ok=True)
+        logging.info(f"📁 Katalog metadanych utworzony/istnieje: {metadata_dir}")
 
         # Wczytanie istniejących metadanych, aby nie nadpisać innych informacji,
         # jeśli plik metadanych zawierałby więcej niż tylko te trzy klucze.
@@ -316,6 +322,8 @@ def save_metadata(
         # Używamy słownika do przechowywania metadanych par, aby łatwiej aktualizować
         # i unikać duplikatów, jeśli file_pairs_list zawierałoby je.
         updated_file_pairs_metadata = current_metadata.get("file_pairs", {})
+
+        logging.info(f"🔄 Przetwarzanie {len(file_pairs_list)} par plików...")
 
         for file_pair in file_pairs_list:
             # Sprawdzamy, czy obiekt ma wymagane atrybuty/metody
@@ -348,6 +356,10 @@ def save_metadata(
                 "color_tag": file_pair.get_color_tag(),
             }
             updated_file_pairs_metadata[relative_archive_path] = pair_metadata
+
+            logging.debug(
+                f"📝 {relative_archive_path}: favorite={file_pair.is_favorite}, stars={file_pair.get_stars()}, color={file_pair.get_color_tag()}"
+            )
 
         current_metadata["file_pairs"] = updated_file_pairs_metadata
 
@@ -387,7 +399,7 @@ def save_metadata(
         # Zastępujemy docelowy plik tymczasowym
         # shutil.move jest generalnie atomowe na większości systemów, jeśli źródło i cel są na tym samym systemie plików.
         shutil.move(temp_file_path, metadata_path)
-        logging.debug(f"Zapisano metadane do {metadata_path}")
+        logging.info(f"✅ Zapisano metadane do {metadata_path}")
         return True
 
     except Timeout:

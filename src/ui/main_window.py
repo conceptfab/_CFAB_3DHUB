@@ -683,14 +683,22 @@ class MainWindow(QMainWindow):
         """
         Zapisuje metadane dla wszystkich par plików.
         """
+        logging.info(
+            f"🔄 _save_metadata wywołane - katalog: {self.current_working_directory}"
+        )
         if self.current_working_directory:
+            logging.info(
+                f"📊 Zapisuję metadane dla {len(self.all_file_pairs)} par plików"
+            )
             if not metadata_manager.save_metadata(
                 self.current_working_directory,
                 self.all_file_pairs,
                 self.unpaired_archives,
                 self.unpaired_previews,
             ):
-                logging.error("Nie udało się zapisać metadanych.")
+                logging.error("❌ Nie udało się zapisać metadanych.")
+            else:
+                logging.info("✅ Metadane zapisane pomyślnie.")
         else:
             logging.debug("Brak folderu roboczego lub par plików do zapisu metadanych.")
 
@@ -737,6 +745,9 @@ class MainWindow(QMainWindow):
         """
         Przełącza status 'ulubione' dla danej pary plików.
         """
+        logging.info(
+            f"💙 toggle_favorite_status wywołane: {file_pair.get_base_name()} -> {not file_pair.is_favorite}"
+        )
         if file_pair in self.all_file_pairs:
             file_pair.toggle_favorite()
             self._save_metadata()
@@ -751,8 +762,12 @@ class MainWindow(QMainWindow):
         """
         Obsługuje zmianę liczby gwiazdek dla pary plików.
         """
+        logging.info(
+            f"⭐ _handle_stars_changed wywołane: {file_pair.get_base_name()} -> {new_star_count} gwiazdek"
+        )
         if file_pair:
             file_pair.set_stars(new_star_count)
+            self._save_metadata()
             logging.debug(
                 f"Zmieniono liczbę gwiazdek dla "
                 f"{file_pair.get_base_name()} na {new_star_count}."
@@ -762,8 +777,12 @@ class MainWindow(QMainWindow):
         """
         Obsługuje zmianę tagu koloru dla pary plików.
         """
+        logging.info(
+            f"🎨 _handle_color_tag_changed wywołane: {file_pair.get_base_name()} -> {new_color_tag}"
+        )
         if file_pair:
             file_pair.set_color_tag(new_color_tag)
+            self._save_metadata()
             logging.debug(
                 f"Zmieniono tag koloru dla {file_pair.get_base_name()} "
                 f"na {new_color_tag}."

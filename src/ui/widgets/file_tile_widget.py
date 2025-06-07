@@ -374,6 +374,10 @@ class FileTileWidget(QWidget):
         """
         self.file_pair = file_pair
         self._file_pair = file_pair  # Ujednolicenie self._file_pair i self.file_pair
+
+        # POPRAWKA: Ustaw file_pair w metadata_controls!
+        self.metadata_controls.set_file_pair(file_pair)
+
         self._update_static_data()
 
         # Dodatkowo upewnij się, że kolor obwódki jest zaktualizowany
@@ -453,8 +457,8 @@ class FileTileWidget(QWidget):
         self._current_worker_id += 1  # Inkrementacja ID dla nowego zadania ładowania
 
         if self._file_pair:
-            self.filename_label.setText(self._file_pair.get_display_name())
-            self.setToolTip(f"Ścieżka: {self._file_pair.get_primary_file_path()}")
+            self.filename_label.setText(self._file_pair.get_base_name())
+            self.setToolTip(f"Ścieżka: {self._file_pair.get_archive_path()}")
             self._load_thumbnail_async()
             self.metadata_controls.set_file_pair(self._file_pair)  # Przekaż FilePair
             self.metadata_controls.setEnabled(True)
@@ -644,29 +648,33 @@ class FileTileWidget(QWidget):
                 self.thumbnail_label.setText("Błąd ładowania")
                 self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self._current_worker = None  # Zresetuj referencję do workera
+        self._current_worker = None  # Zresetuj referencję do workera        # --- Obsługa sygnałów z MetadataControlsWidget ---
 
-    # --- Obsługa sygnałów z MetadataControlsWidget ---
     def _on_favorite_changed(self, is_favorite: bool):
+        logging.info(f"🔥 FileTileWidget._on_favorite_changed wywołane: {is_favorite}")
         if self._file_pair:
-            self._file_pair.set_favorite_file(is_favorite)
+            self._file_pair.set_favorite(is_favorite)
             # Odśwież tylko kontrolki metadanych, aby uniknąć ponownego ładowania miniatury
             self.metadata_controls.update_favorite_display(is_favorite)
+            self.favorite_toggled.emit(self._file_pair)
             self.file_pair_updated.emit(self._file_pair)
             logging.debug(
-                f"FileTileWidget: Zmieniono status ulubionych dla {self._file_pair.get_display_name()} na {is_favorite}"
+                f"FileTileWidget: Zmieniono status ulubionych dla {self._file_pair.get_base_name()} na {is_favorite}"
             )
 
     def _on_stars_changed(self, stars: int):
+        logging.info(f"🔥 FileTileWidget._on_stars_changed wywołane: {stars}")
         if self._file_pair:
             self._file_pair.set_stars(stars)
             self.metadata_controls.update_stars_display(stars)
+            self.stars_changed.emit(self._file_pair, stars)
             self.file_pair_updated.emit(self._file_pair)
             logging.debug(
-                f"FileTileWidget: Zmieniono liczbę gwiazdek dla {self._file_pair.get_display_name()} na {stars}"
+                f"FileTileWidget: Zmieniono liczbę gwiazdek dla {self._file_pair.get_base_name()} na {stars}"
             )
 
     def _on_color_tag_changed(self, color_hex: str):
+        logging.info(f"🔥 FileTileWidget._on_color_tag_changed wywołane: {color_hex}")
         if self._file_pair:
             self._file_pair.set_color_tag(color_hex)
             # Odśwież kontrolki metadanych i ramkę miniatury
@@ -678,7 +686,7 @@ class FileTileWidget(QWidget):
             self.file_pair_updated.emit(self._file_pair)
 
             logging.debug(
-                f"FileTileWidget: Zmieniono tag koloru dla {self._file_pair.get_display_name()} na {color_hex}"
+                f"FileTileWidget: Zmieniono tag koloru dla {self._file_pair.get_base_name()} na {color_hex}"
             )
 
     # Usunięte metody update_favorite_status, update_stars_display, update_color_tag_display
@@ -924,40 +932,6 @@ class FileTileWidget(QWidget):
             super().mouseReleaseEvent(event)
 
     # --- Koniec Drag and Drop ---
-
-    def _on_favorite_changed(self, is_favorite: bool):
-        if self._file_pair:
-            self._file_pair.set_favorite_file(is_favorite)
-            # Odśwież tylko kontrolki metadanych, aby uniknąć ponownego ładowania miniatury
-            self.metadata_controls.update_favorite_display(is_favorite)
-            self.file_pair_updated.emit(self._file_pair)
-            logging.debug(
-                f"FileTileWidget: Zmieniono status ulubionych dla {self._file_pair.get_display_name()} na {is_favorite}"
-            )
-
-    def _on_stars_changed(self, stars: int):
-        if self._file_pair:
-            self._file_pair.set_stars(stars)
-            self.metadata_controls.update_stars_display(stars)
-            self.file_pair_updated.emit(self._file_pair)
-            logging.debug(
-                f"FileTileWidget: Zmieniono liczbę gwiazdek dla {self._file_pair.get_display_name()} na {stars}"
-            )
-
-    def _on_color_tag_changed(self, color_hex: str):
-        if self._file_pair:
-            self._file_pair.set_color_tag(color_hex)
-            # Odśwież kontrolki metadanych i ramkę miniatury
-            self.metadata_controls.update_color_tag_display(color_hex)
-            self._update_thumbnail_border_color(color_hex)
-
-            # Emituj sygnał, że tag koloru został zmieniony
-            self.color_tag_changed.emit(self._file_pair, color_hex)
-            self.file_pair_updated.emit(self._file_pair)
-
-            logging.debug(
-                f"FileTileWidget: Zmieniono tag koloru dla {self._file_pair.get_display_name()} na {color_hex}"
-            )
 
     # Usunięte metody update_favorite_status, update_stars_display, update_color_tag_display
     # Zostały przeniesione/zastąpione przez logikę w MetadataControlsWidget
