@@ -92,3 +92,44 @@ def pillow_image_to_qpixmap(pil_image):
     except Exception as e:
         logging.error(f"Błąd konwersji obrazu Pillow do QPixmap: {e}")
         return QPixmap()
+
+
+def crop_to_square(pil_image, size):
+    """
+    Przycina obraz PIL do kwadratowych proporcji i skaluje do zadanego rozmiaru.
+
+    Funkcja zachowuje najbardziej centralne części obrazu, przycinając nadmiar
+    z boków (jeśli obraz jest szerszy niż wyższy) lub z góry/dołu (jeśli wyższy niż szerszy).
+
+    Args:
+        pil_image (PIL.Image): Obraz do przycięcia
+        size (int): Docelowy rozmiar kwadratu (szerokość = wysokość)
+
+    Returns:
+        PIL.Image: Przycięty i przeskalowany obraz kwadratowy
+    """
+    try:
+        # Pobierz wymiary oryginalnego obrazu
+        width, height = pil_image.size
+
+        # Oblicz rozmiar kwadratu do wycięcia (minimum z szerokości i wysokości)
+        crop_size = min(width, height)
+
+        # Oblicz pozycję lewego górnego rogu dla wycentrowanego kwadratu
+        left = (width - crop_size) // 2
+        top = (height - crop_size) // 2
+        right = left + crop_size
+        bottom = top + crop_size
+
+        # Wytnij kwadrat z centrum obrazu
+        cropped_image = pil_image.crop((left, top, right, bottom))
+
+        # Przeskaluj do docelowego rozmiaru
+        resized_image = cropped_image.resize((size, size), Image.LANCZOS)
+
+        return resized_image
+
+    except Exception as e:
+        logging.error(f"Błąd podczas przycinania obrazu do kwadratu: {e}")
+        # W przypadku błędu, zwróć oryginalny obraz przeskalowany (fallback)
+        return pil_image.resize((size, size), Image.LANCZOS)

@@ -1,7 +1,10 @@
 import logging
 
+from PIL import Image
 from PyQt6.QtCore import QDir, QSize, Qt
 from PyQt6.QtGui import QIcon, QImage, QPixmap
+
+from src.utils.image_utils import crop_to_square, pillow_image_to_qpixmap
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +48,7 @@ class ThumbnailCache:
                 # cls._error_icon = pixmap # Actual drawing commented out for simplicity
                 # For now, let's assume no generic error icon is easily creatable here
                 # and let the caller handle None.
-                # A better approach is to have a resource file with a dedicated error image.
-                pass  # No generic icon generation for now
+                # A better approach is to have a resource file with a dedicated error image.                pass  # No generic icon generation for now
             except Exception as e:
                 logger.error(f"Nie można załadować standardowej ikony błędu: {e}")
 
@@ -62,34 +64,41 @@ class ThumbnailCache:
         self, path: str, width: int, height: int
     ) -> QPixmap | None:
         """
-        Ładuje i skaluje miniaturę z podanej ścieżki.
+        Ładuje i przycina miniaturę z podanej ścieżki do kwadratowych proporcji.
         Zwraca QPixmap lub None jeśli ładowanie się nie powiedzie.
         """
         if not path:
             logger.warning("Próba załadowania miniatury z pustej ścieżki.")
             return None
         try:
-            pixmap = QPixmap()
-            # Attempt to load directly with QPixmap
-            if not pixmap.load(path):
-                # Fallback to QImage if direct QPixmap loading fails
-                image = QImage()
-                if not image.load(path):
-                    logger.warning(f"Nie można załadować miniatury (QImage) z: {path}")
+            # Jeśli docelowy rozmiar to kwadrat (width == height), użyj crop_to_square
+            if width == height:
+                with Image.open(path) as img:
+                    cropped_img = crop_to_square(img, width)
+                    return pillow_image_to_qpixmap(cropped_img)
+            else:
+                # Fallback dla niekwadratowych rozmiarów - użyj starej metody
+                pixmap = QPixmap()
+                # Attempt to load directly with QPixmap
+                if not pixmap.load(path):
+                    # Fallback to QImage if direct QPixmap loading fails
+                    image = QImage()
+                    if not image.load(path):
+                        logger.warning(f"Nie można załadować miniatury (QImage) z: {path}")
+                        return None
+                    pixmap = QPixmap.fromImage(image)
+
+                if pixmap.isNull():
+                    logger.warning(
+                        f"Nie można załadować miniatury (pusta po konwersji) z: {path}"
+                    )
                     return None
-                pixmap = QPixmap.fromImage(image)
 
-            if pixmap.isNull():
-                logger.warning(
-                    f"Nie można załadować miniatury (pusta po konwersji) z: {path}"
+                return pixmap.scaled(
+                    QSize(width, height),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
                 )
-                return None
-
-            return pixmap.scaled(
-                QSize(width, height),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
         except Exception as e:
             logger.error(f"Błąd podczas ładowania miniatury {path}: {e}")
             return None

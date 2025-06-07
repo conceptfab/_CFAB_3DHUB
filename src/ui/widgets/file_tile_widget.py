@@ -22,7 +22,7 @@ from src.ui.widgets.metadata_controls_widget import (
     MetadataControlsWidget,
 )  # NOWY IMPORT
 from src.ui.widgets.thumbnail_cache import ThumbnailCache
-from src.utils.image_utils import create_placeholder_pixmap, pillow_image_to_qpixmap
+from src.utils.image_utils import create_placeholder_pixmap, pillow_image_to_qpixmap, crop_to_square
 
 
 # Definicja Workera
@@ -53,10 +53,9 @@ class ThumbnailLoaderWorker(QObject):
         else:
             try:
                 with Image.open(preview_path) as img:
-                    thumbnail_img = img.copy()
-                    thumbnail_img.thumbnail(
-                        (self.target_width, self.target_height), Image.LANCZOS
-                    )
+                    # Użyj crop_to_square zamiast thumbnail dla kwadratowych miniatur
+                    # Ponieważ target_width == target_height (kafelki są kwadratowe)
+                    thumbnail_img = crop_to_square(img, self.target_width)
                     pixmap = pillow_image_to_qpixmap(thumbnail_img)
                     if pixmap.isNull():
                         # Krótszy komunikat błędu
