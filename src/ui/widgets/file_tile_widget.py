@@ -150,36 +150,50 @@ class FileTileWidget(QWidget):
         # Ustawienie podstawowych właściwości widgetu
         self.setObjectName("FileTileWidget")
 
-        # JASNE TŁO ŻEBY BYŁO WIDAĆ NA CIEMNYM UI!
+        # ═══════════════════════════════════════════════════════════════
+        # SEKCJA STYLOWANIA KAFELKÓW - EDYTUJ TUTAJ KOLORY I WYGLĄD
+        # ═══════════════════════════════════════════════════════════════
         super_aggressive_stylesheet = """
-            /* Główny widget kafelka - JASNE TŁO */
+            /* ▼▼▼ GŁÓWNY WYGLĄD KAFELKA ▼▼▼ */
             FileTileWidget {
-                background-color: #FFFFFF !important;
-                border: 3px solid #333333 !important;
-                border-radius: 8px !important;
-                padding: 2px !important;
-                margin: 2px !important;
+                /* KOLOR TŁA KAFELKA - zmień na jasny/ciemny według potrzeb */
+                background-color: #FFFFFF !important;     /* BIAŁY - zmień na #1E1E1E dla ciemnego */
+
+                /* OBRAMOWANIE KAFELKA */
+                border: 3px solid #333333 !important;     /* Szare obramowanie */
+                border-radius: 8px !important;            /* Zaokrąglone rogi */
+
+                /* ODSTĘPY WEWNĘTRZNE I ZEWNĘTRZNE */
+                padding: 2px !important;                  /* Wewnętrzne odstępy */
+                margin: 2px !important;                   /* Zewnętrzne odstępy */
             }
+
+            /* ▼▼▼ HOVER - NAJECHANIE MYSZĄ ▼▼▼ */
             FileTileWidget:hover {
-                background-color: #F0F0F0 !important;
-                border: 3px solid #4a90e2 !important;
+                /* KOLOR TŁA PO NAJECHANIU */
+                background-color: #F0F0F0 !important;     /* Jasnoszary hover - zmień na #2A2A2A dla ciemnego */
+
+                /* OBRAMOWANIE PO NAJECHANIU */
+                border: 3px solid #4a90e2 !important;     /* Niebieskie obramowanie hover */
             }
-            
-            /* Również dla QWidget z ID */
+
+            /* ▼▼▼ ALTERNATYWNY SELEKTOR - BACKUP ▼▼▼ */
             QWidget#FileTileWidget {
-                background-color: #FFFFFF !important;
-                border: 3px solid #333333 !important;
-                border-radius: 8px !important;
-                padding: 2px !important;
-                margin: 2px !important;
+                /* Te same style co wyżej - dla pewności że zadziałają */
+                background-color: #FFFFFF !important;     /* BIAŁY - zmień na #1E1E1E dla ciemnego */
+                border: 3px solid #333333 !important;     /* Szare obramowanie */
+                border-radius: 8px !important;            /* Zaokrąglone rogi */
+                padding: 2px !important;                  /* Wewnętrzne odstępy */
+                margin: 2px !important;                   /* Zewnętrzne odstępy */
             }
             QWidget#FileTileWidget:hover {
-                background-color: #F0F0F0 !important;
-                border: 3px solid #4a90e2 !important;
+                background-color: #F0F0F0 !important;     /* Jasnoszary hover - zmień na #2A2A2A dla ciemnego */
+                border: 3px solid #4a90e2 !important;     /* Niebieskie obramowanie hover */
             }
-            
-            /* Wszystkie QWidget wewnątrz dziedziczą jasne tło */
+
+            /* ▼▼▼ DZIEDZICZENIE DLA ELEMENTÓW WEWNĘTRZNYCH ▼▼▼ */
             QWidget {
+                /* Elementy wewnątrz dziedziczą tło z rodzica */
                 background-color: inherit !important;
             }
         """
@@ -229,20 +243,25 @@ class FileTileWidget(QWidget):
         # Oblicz rozmiar czcionki na podstawie rozmiaru kafelka
         base_font_size = max(8, min(18, int(self.thumbnail_size[0] / 12)))  # 8-18px
 
-        # CZARNY TEKST NA BIAŁYM TLE KAFELKA!
+        # ═══════════════════════════════════════════════════════════════
+        # STYLOWANIE TEKSTU NAZWY PLIKU - EDYTUJ TUTAJ KOLORY CZCIONKI
+        # ═══════════════════════════════════════════════════════════════
         self.filename_label.setStyleSheet(
             f"""
             QLabel {{
-                color: #000000;
-                font-weight: bold;
-                font-size: {base_font_size}px;
-                padding: 2px;
-                border-radius: 2px;
+                /* ▼▼▼ NORMALNY STAN TEKSTU ▼▼▼ */
+                color: #000000;                      /* CZARNY tekst - zmień na #FFFFFF dla ciemnego tła */
+                font-weight: bold;                   /* Pogrubiona czcionka */
+                font-size: {base_font_size}px;       /* Dynamiczny rozmiar czcionki */
+                padding: 2px;                        /* Odstęp wokół tekstu */
+                border-radius: 2px;                  /* Zaokrąglone rogi */
             }}
+
             QLabel:hover {{
-                color: #0066CC;
-                font-weight: bold;
-                text-decoration: underline;
+                /* ▼▼▼ HOVER - NAJECHANIE MYSZĄ NA TEKST ▼▼▼ */
+                color: #0066CC;                      /* NIEBIESKI tekst hover - zmień według potrzeb */
+                font-weight: bold;                   /* Pozostaje pogrubiony */
+                text-decoration: underline;          /* Podkreślenie przy hover */
             }}
         """
         )
@@ -297,12 +316,15 @@ class FileTileWidget(QWidget):
 
         # --- Frame - kontener na miniaturę z kolorową obwódką ---
         self.thumbnail_frame = QFrame(self)
-        # USUNIĘTY transparent background - niech dziedziczy od rodzica!
+        # ═══════════════════════════════════════════════════════════════
+        # STYLOWANIE RAMKI MINIATURY (DOMYŚLNE - BEZ KOLORU)
+        # ═══════════════════════════════════════════════════════════════
         self.thumbnail_frame.setStyleSheet(
             """
             QFrame {
-                border: none;
-                padding: 0px;
+                /* ▼▼▼ DOMYŚLNA RAMKA MINIATURY ▼▼▼ */
+                border: none;                        /* Bez obramowania (kolor dodawany dynamicznie) */
+                padding: 0px;                        /* Bez wewnętrznych odstępów */
             }
         """
         )
@@ -332,11 +354,14 @@ class FileTileWidget(QWidget):
             QFrame.Shape.NoFrame
         )  # Bez wewnętrznej ramki
 
-        # Dodanie efektu hover dla miniatury - BEZ TRANSPARENT!
+        # ═══════════════════════════════════════════════════════════════
+        # STYLOWANIE MINIATURY - EFEKT HOVER
+        # ═══════════════════════════════════════════════════════════════
         self.thumbnail_label.setStyleSheet(
             """
             QLabel:hover {
-                opacity: 0.9;
+                /* ▼▼▼ HOVER NA MINIATURZE ▼▼▼ */
+                opacity: 0.9;                        /* Lekkie przyciemnienie przy hover (0.1-1.0) */
             }
         """
         )
@@ -357,19 +382,23 @@ class FileTileWidget(QWidget):
         self.filename_label.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
-        # CZARNY TEKST NA BIAŁYM TLE KAFELKA!
+        # ═══════════════════════════════════════════════════════════════
+        # STYLOWANIE ETYKIETY NAZWY PLIKU W _init_ui (PIERWOTNE)
+        # ═══════════════════════════════════════════════════════════════
         self.filename_label.setStyleSheet(
             """
             QLabel {
-                color: #000000;
-                font-weight: bold;
-                padding: 2px;
-                border-radius: 2px;
+                /* ▼▼▼ PODSTAWOWY WYGLĄD TEKSTU NAZWY ▼▼▼ */
+                color: #000000;                      /* CZARNY tekst - zmień na #FFFFFF dla ciemnego tła */
+                font-weight: bold;                   /* Pogrubiona czcionka */
+                padding: 2px;                        /* Odstęp wokół tekstu */
+                border-radius: 2px;                  /* Zaokrąglone rogi */
             }
             QLabel:hover {
-                color: #0066CC;
-                font-weight: bold;
-                text-decoration: underline;
+                /* ▼▼▼ HOVER NA NAZWIE PLIKU ▼▼▼ */
+                color: #0066CC;                      /* NIEBIESKI tekst hover */
+                font-weight: bold;                   /* Pozostaje pogrubiony */
+                text-decoration: underline;          /* Podkreślenie przy hover */
             }
         """
         )
@@ -459,26 +488,32 @@ class FileTileWidget(QWidget):
     def _update_thumbnail_border_color(self, color_hex: str):
         """Aktualizuje kolor obwódki wokół miniatury."""
         if color_hex and color_hex.strip():
-            # Widoczna kolorowa obwódka tylko gdy wybrany kolor
+            # ═══════════════════════════════════════════════════════════════
+            # KOLOROWA OBWÓDKA MINIATURY (DYNAMICZNA - ZALEŻNA OD KOLORU TAGU)
+            # ═══════════════════════════════════════════════════════════════
             self.thumbnail_frame.setStyleSheet(
                 f"""
                 QFrame {{
-                    border: 6px solid {color_hex};
-                    border-radius: 6px;
-                    padding: 0px;
-                    background-color: transparent;
+                    /* ▼▼▼ KOLOROWA OBWÓDKA WOKÓŁ MINIATURY ▼▼▼ */
+                    border: 6px solid {color_hex};          /* Grubość i kolor obwódki (6px) */
+                    border-radius: 6px;                     /* Zaokrąglone rogi obwódki */
+                    padding: 0px;                           /* Bez wewnętrznych odstępów */
+                    background-color: transparent;          /* Przezroczyste tło ramki */
                 }}
             """
             )
             logging.debug(f"Ustawiono kolor obwódki na: {color_hex}")
         else:
-            # Brak kolorowej obwódki - całkowicie przezroczysta
+            # ═══════════════════════════════════════════════════════════════
+            # BRAK OBWÓDKI (DOMYŚLNY STAN - BEZ KOLORU TAGU)
+            # ═══════════════════════════════════════════════════════════════
             self.thumbnail_frame.setStyleSheet(
                 """
                 QFrame {
-                    border: none;
-                    padding: 0px;
-                    background-color: transparent;
+                    /* ▼▼▼ BRAK KOLOROWEJ OBWÓDKI ▼▼▼ */
+                    border: none;                           /* Bez obramowania */
+                    padding: 0px;                           /* Bez wewnętrznych odstępów */
+                    background-color: transparent;          /* Przezroczyste tło ramki */
                 }
             """
             )

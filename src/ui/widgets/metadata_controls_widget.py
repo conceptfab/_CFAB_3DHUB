@@ -49,17 +49,23 @@ class MetadataControlsWidget(QWidget):
             0, 5, 0, 0
         )  # Mały margines górny        # --- Przycisk Ulubione ---
         self.favorite_button = QPushButton()
-        self.favorite_button.setToolTip("Oznacz/Odznacz jako ulubione")
+        self.favorite_button.setToolTip(
+            "Oznacz/Odznacz jako ulubione"
+        )  # ═══════════════════════════════════════════════════════════════
+        # STYLOWANIE PRZYCISKU ULUBIONE - EDYTUJ TUTAJ KOLORY
+        # ═══════════════════════════════════════════════════════════════
         self.favorite_button.setStyleSheet(
             """
             QPushButton {
-                border: none;
-                font-size: 16px;
-                color: #666666;
-                background-color: transparent;
+                /* ▼▼▼ PRZYCISK ULUBIONE - NORMALNY STAN ▼▼▼ */
+                border: none;                           /* Bez obramowania */
+                font-size: 16px;                       /* Rozmiar ikony gwiazdki */
+                color: #666666;                         /* SZARY kolor - zmień na #CCCCCC dla ciemnego tła */
+                background-color: transparent;          /* Przezroczyste tło */
             }
             QPushButton:hover {
-                color: #E53935;
+                /* ▼▼▼ HOVER NA PRZYCISKU ULUBIONE ▼▼▼ */
+                color: #E53935;                         /* CZERWONY hover - zmień według potrzeb */
             }
             """
         )
@@ -75,17 +81,23 @@ class MetadataControlsWidget(QWidget):
         for i in range(5):
             star_button = QPushButton("☆")
             star_button.setFlat(True)
-            star_button.setFixedSize(25, 25)
+            star_button.setFixedSize(
+                25, 25
+            )  # ═══════════════════════════════════════════════════════════════
+            # STYLOWANIE PRZYCISKÓW GWIAZDEK - EDYTUJ TUTAJ KOLORY
+            # ═══════════════════════════════════════════════════════════════
             star_button.setStyleSheet(
                 """
                 QPushButton { 
-                    border: none; 
-                    font-size: 16px; 
-                    color: #666666;
-                    background-color: transparent;
+                    /* ▼▼▼ PRZYCISKI GWIAZDEK - NORMALNY STAN ▼▼▼ */
+                    border: none;                       /* Bez obramowania */
+                    font-size: 16px;                   /* Rozmiar ikony gwiazdki */
+                    color: #666666;                     /* SZARY kolor - zmień na #CCCCCC dla ciemnego tła */
+                    background-color: transparent;      /* Przezroczyste tło */
                 }
                 QPushButton:hover { 
-                    color: #DAA520; 
+                    /* ▼▼▼ HOVER NA GWIAZDKACH ▼▼▼ */
+                    color: #DAA520;                     /* ZŁOTY hover - zmień według potrzeb */
                 }
                 """
             )
@@ -96,29 +108,35 @@ class MetadataControlsWidget(QWidget):
             self.stars_layout.addWidget(star_button)
         self.layout.addWidget(self.stars_layout_widget)  # --- ComboBox Kolorów ---
         self.color_tag_combo = QComboBox()
-        self.color_tag_combo.setToolTip("Zmień tag kolorystyczny")
+        self.color_tag_combo.setToolTip(
+            "Zmień tag kolorystyczny"
+        )  # ═══════════════════════════════════════════════════════════════
+        # STYLOWANIE COMBOBOX KOLORÓW - EDYTUJ TUTAJ WYGLĄD LISTY
+        # ═══════════════════════════════════════════════════════════════
         self.color_tag_combo.setStyleSheet(
             """
             QComboBox {
-                color: #000000;
-                background-color: #F5F5F5;
-                border: 1px solid #CCCCCC;
-                border-radius: 3px;
-                padding: 2px 18px 2px 3px;
-                min-width: 60px;
+                /* ▼▼▼ LISTA ROZWIJANA KOLORÓW - NORMALNY STAN ▼▼▼ */
+                color: #000000;                         /* CZARNY tekst - zmień na #FFFFFF dla ciemnego tła */
+                background-color: #F5F5F5;              /* JASNOSZARE tło - zmień na #2A2A2A dla ciemnego */
+                border: 1px solid #CCCCCC;              /* Szare obramowanie */
+                border-radius: 3px;                     /* Zaokrąglone rogi */
+                padding: 2px 18px 2px 3px;              /* Odstępy wewnętrzne */
+                min-width: 60px;                        /* Minimalna szerokość */
             }
             QComboBox:hover {
-                border: 1px solid #4a90e2;
+                /* ▼▼▼ HOVER NA LIŚCIE KOLORÓW ▼▼▼ */
+                border: 1px solid #4a90e2;              /* NIEBIESKIE obramowanie hover */
             }
             QComboBox::drop-down {
+                /* ▼▼▼ PRZYCISK ROZWIJANIA LISTY ▼▼▼ */
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
-                width: 15px;
+                width: 15px;                            /* Szerokość przycisku strzałki */
                 border-left-width: 1px;
-                border-left-color: #CCCCCC;
+                border-left-color: #CCCCCC;             /* Kolor separatora */
                 border-left-style: solid;
-                border-top-right-radius: 3px;
-                border-bottom-right-radius: 3px;
+                border-top-right-radius: 3px;                border-bottom-right-radius: 3px;
             }
             """
         )
