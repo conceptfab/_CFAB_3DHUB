@@ -1,4 +1,8 @@
-## ETAP 1: src/logic/scanner.py
+# Analiza i Korekcje Kodu - 3DHUB
+
+## 🔴 WYSOKI PRIORYTET
+
+### 1. `src/logic/scanner.py`
 
 ### 📋 Identyfikacja
 
@@ -109,7 +113,7 @@
 
 _Analiza pliku `src/logic/scanner.py` zakończona._
 
-## ETAP 2: src/logic/file_operations.py
+### 2. `src/logic/file_operations.py`
 
 ### 📋 Identyfikacja
 
@@ -212,7 +216,7 @@ _Analiza pliku `src/logic/scanner.py` zakończona._
 
 _Analiza pliku `src/logic/file_operations.py` zakończona._
 
-## ETAP 3: src/logic/metadata_manager.py
+### 3. `src/logic/metadata_manager.py`
 
 ### 📋 Identyfikacja
 
@@ -291,7 +295,7 @@ _Analiza pliku `src/logic/file_operations.py` zakończona._
 
 _Analiza pliku `src/logic/metadata_manager.py` zakończona._
 
-## ETAP 4: src/ui/widgets/thumbnail_cache.py
+### 4. `src/ui/widgets/thumbnail_cache.py`
 
 ### 📋 Identyfikacja
 
@@ -366,7 +370,7 @@ _Analiza pliku `src/logic/metadata_manager.py` zakończona._
 
 _Analiza pliku `src/ui/widgets/thumbnail_cache.py` zakończona._
 
-## ETAP 5: src/ui/delegates/workers.py
+### 5. `src/ui/delegates/workers.py`
 
 ### 📋 Identyfikacja
 
@@ -440,7 +444,7 @@ _Analiza pliku `src/ui/widgets/thumbnail_cache.py` zakończona._
 
 _Analiza pliku `src/ui/delegates/workers.py` zakończona._
 
-## ETAP 6: src/ui/gallery_manager.py
+### 6. `src/ui/gallery_manager.py`
 
 ### 📋 Identyfikacja
 
@@ -520,7 +524,7 @@ _Analiza pliku `src/ui/delegates/workers.py` zakończona._
 
 _Analiza pliku `src/ui/gallery_manager.py` zakończona._
 
-## ETAP 7: src/ui/main_window.py
+### 7. `src/ui/main_window.py`
 
 ### 📋 Identyfikacja
 
@@ -604,7 +608,7 @@ _Analiza pliku `src/ui/gallery_manager.py` zakończona._
 
 _Analiza pliku `src/ui/main_window.py` zakończona._
 
-## ETAP 8: src/main.py
+### 8. `src/main.py`
 
 ### 📋 Identyfikacja
 
@@ -685,9 +689,24 @@ _Analiza pliku `src/ui/main_window.py` zakończona._
 
 ---
 
+## 🟡 ŚREDNI PRIORYTET
+
+### 9. `run_app.py`
+
+### 📋 Identyfikacja
+
+- **Plik główny:** `run_app.py`
+- **Priorytet:** 🟡 ŚREDNI
+- **Zależności:**
+  - `src.main` (moduł projektu)
+
+### 🔍 Analiza problemów
+
+Plik `run_app.py` jest prostym skryptem uruchomieniowym, który importuje i wywołuje funkcję `main()` z modułu `src.main`. Jest to zalecany sposób uruchamiania aplikacji.
+
 _Analiza pliku `run_app.py` zakończona._
 
-## ETAP 10: `src/app_config.py`
+### 10. `src/app_config.py`
 
 ### Identyfikacja
 
@@ -777,7 +796,7 @@ _Analiza pliku `run_app.py` zakończona._
 
 ---
 
-## ETAP 11: `src/logic/filter_logic.py`
+### 11. `src/logic/filter_logic.py`
 
 ### Identyfikacja
 
@@ -861,7 +880,7 @@ _Analiza pliku `run_app.py` zakończona._
 
 ---
 
-## ETAP 12: src/models/file_pair.py
+### 12. `src/models/file_pair.py`
 
 ### 📋 Identyfikacja
 
@@ -1079,9 +1098,67 @@ Plik `src/ui/widgets/filter_panel.py` definiuje widget `FilterPanel`, który jes
     - Testowanie responsywności na różne interakcje użytkownika (kliknięcia, przeciąganie).
     - Testowanie działania przy różnych rozdzielczościach i skalowaniu UI.
 
+### 13. `src/ui/widgets/preview_dialog.py`
+
+#### 📋 Identyfikacja
+
+- **Ścieżka Pliku:** `src/ui/widgets/preview_dialog.py`
+- **Priorytet:** 🟡 ŚREDNI
+- **Opis:** Dialog podglądu pliku, wyświetlający większy podgląd obrazu lub zawartość innego pliku.
+
+### 14. `src/ui/file_operations_ui.py`
+
+#### 📋 Identyfikacja
+
+- **Ścieżka Pliku:** `src/ui/file_operations_ui.py`
+- **Priorytet:** 🟡 ŚREDNI
+- **Opis:** Interfejs użytkownika dla operacji na plikach (kopiowanie, przenoszenie, usuwanie).
+
+### 15. `src/utils/image_utils.py`
+
+#### 📋 Identyfikacja
+
+- **Ścieżka Pliku:** `src/utils/image_utils.py`
+- **Priorytet:** 🟡 ŚREDNI
+- **Opis:** Narzędzia do obsługi obrazów, tworzenia miniaturek, odczytu właściwości obrazów.
+
+### 16. `src/ui/widgets/metadata_controls_widget.py`
+
+#### 📋 Identyfikacja
+
+- **Ścieżka Pliku:** `src/ui/widgets/metadata_controls_widget.py`
+- **Priorytet:** 🟡 ŚREDNI
+- **Opis:** Widget kontrolek metadanych zawierający pola edycyjne i przyciski do zarządzania metadanymi.
+
+### 21. `src/ui/directory_tree_manager.py`
+
+#### 📋 Identyfikacja
+
+- **Ścieżka Pliku:** `src/ui/directory_tree_manager.py`
+- **Priorytet:** 🟡 ŚREDNI
+- **Opis:** Zarządzanie drzewem katalogów w interfejsie użytkownika.
+
+### 22. `src/ui/widgets/file_tile_widget.py`
+
+#### 📋 Identyfikacja
+
+- **Ścieżka Pliku:** `src/ui/widgets/file_tile_widget.py`
+- **Priorytet:** 🟡 ŚREDNI
+- **Opis:** Widget kafelka pliku wyświetlający pojedynczy plik w widoku galerii.
+
+### 23. `src/ui/widgets/filter_panel.py`
+
+#### 📋 Identyfikacja
+
+- **Ścieżka Pliku:** `src/ui/widgets/filter_panel.py`
+- **Priorytet:** 🟡 ŚREDNI
+- **Opis:** Panel filtrów do filtrowania galerii.
+
 ---
 
-## ETAP 17: Analiza `styles.qss`
+## 🟢 NISKI PRIORYTET
+
+### 17. `styles.qss`
 
 ### 1. Identyfikacja
 
@@ -1136,11 +1213,27 @@ Plik `src/ui/widgets/filter_panel.py` definiuje widget `FilterPanel`, który jes
 
 ---
 
-## ETAP 18: src/ui/widgets/tile_styles.py
+### 18. `src/utils/logging_config.py`
 
-### 1. Identyfikacja
+#### 📋 Identyfikacja
 
-- **Ścieżka Pliku:** `src\ui\widgets\tile_styles.py`
+- **Ścieżka Pliku:** `src/utils/logging_config.py`
+- **Priorytet:** 🟢 Niski
+- **Opis:** Moduł konfigurujący system logowania aplikacji.
+
+### 19. `src/utils/path_utils.py`
+
+#### 📋 Identyfikacja
+
+- **Ścieżka Pliku:** `src/utils/path_utils.py`
+- **Priorytet:** 🟢 Niski
+- **Opis:** Moduł z narzędziami pomocniczymi do operacji na ścieżkach.
+
+### 20. `src/ui/widgets/tile_styles.py`
+
+#### 📋 Identyfikacja
+
+- **Ścieżka Pliku:** `src/ui/widgets/tile_styles.py`
 - **Priorytet:** Niski (jeśli plik jest pusty, może być pozostałością lub miejscem na przyszłe style)
 - **Opis:** Prawdopodobnie moduł przeznaczony do definiowania stylów (QSS lub stałych Pythona) specyficznych dla widgetów kafelków (np. `FileTileWidget`). Obecnie plik jest pusty.
 - **Zależności:** Potencjalnie `FileTileWidget` lub inne widgety, które miałyby używać tych stylów. `styles.qss` jeśli style miałyby być tam przeniesione lub zintegrowane.
