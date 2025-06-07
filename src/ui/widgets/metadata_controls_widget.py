@@ -117,9 +117,9 @@ class MetadataControlsWidget(QWidget):
             """
             QComboBox {
                 /* ▼▼▼ LISTA ROZWIJANA KOLORÓW - NORMALNY STAN ▼▼▼ */
-                color: #000000;                         /* CZARNY tekst - zmień na #FFFFFF dla ciemnego tła */
-                background-color: #F5F5F5;              /* JASNOSZARE tło - zmień na #2A2A2A dla ciemnego */
-                border: 1px solid #CCCCCC;              /* Szare obramowanie */
+                color: #FFFFFF;                         /* CZARNY tekst - zmień na #FFFFFF dla ciemnego tła */
+                background-color: #1E1E1E;              /* JASNOSZARE tło - zmień na #2A2A2A dla ciemnego */
+                border: 1px solid #000000;              /* Szare obramowanie */
                 border-radius: 3px;                     /* Zaokrąglone rogi */
                 padding: 2px 18px 2px 3px;              /* Odstępy wewnętrzne */
                 min-width: 60px;                        /* Minimalna szerokość */

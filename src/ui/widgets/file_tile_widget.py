@@ -157,7 +157,7 @@ class FileTileWidget(QWidget):
             /* ▼▼▼ GŁÓWNY WYGLĄD KAFELKA ▼▼▼ */
             FileTileWidget {
                 /* KOLOR TŁA KAFELKA - zmień na jasny/ciemny według potrzeb */
-                background-color: #1E1E1E !important;     /* BIAŁY - zmień na #1E1E1E dla ciemnego */
+                background-color: transparent; !important;     /* BIAŁY - zmień na #1E1E1E dla ciemnego */
 
                 /* OBRAMOWANIE KAFELKA */
                 border: 1px solid #1E1E1E  !important;     /* Szare obramowanie */
@@ -180,14 +180,14 @@ class FileTileWidget(QWidget):
             /* ▼▼▼ ALTERNATYWNY SELEKTOR - BACKUP ▼▼▼ */
             QWidget#FileTileWidget {
                 /* Te same style co wyżej - dla pewności że zadziałają */
-                background-color: #1E1E1E !important;     /* CIEMNY - zmień na #FFFFFF dla jasnego */
+                background-color: transparent; !important;     /* CIEMNY - zmień na #FFFFFF dla jasnego */
                 border: 1px solid #1E1E1E !important;     /* Subtelne obramowanie - takie samo jak główny selektor */
                 border-radius: 4px !important;            /* Zaokrąglone rogi - takie samo jak główny selektor */
                 padding: 2px !important;                  /* Wewnętrzne odstępy */
                 margin: 2px !important;                   /* Zewnętrzne odstępy */
             }
             QWidget#FileTileWidget:hover {
-                background-color: #2A2A2A !important;     /* Ciemnoszary hover - zmień na #F0F0F0 dla jasnego */
+                background-color: transparent; !important;     /* Ciemnoszary hover - zmień na #F0F0F0 dla jasnego */
                 border: 3px solid #4a90e2 !important;     /* Niebieskie obramowanie hover */
             }
 
@@ -489,8 +489,8 @@ class FileTileWidget(QWidget):
                 f"""
                 QFrame {{
                     /* ▼▼▼ KOLOROWA OBWÓDKA WOKÓŁ MINIATURY ▼▼▼ */
-                    border: 6px solid {color_hex};          /* Grubość i kolor obwódki (6px) */
-                    border-radius: 6px;                     /* Zaokrąglone rogi obwódki */
+                    border: 2px solid {color_hex};          /* Grubość i kolor obwódki (6px) */
+                    border-radius: 2px;                     /* Zaokrąglone rogi obwódki */
                     padding: 0px;                           /* Bez wewnętrznych odstępów */
                     background-color: transparent;          /* Przezroczyste tło ramki */
                 }}
