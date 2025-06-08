@@ -1,5 +1,3 @@
-1. Po przenoszeniu pliku Drag&drop folder źródłowy musi zostać odświeżony
-2. Udanym parowania listy plików bez pary powinny być aktualizowane
 
 2. Brakuje opcji by wybrany folder otworzyć w eksplorerze
 3. W drzewie folderów powinna być przy kazdym folderze informacja ile zajmuje GB

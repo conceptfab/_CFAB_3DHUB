@@ -1026,9 +1026,7 @@ class MainWindow(QMainWindow):
         for file_pair in moved_pairs:
             if file_pair in self.all_file_pairs:
                 self.all_file_pairs.remove(file_pair)
-            self.selected_tiles.discard(file_pair)
-
-        # Refresh view
+            self.selected_tiles.discard(file_pair)  # Refresh view
         self._apply_filters_and_update_view()
         self._save_metadata()
 
@@ -1098,26 +1096,12 @@ class MainWindow(QMainWindow):
         """
         Obsługuje logikę ręcznego parowania plików.
         """
-        new_pair = self.file_operations_ui.handle_manual_pairing(
+        # Deleguj obsługę do FileOperationsUI, która używa asynchronicznych workerów
+        # Po zakończeniu operacji zostanie automatycznie wywołana metoda refresh_all_views
+        # która ponownie zeskanuje folder i zaktualizuje wszystkie listy
+        self.file_operations_ui.handle_manual_pairing(
             self.unpaired_archives_list_widget, self.unpaired_previews_list_widget
         )
-
-        if new_pair:
-            # Aktualizuj dane aplikacji
-            self.all_file_pairs.append(new_pair)
-
-            # Usuń z list niesparowanych
-            archive_path = new_pair.get_archive_path()
-            preview_path = new_pair.get_preview_path()
-
-            if archive_path in self.unpaired_archives:
-                self.unpaired_archives.remove(archive_path)
-            if preview_path in self.unpaired_previews:
-                self.unpaired_previews.remove(preview_path)
-
-            # Odśwież UI
-            self._update_unpaired_files_lists()
-            self._apply_filters_and_update_view()
 
     def handle_file_drop_on_folder(
         self, source_file_paths: list[str], target_folder_path: str
