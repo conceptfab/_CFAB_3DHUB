@@ -448,16 +448,41 @@ _Analiza pliku `src/ui/widgets/thumbnail_cache.py` zakończona._
 
 ### 📊 Status tracking
 
-- [ ] Kod zaimplementany
-- [ ] Testy podstawowe przeprowadzone
+- [x] Kod zaimplementany
+- [x] Testy podstawowe przeprowadzone
 - [ ] Testy integracji przeprowadzone
 - [ ] Testy wydajności przeprowadzone
 - [ ] Dokumentacja zaktualizowana (jeśli dotyczy)
-- [ ] Gotowe do wdrożenia
+- [x] Gotowe do wdrożenia
 
 ---
 
 _Analiza pliku `src/ui/delegates/workers.py` zakończona._
+
+**🎯 ETAP 5 UKOŃCZONY** - Workers refaktoryzacja została pomyślnie zakończona:
+
+✅ **Zaimplementowano klasy bazowe:**
+
+- `BaseWorkerSignals` - Ujednolicone sygnały (finished, error, progress, interrupted)
+- `BaseWorker(QRunnable)` - Bazowa klasa z metodami check*interruption(), emit*\*(), interrupt()
+
+✅ **Zrefaktoryzowano wszystkich głównych workerów do BaseWorker:**
+
+- `CreateFolderWorker`, `RenameFolderWorker`, `DeleteFolderWorker`
+- `ManuallyPairFilesWorker`, `RenameFilePairWorker`, `DeleteFilePairWorker`, `MoveFilePairWorker`
+
+✅ **Dodano specjalistycznego workera z dedykowanymi sygnałami:**
+
+- `ThumbnailGenerationWorker` - Z `ThumbnailWorkerSignals` i własnymi metodami emit\_\*()
+
+✅ **Usunięto niepotrzebne klasy:**
+
+- `FileOperationSignals` (zastąpione przez BaseWorkerSignals)
+- `ThumbnailGenerationSignals` (stara wersja)
+
+✅ **Zachowano kompatybilność:**
+
+- `ScanFolderWorker` i `DataProcessingWorker` zostały bez zmian (mają własne mechanizmy)
 
 ### 6. `src/ui/gallery_manager.py`
 

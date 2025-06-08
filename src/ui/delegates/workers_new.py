@@ -97,6 +97,21 @@ class BaseWorker(QRunnable):
         )
 
 
+class FileOperationSignals(QObject):
+    """
+    Sygnały dla operacji na plikach wykonywanych w tle.
+    """
+
+    finished = pyqtSignal(
+        object
+    )  # Sygnał emitowany po pomyślnym zakończeniu, zwraca wynik operacji
+    error = pyqtSignal(str)  # Sygnał emitowany w przypadku błędu
+    progress = pyqtSignal(
+        int, str
+    )  # Sygnał emitowany do raportowania postępu (procent, wiadomość)
+    interrupted = pyqtSignal()  # Sygnał emitowany po przerwaniu operacji
+
+
 class CreateFolderWorker(BaseWorker):
     """
     Worker do tworzenia folderu w osobnym wątku.
@@ -1069,18 +1084,7 @@ class MoveFilePairWorker(BaseWorker):
         )
 
 
-class ThumbnailWorkerSignals(QObject):
-    """
-    Dedykowane sygnały dla ThumbnailGenerationWorker.
-    """
-
-    finished = pyqtSignal(QPixmap, str, int, int)  # pixmap, path, width, height
-    error = pyqtSignal(str, str, int, int)  # error_message, path, width, height
-    progress = pyqtSignal(int, str)  # procent, wiadomość
-    interrupted = pyqtSignal()  # sygnał przerwania
-
-
-class ThumbnailGenerationWorker(QRunnable):
+class ThumbnailGenerationWorker(BaseWorker):
     """
     Worker do asynchronicznego generowania miniaturek z integracją z ThumbnailCache.
 
@@ -1093,40 +1097,9 @@ class ThumbnailGenerationWorker(QRunnable):
 
     def __init__(self, path: str, width: int, height: int):
         super().__init__()
-        self.signals = ThumbnailWorkerSignals()
         self.path = path
         self.width = width
         self.height = height
-        self._interrupted = False
-        self._worker_name = "ThumbnailGenerationWorker"
-
-    def interrupt(self):
-        """Przerywa wykonywanie workera."""
-        self._interrupted = True
-        logger.debug(f"{self._worker_name}: Otrzymano żądanie przerwania")
-
-    def check_interruption(self) -> bool:
-        """
-        Sprawdza czy worker został przerwany.
-
-        Returns:
-            True jeśli przerwano, False w przeciwnym razie
-        """
-        if self._interrupted:
-            logger.debug(f"{self._worker_name}: Operacja przerwana")
-            self.signals.interrupted.emit()
-            return True
-        return False
-
-    def emit_finished(self, pixmap: QPixmap):
-        """Emituje sygnał zakończenia z pixmap."""
-        logger.debug(f"{self._worker_name}: Zakończono pomyślnie dla {self.path}")
-        self.signals.finished.emit(pixmap, self.path, self.width, self.height)
-
-    def emit_error(self, message: str):
-        """Emituje sygnał błędu."""
-        logger.error(f"{self._worker_name}: {message}")
-        self.signals.error.emit(message, self.path, self.width, self.height)
 
     def run(self):
         """Wykonuje ładowanie miniatury w tle."""
@@ -1150,9 +1123,7 @@ class ThumbnailGenerationWorker(QRunnable):
 
             if cached_pixmap:
                 logger.debug(f"ThumbnailWorker: Cache HIT dla {self.path}")
-                self.signals.finished.emit(
-                    cached_pixmap, self.path, self.width, self.height
-                )
+                self.emit_finished(cached_pixmap)
                 return
 
             if self.check_interruption():
@@ -1343,9 +1314,9 @@ class DataProcessingWorker(QObject):
                 metadata_manager.apply_metadata_to_file_pairs(
                     self.working_directory, self.file_pairs
                 )
-                logging.info(
-                    "DataProcessingWorker: Zakończono stosowanie metadanych."
-                )  # 2. Emituj sygnały do tworzenia kafelków
+                logging.info("DataProcessingWorker: Zakończono stosowanie metadanych.")
+
+            # 2. Emituj sygnały do tworzenia kafelków
             if self.file_pairs:
                 logging.debug(
                     f"DataProcessingWorker: Rozpoczynam przygotowanie "
@@ -1355,7 +1326,17 @@ class DataProcessingWorker(QObject):
                     self.tile_data_ready.emit(file_pair)
             else:
                 logging.debug("DataProcessingWorker: Brak par plików do przetworzenia.")
+
         except Exception as e:
             logging.error(f"Błąd w DataProcessingWorker: {e}")
         finally:
             self.finished.emit()
+
+
+class ThumbnailGenerationSignals(QObject):
+    """
+    Sygnały dla workera generującego miniatury.
+    """
+
+    finished = pyqtSignal(QPixmap, str, int, int)  # pixmap, path, width, height
+    error = pyqtSignal(str, str, int, int)  # error_message, path, width, height
