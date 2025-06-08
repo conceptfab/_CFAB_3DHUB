@@ -52,7 +52,8 @@ class MetadataControlsWidget(QWidget):
     def _init_ui(self):
         """Inicjalizuje elementy interfejsu użytkownika kontrolek metadanych."""
         self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(0, 5, 0, 0)  # Mały margines górny
+        self.layout.setContentsMargins(2, 2, 2, 2)  # Minimalne marginesy
+        self.layout.setSpacing(4)  # Małe odstępy między elementami
 
         # --- Checkbox do selekcji kafli ---
         self.selection_checkbox = QCheckBox()
@@ -60,39 +61,34 @@ class MetadataControlsWidget(QWidget):
             "Zaznacz/Odznacz kafelek do operacji grupowych"
         )
 
-        # ═══════════════════════════════════════════════════════════════
-        # STYLOWANIE CHECKBOXA SELEKCJI - EDYTUJ TUTAJ KOLORY
-        # ═══════════════════════════════════════════════════════════════
+        # Stylowanie checkboxa - ciemny schemat, kompaktowy
         self.selection_checkbox.setStyleSheet(
             """
             QCheckBox {
-                /* ▼▼▼ CHECKBOX SELEKCJI - NORMALNY STAN ▼▼▼ */
-                border: none;                           /* Bez obramowania */
-                color: #666666;                         /* SZARY kolor - zmień na #CCCCCC dla ciemnego tła */
-                background-color: transparent;          /* Przezroczyste tło */
-                spacing: 0px;                           /* Brak odstępu między checkboxem a tekstem */
+                border: none;
+                color: #CCCCCC;
+                background-color: transparent;
+                spacing: 0px;
+                max-width: 14px;
+                max-height: 14px;
             }
             QCheckBox::indicator {
-                /* ▼▼▼ WSKAŹNIK CHECKBOXA ▼▼▼ */
-                width: 16px;                           /* Szerokość checkboxa */
-                height: 16px;                          /* Wysokość checkboxa */
-                background-color: #2A2A2A;             /* Ciemne tło - zmień na #FFFFFF dla jasnego */
-                border: 1px solid #666666;             /* Szare obramowanie */
-                border-radius: 3px;                    /* Zaokrąglone rogi */
+                width: 12px;
+                height: 12px;
+                background-color: #3A3A3A;
+                border: 1px solid #666666;
+                border-radius: 2px;
             }
             QCheckBox::indicator:hover {
-                /* ▼▼▼ HOVER NA CHECKBOXIE ▼▼▼ */
-                border: 1px solid #4a90e2;            /* NIEBIESKIE obramowanie hover */
-                background-color: #3A3A3A;            /* Jaśniejsze tło hover */
+                border: 1px solid #5A9FD4;
+                background-color: #4A4A4A;
             }
             QCheckBox::indicator:checked {
-                /* ▼▼▼ ZAZNACZONY CHECKBOX ▼▼▼ */
-                background-color: #4a90e2;            /* NIEBIESKI kolor zaznaczenia */
-                border: 1px solid #4a90e2;            /* NIEBIESKI border zaznaczenia */
+                background-color: #5A9FD4;
+                border: 1px solid #5A9FD4;
             }
             QCheckBox::indicator:checked:hover {
-                /* ▼▼▼ ZAZNACZONY CHECKBOX HOVER ▼▼▼ */
-                background-color: #5ba0f2;            /* Jaśniejszy niebieski hover */
+                background-color: #6AAFF4;
             }
             """
         )
@@ -110,23 +106,20 @@ class MetadataControlsWidget(QWidget):
         for i in range(5):
             star_button = QPushButton("☆")
             star_button.setFlat(True)
-            star_button.setFixedSize(
-                25, 25
-            )  # ═══════════════════════════════════════════════════════════════
-            # STYLOWANIE PRZYCISKÓW GWIAZDEK - EDYTUJ TUTAJ KOLORY
-            # ═══════════════════════════════════════════════════════════════
+            star_button.setFixedSize(16, 16)  # Mniejsze gwiazdki
+            # Stylowanie gwiazdek - ciemny schemat, kompaktowe
             star_button.setStyleSheet(
                 """
                 QPushButton { 
-                    /* ▼▼▼ PRZYCISKI GWIAZDEK - NORMALNY STAN ▼▼▼ */
-                    border: none;                       /* Bez obramowania */
-                    font-size: 16px;                   /* Rozmiar ikony gwiazdki */
-                    color: #666666;                     /* SZARY kolor - zmień na #CCCCCC dla ciemnego tła */
-                    background-color: transparent;      /* Przezroczyste tło */
+                    border: none;
+                    font-size: 14px;
+                    color: #888888;
+                    background-color: transparent;
+                    padding: 0px;
+                    margin: 0px;
                 }
                 QPushButton:hover { 
-                    /* ▼▼▼ HOVER NA GWIAZDKACH ▼▼▼ */
-                    color: #DAA520;                     /* ZŁOTY hover - zmień według potrzeb */
+                    color: #FFD700;
                 }
                 """
             )
@@ -135,37 +128,51 @@ class MetadataControlsWidget(QWidget):
             )
             self.star_buttons.append(star_button)
             self.stars_layout.addWidget(star_button)
-        self.layout.addWidget(self.stars_layout_widget)  # --- ComboBox Kolorów ---
+        self.layout.addWidget(self.stars_layout_widget)
+
+        # --- ComboBox Kolorów ---
         self.color_tag_combo = QComboBox()
-        self.color_tag_combo.setToolTip(
-            "Zmień tag kolorystyczny"
-        )  # ═══════════════════════════════════════════════════════════════
-        # STYLOWANIE COMBOBOX KOLORÓW - EDYTUJ TUTAJ WYGLĄD LISTY
-        # ═══════════════════════════════════════════════════════════════
+        self.color_tag_combo.setToolTip("Zmień tag kolorystyczny")
+        self.color_tag_combo.setFixedHeight(20)  # Kompaktowa wysokość
+        # Stylowanie combobox - ciemny schemat, kompaktowy
         self.color_tag_combo.setStyleSheet(
             """
             QComboBox {
-                /* ▼▼▼ LISTA ROZWIJANA KOLORÓW - NORMALNY STAN ▼▼▼ */
-                color: #FFFFFF;                         /* CZARNY tekst - zmień na #FFFFFF dla ciemnego tła */
-                background-color: #1E1E1E;              /* JASNOSZARE tło - zmień na #2A2A2A dla ciemnego */
-                border: 1px solid #000000;              /* Szare obramowanie */
-                border-radius: 3px;                     /* Zaokrąglone rogi */
-                padding: 2px 18px 2px 3px;              /* Odstępy wewnętrzne */
-                min-width: 60px;                        /* Minimalna szerokość */
+                color: #CCCCCC;
+                background-color: #3A3A3A;
+                border: 1px solid #666666;
+                border-radius: 2px;
+                padding: 1px 16px 1px 2px;
+                min-width: 50px;
+                max-height: 18px;
             }
             QComboBox:hover {
-                /* ▼▼▼ HOVER NA LIŚCIE KOLORÓW ▼▼▼ */
-                border: 1px solid #4a90e2;              /* NIEBIESKIE obramowanie hover */
+                border: 1px solid #5A9FD4;
             }
             QComboBox::drop-down {
-                /* ▼▼▼ PRZYCISK ROZWIJANIA LISTY ▼▼▼ */
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
-                width: 15px;                            /* Szerokość przycisku strzałki */
+                width: 14px;
                 border-left-width: 1px;
-                border-left-color: #CCCCCC;             /* Kolor separatora */
+                border-left-color: #666666;
                 border-left-style: solid;
-                border-top-right-radius: 3px;                border-bottom-right-radius: 3px;
+                border-top-right-radius: 2px;
+                border-bottom-right-radius: 2px;
+                background-color: #4A4A4A;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 3px solid transparent;
+                border-right: 3px solid transparent;
+                border-top: 4px solid #CCCCCC;
+                width: 0px;
+                height: 0px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #3A3A3A;
+                color: #CCCCCC;
+                border: 1px solid #666666;
+                selection-background-color: #5A9FD4;
             }
             """
         )

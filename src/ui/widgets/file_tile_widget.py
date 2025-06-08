@@ -103,53 +103,60 @@ class FileTileWidget(QWidget):
         self.setObjectName("FileTileWidget")
 
         # ═══════════════════════════════════════════════════════════════
-        # SEKCJA STYLOWANIA KAFELKÓW - EDYTUJ TUTAJ KOLORY I WYGLĄD
+        # SEKCJA STYLOWANIA KAFELKÓW - CIEMNY SCHEMAT, PROFESJONALNY
         # ═══════════════════════════════════════════════════════════════
-        super_aggressive_stylesheet = """
-            /* ▼▼▼ GŁÓWNY WYGLĄD KAFELKA ▼▼▼ */
+        dark_professional_stylesheet = """
+            /* ▼▼▼ PROFESJONALNE CIEMNE KAFELKI ▼▼▼ */
             FileTileWidget {
-                /* KOLOR TŁA KAFELKA - zmień na jasny/ciemny według potrzeb */
-                background-color: transparent; !important;     /* BIAŁY - zmień na #1E1E1E dla ciemnego */
+                /* CIEMNE TŁO PASUJĄCE DO SCHEMATU */
+                background-color: #2D2D2D !important;
 
-                /* OBRAMOWANIE KAFELKA */
-                border: 1px solid #1E1E1E  !important;     /* Szare obramowanie */
-                border-radius: 4px !important;            /* Zaokrąglone rogi */
-
-                /* ODSTĘPY WEWNĘTRZNE I ZEWNĘTRZNE */
-                padding: 2px !important;                  /* Wewnętrzne odstępy */
-                margin: 2px !important;                   /* Zewnętrzne odstępy */
+                /* SUBTELNE CIEMNE OBRAMOWANIE */
+                border: 1px solid #404040 !important;
+                border-radius: 6px !important;
+                
+                /* PRZERWY MIĘDZY KAFELKAMI */
+                margin: 6px !important;
+                padding: 8px !important;
+                
+                /* MINIMALNE WYMIARY */
+                min-width: 150px !important;
+                min-height: 190px !important;
             }
 
-            /* ▼▼▼ HOVER - NAJECHANIE MYSZĄ ▼▼▼ */
+            /* ▼▼▼ HOVER - SUBTELNY EFEKT ▼▼▼ */
             FileTileWidget:hover {
-                /* KOLOR TŁA PO NAJECHANIU */
-                background-color: #2A2A2A !important;     /* Ciemnoszary hover - zmień na #F0F0F0 dla jasnego */
-
-                /* OBRAMOWANIE PO NAJECHANIU */
-                border: 3px solid #4a90e2 !important;     /* Niebieskie obramowanie hover */
+                background-color: #353535 !important;
+                border: 1px solid #5A9FD4 !important;
             }
 
-            /* ▼▼▼ ALTERNATYWNY SELEKTOR - BACKUP ▼▼▼ */
+            /* ▼▼▼ ALTERNATYWNY SELEKTOR ▼▼▼ */
             QWidget#FileTileWidget {
-                /* Te same style co wyżej - dla pewności że zadziałają */
-                background-color: transparent; !important;     /* CIEMNY - zmień na #FFFFFF dla jasnego */
-                border: 1px solid #1E1E1E !important;     /* Subtelne obramowanie - takie samo jak główny selektor */
-                border-radius: 4px !important;            /* Zaokrąglone rogi - takie samo jak główny selektor */
-                padding: 2px !important;                  /* Wewnętrzne odstępy */
-                margin: 2px !important;                   /* Zewnętrzne odstępy */
+                background-color: #2D2D2D !important;
+                border: 1px solid #404040 !important;
+                border-radius: 6px !important;
+                margin: 6px !important;
+                padding: 8px !important;
+                min-width: 150px !important;
+                min-height: 190px !important;
             }
+            
             QWidget#FileTileWidget:hover {
-                background-color: transparent; !important;     /* Ciemnoszary hover - zmień na #F0F0F0 dla jasnego */
-                border: 3px solid #4a90e2 !important;     /* Niebieskie obramowanie hover */
+                background-color: #353535 !important;
+                border: 1px solid #5A9FD4 !important;
             }
 
-            /* ▼▼▼ DZIEDZICZENIE DLA ELEMENTÓW WEWNĘTRZNYCH ▼▼▼ */
+            /* ▼▼▼ PRZEZROCZYSTE ELEMENTY WEWNĘTRZNE ▼▼▼ */
             FileTileWidget QWidget {
-                /* Tylko elementy QWidget WEWNĄTRZ FileTileWidget dziedziczą tło z rodzica */
-                background-color: inherit !important;
+                background-color: transparent !important;
+            }
+            
+            FileTileWidget QFrame {
+                background-color: transparent !important;
+                border: none !important;
             }
         """
-        self.setStyleSheet(super_aggressive_stylesheet)
+        self.setStyleSheet(dark_professional_stylesheet)
 
         # Ustawienie dodatkowych właściwości
         self.setAutoFillBackground(True)
@@ -190,24 +197,28 @@ class FileTileWidget(QWidget):
         base_font_size = max(8, min(18, int(self.thumbnail_size[0] / 12)))  # 8-18px
 
         # ═══════════════════════════════════════════════════════════════
-        # STYLOWANIE TEKSTU NAZWY PLIKU - EDYTUJ TUTAJ KOLORY CZCIONKI
+        # STYLOWANIE TEKSTU NAZWY PLIKU - CIEMNY SCHEMAT
         # ═══════════════════════════════════════════════════════════════
         self.filename_label.setStyleSheet(
             f"""
             QLabel {{
-                /* ▼▼▼ NORMALNY STAN TEKSTU ▼▼▼ */
-                color: #FFFFFF;                      /* BIAŁY tekst - zmień na #000000 dla jasnego tła */
-                font-weight: bold;                   /* Pogrubiona czcionka */
+                /* ▼▼▼ JASNY TEKST NA CIEMNYM TLE ▼▼▼ */
+                color: #E0E0E0;                      /* Jasny szary tekst */
+                font-weight: 400;                    /* Normal weight */
                 font-size: {base_font_size}px;       /* Dynamiczny rozmiar czcionki */
-                padding: 2px;                        /* Odstęp wokół tekstu */
-                border-radius: 2px;                  /* Zaokrąglone rogi */
+                font-family: "Segoe UI", Arial, sans-serif; /* Czytelna czcionka */
+                padding: 4px 2px;                    /* Minimalne odstępy */
+                border-radius: 0px;                  /* Bez zaokrąglenia */
+                background-color: transparent;       /* Przezroczyste tło */
+                text-align: center;                  /* Wyśrodkowany tekst */
+                border: none;                        /* Bez obramowania */
             }}
 
             QLabel:hover {{
-                /* ▼▼▼ HOVER - NAJECHANIE MYSZĄ NA TEKST ▼▼▼ */
-                color: #0066CC;                      /* NIEBIESKI tekst hover - zmień według potrzeb */
-                font-weight: bold;                   /* Pozostaje pogrubiony */
-                text-decoration: underline;          /* Podkreślenie przy hover */
+                /* ▼▼▼ SUBTELNY HOVER NA TEKŚCIE ▼▼▼ */
+                color: #5A9FD4;                      /* Niebieski hover */
+                font-weight: 400;                    /* Pozostaje normal */
+                background-color: transparent;       /* Bez tła */
             }}
         """
         )
@@ -252,33 +263,33 @@ class FileTileWidget(QWidget):
         """
         Inicjalizuje elementy interfejsu użytkownika kafelka.
         """
-        # Główny layout - pionowy, z minimalnymi marginesami
+        # Główny layout - pionowy, z prawidłowymi marginesami
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(2, 2, 2, 2)  # Zminimalizowane marginesy
-        self.layout.setSpacing(1)  # Minimalne odstępy między elementami
+        self.layout.setContentsMargins(8, 12, 8, 8)  # Większy górny i dolny margines
+        self.layout.setSpacing(4)  # Większe odstępy między elementami
 
         # --- Pasek wskaźnika koloru ---
         # Usunięty osobny pasek kolorów - będziemy używać ramki wokół miniatury
 
         # --- Frame - kontener na miniaturę z kolorową obwódką ---
         self.thumbnail_frame = QFrame(self)
-        # ═══════════════════════════════════════════════════════════════
-        # STYLOWANIE RAMKI MINIATURY (DOMYŚLNE - BEZ KOLORU)
-        # ═══════════════════════════════════════════════════════════════
+        # Stylowanie ramki miniatury - bez odstępów od miniatury
         self.thumbnail_frame.setStyleSheet(
             """
             QFrame {
-                /* ▼▼▼ DOMYŚLNA RAMKA MINIATURY ▼▼▼ */
-                border: none;                        /* Bez obramowania (kolor dodawany dynamicznie) */
-                padding: 0px;                        /* Bez wewnętrznych odstępów */
+                border: none;
+                border-radius: 4px;
+                padding: 0px;
+                margin: 0px;
+                background-color: transparent;
             }
         """
         )
 
-        # Ustawienie layoutu dla thumbnail_frame
+        # Ustawienie layoutu dla thumbnail_frame - bez odstępów
         thumbnail_frame_layout = QVBoxLayout(self.thumbnail_frame)
-        thumbnail_frame_layout.setContentsMargins(0, 0, 0, 0)  # Bez marginesów
-        thumbnail_frame_layout.setSpacing(0)  # Bez odstępów
+        thumbnail_frame_layout.setContentsMargins(0, 0, 0, 0)
+        thumbnail_frame_layout.setSpacing(0)
 
         # Label na miniaturę - umieszczona wewnątrz ramki
         self.thumbnail_label = QLabel(self)
@@ -301,13 +312,20 @@ class FileTileWidget(QWidget):
         )  # Bez wewnętrznej ramki
 
         # ═══════════════════════════════════════════════════════════════
-        # STYLOWANIE MINIATURY - EFEKT HOVER
+        # STYLOWANIE MINIATURY - CIEMNY SCHEMAT, MINIMALNE
         # ═══════════════════════════════════════════════════════════════
         self.thumbnail_label.setStyleSheet(
             """
+            QLabel {
+                /* ▼▼▼ MINIMALNA MINIATURA ▼▼▼ */
+                border-radius: 3px;                 /* Subtelne zaokrąglenie */
+                background-color: transparent;      /* Przezroczyste tło */
+                border: none;                       /* Bez obramowania */
+            }
             QLabel:hover {
-                /* ▼▼▼ HOVER NA MINIATURZE ▼▼▼ */
-                opacity: 0.9;                        /* Lekkie przyciemnienie przy hover (0.1-1.0) */
+                /* ▼▼▼ SUBTELNY HOVER NA MINIATURZE ▼▼▼ */
+                background-color: rgba(90, 159, 212, 0.1); /* Bardzo subtelne tło */
+                border: none;                       /* Bez obramowania */
             }
         """
         )
@@ -329,22 +347,26 @@ class FileTileWidget(QWidget):
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
         # ═══════════════════════════════════════════════════════════════
-        # STYLOWANIE ETYKIETY NAZWY PLIKU W _init_ui (PIERWOTNE)
+        # STYLOWANIE ETYKIETY NAZWY PLIKU - CIEMNY SCHEMAT
         # ═══════════════════════════════════════════════════════════════
         self.filename_label.setStyleSheet(
             """
             QLabel {
-                /* ▼▼▼ PODSTAWOWY WYGLĄD TEKSTU NAZWY ▼▼▼ */
-                color: #FFFFFF;                      /* BIAŁY tekst - zmień na #000000 dla jasnego tła */
-                font-weight: bold;                   /* Pogrubiona czcionka */
-                padding: 2px;                        /* Odstęp wokół tekstu */
-                border-radius: 2px;                  /* Zaokrąglone rogi */
+                /* ▼▼▼ JASNY TEKST NA CIEMNYM TLE ▼▼▼ */
+                color: #E0E0E0;                      /* Jasny szary tekst */
+                font-weight: 400;                    /* Normal weight */
+                font-family: "Segoe UI", Arial, sans-serif; /* Czytelna czcionka */
+                padding: 4px 2px;                    /* Minimalne odstępy */
+                border-radius: 0px;                  /* Bez zaokrąglenia */
+                background-color: transparent;       /* Przezroczyste tło */
+                text-align: center;                  /* Wyśrodkowany tekst */
+                border: none;                        /* Bez obramowania */
             }
             QLabel:hover {
-                /* ▼▼▼ HOVER NA NAZWIE PLIKU ▼▼▼ */
-                color: #0066CC;                      /* NIEBIESKI tekst hover */
-                font-weight: bold;                   /* Pozostaje pogrubiony */
-                text-decoration: underline;          /* Podkreślenie przy hover */
+                /* ▼▼▼ SUBTELNY HOVER NA NAZWIE PLIKU ▼▼▼ */
+                color: #5A9FD4;                      /* Niebieski hover */
+                font-weight: 400;                    /* Pozostaje normal */
+                background-color: transparent;       /* Bez tła */
             }
         """
         )
@@ -355,7 +377,8 @@ class FileTileWidget(QWidget):
         self.metadata_controls.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
-        self.metadata_controls.setMaximumHeight(30)  # Zmniejszona wysokość
+        self.metadata_controls.setMaximumHeight(24)  # Kompaktowa wysokość
+        self.metadata_controls.setContentsMargins(0, 0, 0, 0)
         self.layout.addWidget(self.metadata_controls)
 
         # Połączenie sygnałów z MetadataControlsWidget
@@ -432,32 +455,29 @@ class FileTileWidget(QWidget):
     def _update_thumbnail_border_color(self, color_hex: str):
         """Aktualizuje kolor obwódki wokół miniatury."""
         if color_hex and color_hex.strip():
-            # ═══════════════════════════════════════════════════════════════
-            # KOLOROWA OBWÓDKA MINIATURY (DYNAMICZNA - ZALEŻNA OD KOLORU TAGU)
-            # ═══════════════════════════════════════════════════════════════
+            # Kolorowa obwódka miniatury - bezpośrednio wokół obrazka
             self.thumbnail_frame.setStyleSheet(
                 f"""
                 QFrame {{
-                    /* ▼▼▼ KOLOROWA OBWÓDKA WOKÓŁ MINIATURY ▼▼▼ */
-                    border: 2px solid {color_hex};          /* Grubość i kolor obwódki (6px) */
-                    border-radius: 2px;                     /* Zaokrąglone rogi obwódki */
-                    padding: 0px;                           /* Bez wewnętrznych odstępów */
-                    background-color: transparent;          /* Przezroczyste tło ramki */
+                    border: 2px solid {color_hex};
+                    border-radius: 4px;
+                    padding: 0px;
+                    margin: 0px;
+                    background-color: transparent;
                 }}
             """
             )
             logging.debug(f"Ustawiono kolor obwódki na: {color_hex}")
         else:
-            # ═══════════════════════════════════════════════════════════════
-            # BRAK OBWÓDKI (DOMYŚLNY STAN - BEZ KOLORU TAGU)
-            # ═══════════════════════════════════════════════════════════════
+            # Brak kolorowej obwódki - przezroczysta ramka
             self.thumbnail_frame.setStyleSheet(
                 """
                 QFrame {
-                    /* ▼▼▼ BRAK KOLOROWEJ OBWÓDKI ▼▼▼ */
-                    border: none;                           /* Bez obramowania */
-                    padding: 0px;                           /* Bez wewnętrznych odstępów */
-                    background-color: transparent;          /* Przezroczyste tło ramki */
+                    border: none;
+                    border-radius: 4px;
+                    padding: 0px;
+                    margin: 0px;
+                    background-color: transparent;
                 }
             """
             )
