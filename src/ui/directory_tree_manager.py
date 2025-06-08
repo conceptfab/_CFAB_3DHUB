@@ -530,7 +530,18 @@ class DirectoryTreeManager:
     ):
         logger.info(f"Pomyślnie usunięto folder: {deleted_folder_path}")
         progress_dialog.accept()
-        self.model.refresh()
+        # Odśwież model, obserwując katalog nadrzędny usuniętego folderu
+        parent_path = os.path.dirname(deleted_folder_path)
+        if parent_path:
+            self.model.setRootPath(
+                parent_path
+            )  # Ustawienie ścieżki głównej odświeża model
+            self.folder_tree.setRootIndex(self.model.index(parent_path))
+        else:
+            # Jeśli nie ma ścieżki nadrzędnej (np. usuwamy dysk), odśwież cały model
+            self.model.setRootPath("")  # To powinno odświeżyć widok do domyślnego stanu
+            # Można też rozważyć ponowne załadowanie całego drzewa, jeśli to konieczne
+
         QMessageBox.information(
             self.parent_window,
             "Sukces",
