@@ -749,6 +749,40 @@ class MainWindow(QMainWindow):
         """
         self.gallery_manager.update_gallery_view()
 
+    def refresh_all_views(self, new_selection=None):
+        """
+        Odświeża wszystkie widoki po operacjach na plikach.
+        Wywołuje ponowne skanowanie folderu i aktualizuje wszystkie komponenty UI.
+
+        Args:
+            new_selection: FilePair do zaznaczenia po odświeżeniu (opcjonalne)
+        """
+        if not self.current_working_directory:
+            return
+
+        # Zapobiegnij duplikowaniu operacji skanowania
+        if (
+            hasattr(self, "scan_thread")
+            and self.scan_thread
+            and self.scan_thread.isRunning()
+        ):
+            logging.info("Skanowanie już w toku - pomijanie refresh_all_views")
+            return
+
+        logging.info("Odświeżanie wszystkich widoków po operacji na plikach")
+
+        # Wyczyść cache skanera aby wymusić ponowne skanowanie
+        from src.logic.scanner import clear_cache
+
+        clear_cache()
+
+        # Zapisz zaznaczenie do przywrócenia po odświeżeniu
+        if new_selection:
+            self._pending_selection = new_selection
+
+        # Rozpocznij ponowne skanowanie bieżącego folderu
+        self._select_working_directory(self.current_working_directory)
+
     def _update_thumbnail_size(self):
         """
         Aktualizuje rozmiar miniatur i przerenderowuje galerię.
