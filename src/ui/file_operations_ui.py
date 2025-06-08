@@ -289,7 +289,33 @@ class FileOperationsUI:
         preview_path = preview_item.data(Qt.ItemDataRole.UserRole)
 
         # Używamy nowej funkcji z file_operations, która zwraca worker
-        worker = file_operations.manually_pair_files(archive_path, preview_path)
+        # Pobieramy working_directory z parent_window.current_working_directory
+        if not hasattr(self.parent_window, "current_working_directory"):
+            QMessageBox.critical(
+                self.parent_window,
+                "Błąd konfiguracji",
+                "Nie można uzyskać ścieżki bieżącego katalogu roboczego. Operacja parowania przerwana.",
+            )
+            logger.error(
+                "Nie można uzyskać working_directory z self.parent_window.current_working_directory"
+            )
+            return
+
+        working_directory = self.parent_window.current_working_directory
+        if not working_directory or not os.path.isdir(working_directory):
+            QMessageBox.critical(
+                self.parent_window,
+                "Błąd ścieżki roboczej",
+                f"Uzyskana ścieżka katalogu roboczego jest nieprawidłowa lub nie istnieje: {working_directory}",
+            )
+            logger.error(
+                f"Nieprawidłowa ścieżka working_directory: {working_directory}"
+            )
+            return
+
+        worker = file_operations.manually_pair_files(
+            archive_path, preview_path, working_directory
+        )
 
         if worker:
             base_archive_name = os.path.basename(archive_path)

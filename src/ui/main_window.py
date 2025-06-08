@@ -392,13 +392,16 @@ class MainWindow(QMainWindow):
 
     def _init_managers(self):
         """
-        Inicjalizuje managery.
+        Inicjalizuje managerów UI.
         """
-        # Gallery Manager
-        self.gallery_manager = GalleryManager(self.tiles_container, self.tiles_layout)
+        # Tworzenie instancji AppConfig - PRZENIESIONE NA POCZĄTEK
+        self.app_config = app_config.AppConfig()
 
-        # Directory Tree Manager
+        # Inicjalizacja DirectoryTreeManager
         self.directory_tree_manager = DirectoryTreeManager(self.folder_tree, self)
+
+        # Inicjalizacja GalleryManager
+        self.gallery_manager = GalleryManager(self.tiles_container, self.tiles_layout)
 
         # File Operations UI
         self.file_operations_ui = FileOperationsUI(self)
