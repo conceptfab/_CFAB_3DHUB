@@ -6,7 +6,16 @@ import logging
 import os  # Dodano brakujący import os
 from typing import List
 
-from PyQt6.QtCore import QDir, QEvent, QMimeData, QModelIndex, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import (
+    QDir,
+    QEvent,
+    QMimeData,
+    QModelIndex,
+    Qt,
+    QThreadPool,
+    QTimer,
+    pyqtSignal,
+)
 from PyQt6.QtGui import (
     QAction,
     QColor,
@@ -17,6 +26,7 @@ from PyQt6.QtGui import (
     QFileSystemModel,
     QMouseEvent,
 )
+from PyQt6.QtWidgets import QProgressDialog  # Dodano QProgressDialog
 from PyQt6.QtWidgets import (
     QApplication,
     QInputDialog,
@@ -28,13 +38,20 @@ from PyQt6.QtWidgets import (
 )
 
 from src.logic import file_operations
+
+# Dodajemy importy workerów
+from src.logic.file_operations import (
+    CreateFolderWorker,
+    DeleteFolderWorker,
+    RenameFolderWorker,
+)
 from src.logic.scanner import scan_folder_for_pairs
 from src.utils.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)  # Dodano inicjalizację loggera
 
 
-# Definicja delegata do podświetlania celu upuszczania
+# Definicja delegata do podświetlania celu upuszczenia
 class DropHighlightDelegate(QStyledItemDelegate):  # Definicja klasy
     def __init__(self, directory_tree_manager, parent=None):
         super().__init__(parent)
@@ -362,44 +379,200 @@ class DirectoryTreeManager:
         # Dodanie akcji do menu
         create_folder_action = context_menu.addAction("Nowy folder")
         rename_folder_action = context_menu.addAction("Zmień nazwę")
-        delete_folder_action = context_menu.addAction("Usuń folder")
-
-        # Połączenie akcji z metodami
+        delete_folder_action = context_menu.addAction(
+            "Usuń folder"
+        )  # Połączenie akcji z metodami
         create_folder_action.triggered.connect(lambda: self.create_folder(folder_path))
         rename_folder_action.triggered.connect(lambda: self.rename_folder(folder_path))
-        delete_folder_action.triggered.connect(lambda: self.delete_folder(folder_path))
+        delete_folder_action.triggered.connect(
+            lambda: self.delete_folder(
+                folder_path, self.parent_window.current_working_directory
+            )
+        )
 
         # Wyświetlenie menu
         context_menu.exec(self.folder_tree.mapToGlobal(position))
 
     def create_folder(self, parent_folder_path: str):
         """
-        Tworzy nowy folder w wybranej lokalizacji.
+        Tworzy nowy folder w wybranej lokalizacji przy użyciu workera.
         """
         folder_name, ok = QInputDialog.getText(
             self.parent_window, "Nowy folder", "Podaj nazwę folderu:"
         )
 
         if ok and folder_name:
-            created_path = file_operations.create_folder(
-                parent_folder_path, folder_name
-            )
-            if created_path:
-                logging.info(f"Utworzono folder: {created_path}")
-                # Odświeżenie widoku drzewa
-                self.model.refresh()
+            # Normalizacja ścieżki i nazwy folderu
+            parent_folder_path_norm = normalize_path(parent_folder_path)
+
+            worker = file_operations.create_folder(parent_folder_path_norm, folder_name)
+
+            if worker:
+                # Utworzenie okna dialogowego postępu
+                progress_dialog = QProgressDialog(
+                    f"Tworzenie folderu '{folder_name}'...",
+                    "Anuluj",
+                    0,
+                    0,  # Ustawienie min i max na 0 dla nieokreślonego paska postępu
+                    self.parent_window,
+                )
+                progress_dialog.setWindowTitle("Tworzenie folderu")
+                progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+                progress_dialog.setAutoClose(
+                    True
+                )  # Zamknie się automatycznie po zakończeniu
+                progress_dialog.setAutoReset(True)  # Zresetuje się po zakończeniu
+                progress_dialog.setValue(0)  # Pokaż pasek jako zajęty
+
+                # Połączenie sygnałów workera
+                worker.signals.finished.connect(
+                    lambda path: self._handle_create_folder_finished(
+                        path, progress_dialog
+                    )
+                )
+                worker.signals.error.connect(
+                    lambda err_msg: self._handle_operation_error(
+                        err_msg, "Błąd tworzenia folderu", progress_dialog
+                    )
+                )
+                worker.signals.progress.connect(
+                    lambda percent, msg: self._handle_operation_progress(
+                        percent, msg, progress_dialog
+                    )
+                )
+                worker.signals.interrupted.connect(
+                    lambda: self._handle_operation_interrupted(
+                        "Tworzenie folderu przerwane.", progress_dialog
+                    )
+                )
+
+                # Połączenie sygnału anulowania z okna dialogowego z metodą interrupt workera
+                progress_dialog.canceled.connect(worker.interrupt)
+
+                # Uruchomienie workera
+                QThreadPool.globalInstance().start(worker)
+                progress_dialog.show()
             else:
+                # Błąd walidacji przed utworzeniem workera (np. zła nazwa, folder nadrzędny nie istnieje)
+                # Komunikat powinien być już zalogowany przez file_operations.create_folder
+                # Możemy tu wyświetlić ogólny komunikat, jeśli file_operations nie wyświetla własnego
                 QMessageBox.warning(
                     self.parent_window,
-                    "Błąd tworzenia folderu",
-                    f"Nie udało się utworzyć folderu '{folder_name}' "
-                    f"w '{parent_folder_path}'.",
+                    "Błąd inicjalizacji",
+                    f"Nie można zainicjować operacji tworzenia folderu '{folder_name}'. Sprawdź logi po szczegóły.",
                     QMessageBox.StandardButton.Ok,
                 )
 
+    def _handle_create_folder_finished(
+        self, created_folder_path: str, progress_dialog: QProgressDialog
+    ):
+        logger.info(f"Pomyślnie utworzono folder: {created_folder_path}")
+        progress_dialog.accept()  # Zamknij okno dialogowe
+        self.model.refresh()  # Odśwież model drzewa
+        # Opcjonalnie: zaznacz nowo utworzony folder
+        new_index = self.model.index(created_folder_path)
+        if new_index.isValid():
+            self.folder_tree.setCurrentIndex(new_index)
+            self.folder_tree.scrollTo(new_index)
+        QMessageBox.information(
+            self.parent_window,
+            "Sukces",
+            f"Pomyślnie utworzono folder '{os.path.basename(created_folder_path)}'.",
+        )
+
+    def _handle_operation_error(
+        self, error_message: str, title: str, progress_dialog: QProgressDialog
+    ):
+        logger.error(f"{title}: {error_message}")
+        if progress_dialog.isVisible():
+            progress_dialog.reject()  # Zamknij okno dialogowe
+        QMessageBox.critical(self.parent_window, title, error_message)
+        self.model.refresh()  # Odśwież model na wszelki wypadek
+
+    def _handle_operation_progress(
+        self, percent: int, message: str, progress_dialog: QProgressDialog
+    ):
+        logger.debug(f"Postęp operacji: {percent}% - {message}")
+        if progress_dialog.isVisible():
+            if progress_dialog.maximum() == 0:  # Jeśli pasek jest nieokreślony
+                progress_dialog.setLabelText(message)
+            else:
+                progress_dialog.setValue(percent)
+                progress_dialog.setLabelText(message)
+
+    def _handle_operation_interrupted(
+        self, message: str, progress_dialog: QProgressDialog
+    ):
+        logger.info(f"Operacja przerwana: {message}")
+        if progress_dialog.isVisible():
+            progress_dialog.reject()  # Zamknij okno dialogowe
+        QMessageBox.information(self.parent_window, "Operacja przerwana", message)
+        self.model.refresh()  # Odśwież model, aby odzwierciedlić ewentualne częściowe zmiany
+
+    def _handle_rename_folder_finished(
+        self, old_path: str, new_path: str, progress_dialog: QProgressDialog
+    ):
+        logger.info(f"Pomyślnie zmieniono nazwę folderu z '{old_path}' na '{new_path}'")
+        progress_dialog.accept()
+        self.model.refresh()
+        new_index = self.model.index(new_path)
+        if new_index.isValid():
+            self.folder_tree.setCurrentIndex(new_index)
+            self.folder_tree.scrollTo(new_index)
+        QMessageBox.information(
+            self.parent_window,
+            "Sukces",
+            f"Pomyślnie zmieniono nazwę folderu '{os.path.basename(old_path)}' na '{os.path.basename(new_path)}'.",
+        )
+
+    def _handle_delete_folder_finished(
+        self, deleted_folder_path: str, progress_dialog: QProgressDialog
+    ):
+        logger.info(f"Pomyślnie usunięto folder: {deleted_folder_path}")
+        progress_dialog.accept()
+        self.model.refresh()
+        QMessageBox.information(
+            self.parent_window,
+            "Sukces",
+            f"Pomyślnie usunięto folder '{os.path.basename(deleted_folder_path)}'.",
+        )
+        # Sprawdź, czy current_working_directory w MainWindow nie wskazuje na usunięty folder
+        # lub jego podfolder. Jeśli tak, zresetuj current_working_directory.
+        if (
+            self.parent_window
+            and hasattr(self.parent_window, "current_working_directory")
+            and self.parent_window.current_working_directory
+            and (
+                normalize_path(self.parent_window.current_working_directory)
+                == normalize_path(deleted_folder_path)
+                or normalize_path(
+                    self.parent_window.current_working_directory
+                ).startswith(normalize_path(deleted_folder_path) + os.sep)
+            )
+        ):
+            logger.info(
+                f"Obecny folder roboczy '{self.parent_window.current_working_directory}' znajdował się w usuniętym folderze. Resetowanie."
+            )
+            # Można ustawić na folder nadrzędny usuniętego folderu lub na root drzewa
+            parent_of_deleted = os.path.dirname(deleted_folder_path)
+            if (
+                os.path.exists(parent_of_deleted)
+                and parent_of_deleted != self._main_working_directory
+                and parent_of_deleted.startswith(self._main_working_directory)
+            ):
+                self.parent_window.select_folder(
+                    parent_of_deleted
+                )  # Metoda w MainWindow do zmiany folderu
+            elif self._main_working_directory and os.path.exists(
+                self._main_working_directory
+            ):
+                self.parent_window.select_folder(self._main_working_directory)
+            else:  # Fallback, jeśli nawet _main_working_directory nie istnieje
+                self.parent_window.select_folder(self.model.rootPath())
+
     def rename_folder(self, folder_path: str):
         """
-        Zmienia nazwę wybranego folderu.
+        Zmienia nazwę wybranego folderu przy użyciu workera.
         """
         old_name = os.path.basename(folder_path)
         new_name, ok = QInputDialog.getText(
@@ -410,79 +583,159 @@ class DirectoryTreeManager:
         )
 
         if ok and new_name and new_name != old_name:
-            new_path = file_operations.rename_folder(folder_path, new_name)
-            if new_path:
-                logging.info(
-                    f"Zmieniono nazwę folderu z '{folder_path}' na '{new_path}'"
+            # Normalizacja ścieżki
+            folder_path_norm = normalize_path(folder_path)
+
+            worker = file_operations.rename_folder(folder_path_norm, new_name)
+
+            if worker:
+                progress_dialog = QProgressDialog(
+                    f"Zmiana nazwy folderu '{old_name}' na '{new_name}'...",
+                    "Anuluj",
+                    0,
+                    0,
+                    self.parent_window,
                 )
-                # Odświeżenie widoku drzewa
-                self.model.refresh()
+                progress_dialog.setWindowTitle("Zmiana nazwy folderu")
+                progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+                progress_dialog.setAutoClose(True)
+                progress_dialog.setAutoReset(True)
+                progress_dialog.setValue(0)
+
+                worker.signals.finished.connect(
+                    lambda old, new: self._handle_rename_folder_finished(
+                        old, new, progress_dialog
+                    )
+                )
+                worker.signals.error.connect(
+                    lambda err_msg: self._handle_operation_error(
+                        err_msg, "Błąd zmiany nazwy folderu", progress_dialog
+                    )
+                )
+                worker.signals.progress.connect(
+                    lambda percent, msg: self._handle_operation_progress(
+                        percent, msg, progress_dialog
+                    )
+                )
+                worker.signals.interrupted.connect(
+                    lambda: self._handle_operation_interrupted(
+                        "Zmiana nazwy folderu przerwana.", progress_dialog
+                    )
+                )
+                progress_dialog.canceled.connect(worker.interrupt)
+
+                QThreadPool.globalInstance().start(worker)
+                progress_dialog.show()
             else:
                 QMessageBox.warning(
                     self.parent_window,
-                    "Błąd zmiany nazwy",
-                    f"Nie udało się zmienić nazwy folderu "
-                    f"'{old_name}' na '{new_name}'.",
+                    "Błąd inicjalizacji",
+                    f"Nie można zainicjować operacji zmiany nazwy folderu '{old_name}'. Sprawdź logi po szczegóły.",
                     QMessageBox.StandardButton.Ok,
                 )
 
     def delete_folder(self, folder_path: str, current_working_directory: str):
         """
-        Usuwa wybrany folder po potwierdzeniu przez użytkownika.
+        Usuwa wybrany folder po potwierdzeniu przez użytkownika, używając workera.
         """
         folder_name = os.path.basename(folder_path)
+        folder_path_norm = normalize_path(folder_path)
+        current_working_directory_norm = normalize_path(current_working_directory)
 
-        # Sprawdź czy folder nie jest folderem roboczym
-        if os.path.samefile(folder_path, current_working_directory):
+        if folder_path_norm == current_working_directory_norm:
             QMessageBox.warning(
                 self.parent_window,
                 "Nie można usunąć folderu",
-                "Nie można usunąć głównego folderu roboczego.",
+                "Nie można usunąć bieżącego folderu roboczego.",
                 QMessageBox.StandardButton.Ok,
             )
-            return False
+            return
 
-        # Pobierz listę plików w folderze
-        try:
-            has_content = len(os.listdir(folder_path)) > 0
-        except Exception:
-            has_content = True  # W przypadku błędu, zakładamy zawartość
-
-        # Treść komunikatu potwierdzenia
-        if has_content:
-            message = (
-                f"Czy na pewno chcesz usunąć folder '{folder_name}' "
-                f"i całą jego zawartość?\n"
-                "Ta operacja jest nieodwracalna!"
+        if self._main_working_directory and folder_path_norm == normalize_path(
+            self._main_working_directory
+        ):
+            QMessageBox.warning(
+                self.parent_window,
+                "Nie można usunąć folderu",
+                "Nie można usunąć głównego folderu roboczego aplikacji. Zmień najpierw główny folder roboczy.",
+                QMessageBox.StandardButton.Ok,
             )
-            delete_content = True
-        else:
-            message = f"Czy na pewno chcesz usunąć pusty folder '{folder_name}'?"
-            delete_content = False
+            return
 
-        # Potwierdzenie od użytkownika
+        try:
+            has_content = len(os.listdir(folder_path_norm)) > 0
+        except OSError as e:
+            logger.error(f"Błąd odczytu zawartości folderu {folder_path_norm}: {e}")
+            QMessageBox.critical(
+                self.parent_window,
+                "Błąd odczytu folderu",
+                f"Nie można odczytać zawartości folderu '{folder_name}'. Sprawdź uprawnienia i czy folder istnieje.",
+            )
+            return
+
+        message = (
+            f"Czy na pewno chcesz usunąć folder '{folder_name}' "
+            f"i całą jego zawartość?\n\nTa operacja jest nieodwracalna!"
+            if has_content
+            else f"Czy na pewno chcesz usunąć pusty folder '{folder_name}'?"
+        )
+
         reply = QMessageBox.question(
             self.parent_window,
             "Potwierdź usunięcie",
             message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            success = file_operations.delete_folder(folder_path, delete_content)
-            if success:
-                logging.info(f"Usunięto folder: {folder_path}")
-                # Odświeżenie widoku drzewa
-                self.model.refresh()
-                return True
+            worker = file_operations.delete_folder(folder_path_norm, has_content)
+
+            if worker:
+                progress_dialog = QProgressDialog(
+                    f"Usuwanie folderu '{folder_name}'...",
+                    "Anuluj",
+                    0,
+                    0,
+                    self.parent_window,
+                )
+                progress_dialog.setWindowTitle("Usuwanie folderu")
+                progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+                progress_dialog.setAutoClose(True)
+                progress_dialog.setAutoReset(True)
+                progress_dialog.setValue(0)
+
+                worker.signals.finished.connect(
+                    lambda path: self._handle_delete_folder_finished(
+                        path, progress_dialog
+                    )
+                )
+                worker.signals.error.connect(
+                    lambda err_msg: self._handle_operation_error(
+                        err_msg, "Błąd usuwania folderu", progress_dialog
+                    )
+                )
+                worker.signals.progress.connect(
+                    lambda percent, msg: self._handle_operation_progress(
+                        percent, msg, progress_dialog
+                    )
+                )
+                worker.signals.interrupted.connect(
+                    lambda: self._handle_operation_interrupted(
+                        "Usuwanie folderu przerwane.", progress_dialog
+                    )
+                )
+                progress_dialog.canceled.connect(worker.interrupt)
+
+                QThreadPool.globalInstance().start(worker)
+                progress_dialog.show()
             else:
                 QMessageBox.warning(
                     self.parent_window,
-                    "Błąd usuwania folderu",
-                    f"Nie udało się usunąć folderu '{folder_name}'.",
+                    "Błąd inicjalizacji",
+                    f"Nie można zainicjować operacji usuwania folderu '{folder_name}'. Sprawdź logi po szczegóły.",
                     QMessageBox.StandardButton.Ok,
                 )
-        return False
 
     def refresh_file_pairs_after_folder_operation(self, current_working_directory: str):
         """

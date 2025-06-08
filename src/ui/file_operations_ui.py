@@ -6,11 +6,22 @@ import logging
 import os
 from typing import List, Optional
 
+from PyQt6.QtCore import QThreadPool  # Dodano QThreadPool
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QProgressDialog  # Dodano QProgressDialog
 from PyQt6.QtWidgets import QInputDialog, QListWidget, QMenu, QMessageBox, QWidget
 
 from src.logic import file_operations
+
+# Dodajemy importy workerów z file_operations, jeśli jeszcze nie ma
+from src.logic.file_operations import (
+    DeleteFilePairWorker,
+    ManuallyPairFilesWorker,
+    MoveFilePairWorker,
+    RenameFilePairWorker,
+)
 from src.models.file_pair import FilePair
+from src.utils.path_utils import normalize_path  # Dodano import normalize_path
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +33,43 @@ class FileOperationsUI:
 
     def __init__(self, parent_window):
         self.parent_window = parent_window
+
+    # Wspólne metody obsługi sygnałów workerów (podobne do DirectoryTreeManager)
+    def _handle_operation_error(
+        self, error_message: str, title: str, progress_dialog: QProgressDialog
+    ):
+        logger.error(f"{title}: {error_message}")
+        if progress_dialog and progress_dialog.isVisible():
+            progress_dialog.reject()
+        QMessageBox.critical(self.parent_window, title, error_message)
+        # Można dodać odświeżanie widoków, jeśli to konieczne
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
+        ):
+            self.parent_window.refresh_all_views()
+
+    def _handle_operation_progress(
+        self, percent: int, message: str, progress_dialog: QProgressDialog
+    ):
+        logger.debug(f"Postęp operacji: {percent}% - {message}")
+        if progress_dialog and progress_dialog.isVisible():
+            if progress_dialog.maximum() == 0:  # Nieokreślony
+                progress_dialog.setLabelText(message)
+            else:
+                progress_dialog.setValue(percent)
+                progress_dialog.setLabelText(message)
+
+    def _handle_operation_interrupted(
+        self, message: str, progress_dialog: QProgressDialog
+    ):
+        logger.info(f"Operacja przerwana: {message}")
+        if progress_dialog and progress_dialog.isVisible():
+            progress_dialog.reject()
+        QMessageBox.information(self.parent_window, "Operacja przerwana", message)
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
+        ):
+            self.parent_window.refresh_all_views()
 
     def show_file_context_menu(self, file_pair: FilePair, widget: QWidget, position):
         """
@@ -46,9 +94,9 @@ class FileOperationsUI:
 
     def rename_file_pair(
         self, file_pair: FilePair, widget: QWidget
-    ) -> Optional[FilePair]:
+    ) -> None:  # Zmieniono zwracany typ na None, bo worker obsługuje wynik
         """
-        Rozpoczyna proces zmiany nazwy dla pary plików.
+        Rozpoczyna proces zmiany nazwy dla pary plików przy użyciu workera.
         """
         current_name = file_pair.get_base_name()
         new_name, ok = QInputDialog.getText(
@@ -59,37 +107,82 @@ class FileOperationsUI:
         )
 
         if ok and new_name and new_name != current_name:
-            try:
-                # Sprawdź czy funkcja istnieje przed wywołaniem
-                if hasattr(file_operations, "rename_file_pair"):
-                    new_file_pair = file_operations.rename_file_pair(
-                        file_pair, new_name
-                    )
-                    logging.info(f"Zmieniono nazwę {current_name} na {new_name}.")
-                    return new_file_pair
-                else:
-                    raise NotImplementedError(
-                        "Funkcja rename_file_pair nie została zaimplementowana"
-                    )
+            worker = file_operations.rename_file_pair(file_pair, new_name)
 
-            except FileExistsError:
-                QMessageBox.critical(
+            if worker:
+                progress_dialog = QProgressDialog(
+                    f"Zmiana nazwy pliku '{current_name}' na '{new_name}'...",
+                    "Anuluj",
+                    0,
+                    0,
                     self.parent_window,
-                    "Błąd",
-                    f"Plik o nazwie '{new_name}' już istnieje.",
                 )
-            except Exception as e:
-                QMessageBox.critical(
-                    self.parent_window,
-                    "Błąd zmiany nazwy",
-                    f"Wystąpił nieoczekiwany błąd: {e}",
-                )
-                logging.error(e)
-        return None
+                progress_dialog.setWindowTitle("Zmiana nazwy pliku")
+                progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+                progress_dialog.setAutoClose(True)
+                progress_dialog.setAutoReset(True)
+                progress_dialog.setValue(0)
 
-    def delete_file_pair(self, file_pair: FilePair, widget: QWidget):
+                worker.signals.finished.connect(
+                    lambda old_fp, new_fp: self._handle_rename_file_pair_finished(
+                        old_fp, new_fp, progress_dialog
+                    )
+                )
+                worker.signals.error.connect(
+                    lambda err_msg: self._handle_operation_error(
+                        err_msg, "Błąd zmiany nazwy pliku", progress_dialog
+                    )
+                )
+                worker.signals.progress.connect(
+                    lambda percent, msg: self._handle_operation_progress(
+                        percent, msg, progress_dialog
+                    )
+                )
+                worker.signals.interrupted.connect(
+                    lambda: self._handle_operation_interrupted(
+                        "Zmiana nazwy pliku przerwana.", progress_dialog
+                    )
+                )
+                progress_dialog.canceled.connect(worker.interrupt)
+
+                QThreadPool.globalInstance().start(worker)
+                progress_dialog.show()
+            else:
+                QMessageBox.warning(
+                    self.parent_window,
+                    "Błąd inicjalizacji",
+                    f"Nie można zainicjować operacji zmiany nazwy pliku '{current_name}'. Sprawdź logi.",
+                )
+        # Usunięto return None, metoda nie zwraca już bezpośrednio wyniku
+
+    def _handle_rename_file_pair_finished(
+        self,
+        old_file_pair: FilePair,
+        new_file_pair: FilePair,
+        progress_dialog: QProgressDialog,
+    ):
+        logger.info(
+            f"Pomyślnie zmieniono nazwę pliku z '{old_file_pair.get_base_name()}' na '{new_file_pair.get_base_name()}'.",
+        )
+        if progress_dialog.isVisible():
+            progress_dialog.accept()
+
+        QMessageBox.information(
+            self.parent_window,
+            "Sukces",
+            f"Pomyślnie zmieniono nazwę pliku '{old_file_pair.get_base_name()}' na '{new_file_pair.get_base_name()}'.",
+        )
+        # Odśwież widoki w MainWindow
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
+        ):
+            self.parent_window.refresh_all_views(new_selection=new_file_pair)
+
+    def delete_file_pair(
+        self, file_pair: FilePair, widget: QWidget
+    ) -> None:  # Zmieniono zwracany typ
         """
-        Usuwa parę plików (archiwum i podgląd) po potwierdzeniu.
+        Usuwa parę plików (archiwum i podgląd) po potwierdzeniu, używając workera.
         """
         confirm = QMessageBox.question(
             self.parent_window,
@@ -104,31 +197,78 @@ class FileOperationsUI:
         )
 
         if confirm == QMessageBox.StandardButton.Yes:
-            try:
-                # Sprawdź czy funkcja istnieje przed wywołaniem
-                if hasattr(file_operations, "delete_file_pair"):
-                    file_operations.delete_file_pair(file_pair)
-                    logging.info(f"Usunięto pliki dla {file_pair.get_base_name()}.")
-                    return True
-                else:
-                    raise NotImplementedError(
-                        "Funkcja delete_file_pair nie została zaimplementowana"
-                    )
+            worker = file_operations.delete_file_pair(file_pair)
 
-            except Exception as e:
-                QMessageBox.critical(
+            if worker:
+                progress_dialog = QProgressDialog(
+                    f"Usuwanie plików dla '{file_pair.get_base_name()}'...",
+                    "Anuluj",
+                    0,
+                    0,
                     self.parent_window,
-                    "Błąd usuwania",
-                    f"Wystąpił błąd podczas usuwania plików: {e}",
                 )
-                logging.error(e)
-        return False
+                progress_dialog.setWindowTitle("Usuwanie plików")
+                progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+                progress_dialog.setAutoClose(True)
+                progress_dialog.setAutoReset(True)
+                progress_dialog.setValue(0)
+
+                worker.signals.finished.connect(
+                    lambda fp: self._handle_delete_file_pair_finished(
+                        fp, progress_dialog
+                    )
+                )
+                worker.signals.error.connect(
+                    lambda err_msg: self._handle_operation_error(
+                        err_msg, "Błąd usuwania plików", progress_dialog
+                    )
+                )
+                worker.signals.progress.connect(
+                    lambda percent, msg: self._handle_operation_progress(
+                        percent, msg, progress_dialog
+                    )
+                )
+                worker.signals.interrupted.connect(
+                    lambda: self._handle_operation_interrupted(
+                        "Usuwanie plików przerwane.", progress_dialog
+                    )
+                )
+                progress_dialog.canceled.connect(worker.interrupt)
+
+                QThreadPool.globalInstance().start(worker)
+                progress_dialog.show()
+            else:
+                QMessageBox.warning(
+                    self.parent_window,
+                    "Błąd inicjalizacji",
+                    f"Nie można zainicjować operacji usuwania plików dla '{file_pair.get_base_name()}'. Sprawdź logi.",
+                )
+        # Usunięto return False/True
+
+    def _handle_delete_file_pair_finished(
+        self, deleted_file_pair: FilePair, progress_dialog: QProgressDialog
+    ):
+        logger.info(
+            f"Pomyślnie usunięto pliki dla {deleted_file_pair.get_base_name()}."
+        )
+        if progress_dialog.isVisible():
+            progress_dialog.accept()
+
+        QMessageBox.information(
+            self.parent_window,
+            "Sukces",
+            f"Pomyślnie usunięto pliki dla '{deleted_file_pair.get_base_name()}'.",
+        )
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
+        ):
+            self.parent_window.refresh_all_views()
 
     def handle_manual_pairing(
         self, unpaired_archives_list: QListWidget, unpaired_previews_list: QListWidget
-    ):
+    ) -> None:  # Zmieniono zwracany typ
         """
-        Obsługuje logikę ręcznego parowania plików zaznaczonych na listach.
+        Obsługuje logikę ręcznego parowania plików zaznaczonych na listach, używając workera.
         """
         selected_archives = unpaired_archives_list.selectedItems()
         selected_previews = unpaired_previews_list.selectedItems()
@@ -148,34 +288,75 @@ class FileOperationsUI:
         archive_path = archive_item.data(Qt.ItemDataRole.UserRole)
         preview_path = preview_item.data(Qt.ItemDataRole.UserRole)
 
-        try:
-            # Sprawdź czy funkcja istnieje przed wywołaniem
-            if hasattr(file_operations, "create_pair_from_files"):
-                new_pair = file_operations.create_pair_from_files(
-                    archive_path, preview_path
-                )
-                logging.info(
-                    f"Ręcznie sparowano: {new_pair.get_archive_path()} "
-                    f"z {new_pair.get_preview_path()}"
-                )
+        # Używamy nowej funkcji z file_operations, która zwraca worker
+        worker = file_operations.manually_pair_files(archive_path, preview_path)
 
-                QMessageBox.information(
-                    self.parent_window,
-                    "Sukces",
-                    f"Pomyślnie sparowano pliki dla " f"'{new_pair.get_base_name()}'.",
-                )
-                return new_pair
-            else:
-                raise NotImplementedError(
-                    "Funkcja create_pair_from_files nie została " "zaimplementowana"
-                )
+        if worker:
+            base_archive_name = os.path.basename(archive_path)
+            base_preview_name = os.path.basename(preview_path)
+            progress_dialog = QProgressDialog(
+                f"Parowanie '{base_archive_name}' z '{base_preview_name}'...",
+                "Anuluj",
+                0,
+                0,
+                self.parent_window,
+            )
+            progress_dialog.setWindowTitle("Ręczne parowanie plików")
+            progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            progress_dialog.setAutoClose(True)
+            progress_dialog.setAutoReset(True)
+            progress_dialog.setValue(0)
 
-        except Exception as e:
-            error_message = f"Błąd podczas ręcznego parowania: {e}"
-            logging.error(error_message)
-            QMessageBox.critical(self.parent_window, "Błąd", error_message)
+            worker.signals.finished.connect(
+                lambda new_fp: self._handle_manual_pairing_finished(
+                    new_fp, progress_dialog
+                )
+            )
+            worker.signals.error.connect(
+                lambda err_msg: self._handle_operation_error(
+                    err_msg, "Błąd ręcznego parowania", progress_dialog
+                )
+            )
+            worker.signals.progress.connect(
+                lambda percent, msg: self._handle_operation_progress(
+                    percent, msg, progress_dialog
+                )
+            )
+            worker.signals.interrupted.connect(
+                lambda: self._handle_operation_interrupted(
+                    "Ręczne parowanie przerwane.", progress_dialog
+                )
+            )
+            progress_dialog.canceled.connect(worker.interrupt)
 
-        return None
+            QThreadPool.globalInstance().start(worker)
+            progress_dialog.show()
+        else:
+            QMessageBox.warning(
+                self.parent_window,
+                "Błąd inicjalizacji",
+                "Nie można zainicjować operacji ręcznego parowania. Sprawdź logi.",
+            )
+        # Usunięto return None
+
+    def _handle_manual_pairing_finished(
+        self, new_file_pair: FilePair, progress_dialog: QProgressDialog
+    ):
+        logger.info(
+            f"Pomyślnie sparowano pliki: {new_file_pair.get_archive_path()} z {new_file_pair.get_preview_path()}"
+        )
+        if progress_dialog.isVisible():
+            progress_dialog.accept()
+
+        QMessageBox.information(
+            self.parent_window,
+            "Sukces",
+            f"Pomyślnie sparowano pliki dla '{new_file_pair.get_base_name()}'.",
+        )
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
+        ):
+            self.parent_window.refresh_all_views(new_selection=new_file_pair)
 
     def handle_drop_on_folder(self, urls: List, target_folder_path: str):
         """
@@ -225,93 +406,115 @@ class FileOperationsUI:
 
     def move_file_pair_ui(
         self, file_pair_to_move: FilePair, target_folder_path: str
-    ) -> Optional[FilePair]:
+    ) -> None:  # Zmieniono zwracany typ
         """
-        Obsługuje przenoszenie pary plików do nowego folderu z obsługą UI.
+        Obsługuje przenoszenie pary plików do nowego folderu z obsługą UI, używając workera.
 
         Args:
             file_pair_to_move: Para plików do przeniesienia.
             target_folder_path: Ścieżka do folderu docelowego.
 
         Returns:
-            Nowy obiekt FilePair z zaktualizowanymi ścieżkami po pomyślnym przeniesieniu,
-            lub None w przypadku niepowodzenia.
+            None, ponieważ operacja jest asynchroniczna.
         """
         if not file_pair_to_move or not target_folder_path:
             logger.warning(
                 "Próba przeniesienia nieprawidłowej pary plików lub do nieprawidłowej lokalizacji."
             )
-            return None
+            # Można rozważyć wyświetlenie QMessageBox tutaj, jeśli to błąd użytkownika
+            return
 
-        original_archive_path = file_pair_to_move.archive_path
-        original_preview_path = file_pair_to_move.preview_path
-
-        try:
-            logger.info(
-                f"Próba przeniesienia pary plików: '{file_pair_to_move.base_name}' "
-                f"do folderu: '{target_folder_path}'"
-            )
-
-            # Sprawdzenie, czy folder docelowy jest taki sam jak folder źródłowy
-            source_folder_path = os.path.dirname(file_pair_to_move.archive_path)
-            if os.path.abspath(source_folder_path) == os.path.abspath(
-                target_folder_path
-            ):
-                QMessageBox.information(
-                    self.parent_window,
-                    "Informacja",
-                    "Plik już znajduje się w folderze docelowym.",
-                )
-                return (
-                    file_pair_to_move  # Zwracamy oryginalny obiekt, bo nie było zmiany
-                )
-
-            new_file_pair = file_operations.move_file_pair(
-                file_pair_to_move, target_folder_path
-            )
-
+        # Sprawdzenie, czy folder docelowy jest taki sam jak folder źródłowy
+        source_folder_path = os.path.dirname(file_pair_to_move.archive_path)
+        if normalize_path(source_folder_path) == normalize_path(target_folder_path):
             QMessageBox.information(
                 self.parent_window,
-                "Sukces",
-                f"Pomyślnie przeniesiono '{new_file_pair.base_name}' "
-                f"do '{target_folder_path}'.",
+                "Informacja",
+                "Plik już znajduje się w folderze docelowym.",
             )
-            logger.info(
-                f"Pomyślnie przeniesiono parę plików. Nowe ścieżki: "
-                f"Archiwum: '{new_file_pair.archive_path}', "
-                f"Podgląd: '{new_file_pair.preview_path}'"
-            )
-            return new_file_pair
+            return
 
-        except FileExistsError:
-            error_msg = (
-                f"Plik o tej samej nazwie już istnieje w folderze docelowym: "
-                f"'{target_folder_path}'. Przenoszenie nie powiodło się."
+        worker = file_operations.move_file_pair(file_pair_to_move, target_folder_path)
+
+        if worker:
+            base_name = file_pair_to_move.get_base_name()
+            target_dir_name = os.path.basename(normalize_path(target_folder_path))
+            progress_dialog = QProgressDialog(
+                f"Przenoszenie '{base_name}' do folderu '{target_dir_name}'...",
+                "Anuluj",
+                0,
+                0,
+                self.parent_window,
             )
-            QMessageBox.warning(self.parent_window, "Błąd przenoszenia", error_msg)
-            logger.warning(
-                f"{error_msg} Oryginalne ścieżki: Archiwum: '{original_archive_path}', Podgląd: '{original_preview_path}'"
+            progress_dialog.setWindowTitle("Przenoszenie plików")
+            progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+            progress_dialog.setAutoClose(True)
+            progress_dialog.setAutoReset(True)
+            progress_dialog.setValue(0)
+
+            worker.signals.finished.connect(
+                lambda old_fp, new_fp: self._handle_move_file_pair_finished(
+                    old_fp, new_fp, target_folder_path, progress_dialog
+                )
             )
-            return None
-        except OSError as e:
-            error_msg = (
-                f"Wystąpił błąd systemu plików podczas przenoszenia "
-                f"'{file_pair_to_move.base_name}' do '{target_folder_path}':\n{e}"
+            worker.signals.error.connect(
+                lambda err_msg: self._handle_operation_error(
+                    err_msg, "Błąd przenoszenia plików", progress_dialog
+                )
             )
-            QMessageBox.critical(self.parent_window, "Błąd systemu plików", error_msg)
-            logger.error(
-                f"{error_msg} Oryginalne ścieżki: Archiwum: '{original_archive_path}', Podgląd: '{original_preview_path}'",
-                exc_info=True,
+            worker.signals.progress.connect(
+                lambda percent, msg: self._handle_operation_progress(
+                    percent, msg, progress_dialog
+                )
             )
-            return None
-        except Exception as e:
-            error_msg = (
-                f"Wystąpił nieoczekiwany błąd podczas przenoszenia "
-                f"'{file_pair_to_move.base_name}':\n{e}"
+            worker.signals.interrupted.connect(
+                lambda: self._handle_operation_interrupted(
+                    "Przenoszenie plików przerwane.", progress_dialog
+                )
             )
-            QMessageBox.critical(self.parent_window, "Nieoczekiwany błąd", error_msg)
-            logger.error(
-                f"{error_msg} Oryginalne ścieżki: Archiwum: '{original_archive_path}', Podgląd: '{original_preview_path}'",
-                exc_info=True,
+            progress_dialog.canceled.connect(worker.interrupt)
+
+            QThreadPool.globalInstance().start(worker)
+            progress_dialog.show()
+        else:
+            QMessageBox.warning(
+                self.parent_window,
+                "Błąd inicjalizacji",
+                f"Nie można zainicjować operacji przenoszenia dla '{file_pair_to_move.get_base_name()}'. Sprawdź logi.",
             )
-            return None
+
+    def _handle_move_file_pair_finished(
+        self,
+        old_file_pair: FilePair,
+        new_file_pair: FilePair,
+        target_folder_path: str,
+        progress_dialog: QProgressDialog,
+    ):
+        logger.info(
+            f"Pomyślnie przeniesiono parę plików '{old_file_pair.base_name}' do '{target_folder_path}'. "
+            f"Nowe ścieżki: Archiwum: '{new_file_pair.archive_path}', Podgląd: '{new_file_pair.preview_path}'"
+        )
+        if progress_dialog.isVisible():
+            progress_dialog.accept()
+
+        QMessageBox.information(
+            self.parent_window,
+            "Sukces",
+            f"Pomyślnie przeniesiono '{new_file_pair.base_name}' do '{os.path.basename(normalize_path(target_folder_path))}'.",
+        )
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
+        ):
+            # Po przeniesieniu, chcemy odświeżyć widok, ale nowy element może być w innym folderze,
+            # więc niekoniecznie chcemy go zaznaczać, chyba że logika aplikacji tego wymaga.
+            # Na razie proste odświeżenie.
+            self.parent_window.refresh_all_views()
+            # Jeśli MainWindow ma metodę do zmiany folderu i chcemy na niego przejść:
+            # self.parent_window.select_folder(target_folder_path)
+            # Lub jeśli chcemy zaznaczyć przeniesiony element, jeśli jest w bieżącym widoku:
+            # current_view_path = self.parent_window.current_working_directory
+            # if normalize_path(os.path.dirname(new_file_pair.archive_path)) == normalize_path(current_view_path):
+            #     self.parent_window.refresh_all_views(new_selection=new_file_pair)
+            # else:
+            #     self.parent_window.refresh_all_views() # Odśwież stary folder
+            #     # Można też rozważyć zmianę folderu na docelowy i zaznaczenie tam elementu

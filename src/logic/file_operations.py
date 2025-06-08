@@ -10,6 +10,15 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtGui import QDesktopServices
 
 from src.models.file_pair import FilePair
+from src.ui.delegates.workers import (
+    CreateFolderWorker,
+    DeleteFilePairWorker,
+    DeleteFolderWorker,
+    ManuallyPairFilesWorker,
+    MoveFilePairWorker,
+    RenameFilePairWorker,
+    RenameFolderWorker,
+)
 from src.utils.path_utils import is_valid_filename, normalize_path
 
 logger = logging.getLogger(__name__)
@@ -56,113 +65,137 @@ def open_archive_externally(archive_path: str) -> bool:
         return False
 
 
-def create_folder(parent_directory: str, folder_name: str) -> str | None:
-    """Tworzy nowy folder w podanej lokalizacji.
-    Zwraca pełną ścieżkę do utworzonego folderu lub None w przypadku błędu.
+def create_folder(parent_directory: str, folder_name: str) -> CreateFolderWorker | None:
+    """
+    Inicjuje operację tworzenia nowego folderu w podanej lokalizacji w osobnym wątku.
+
+    Args:
+        parent_directory: Ścieżka do katalogu nadrzędnego.
+        folder_name: Nazwa nowego folderu.
+
+    Returns:
+        Instancja CreateFolderWorker, jeśli walidacja wstępna przebiegła pomyślnie,
+        w przeciwnym razie None. UI powinno podłączyć się do sygnałów workera,
+        aby otrzymać wynik operacji lub informację o błędzie.
     """
     # Normalizacja ścieżki katalogu nadrzędnego
-    parent_directory = normalize_path(parent_directory)
+    parent_dir_normalized = normalize_path(parent_directory)
 
-    if not os.path.isdir(parent_directory):
-        logger.error(f"Katalog nadrzędny '{parent_directory}' nie istnieje.")
+    # Szybka walidacja przed utworzeniem workera
+    if not os.path.isdir(parent_dir_normalized):
+        logger.error(f"Katalog nadrzędny '{parent_dir_normalized}' nie istnieje.")
+        # W tym przypadku możemy od razu zwrócić None, bo błąd jest natychmiastowy
+        # i nie ma sensu tworzyć workera.
+        # Alternatywnie, worker mógłby emitować ten błąd, ale to mniej wydajne.
         return None
 
-    # Walidacja nazwy folderu przy użyciu funkcji z modułu path_utils
     if not is_valid_filename(folder_name):
         logger.error(f"Nazwa folderu '{folder_name}' jest nieprawidłowa lub pusta.")
         return None
 
-    folder_path = os.path.join(parent_directory, folder_name)
-    # Normalizacja ścieżki wyniku
-    folder_path = normalize_path(folder_path)
-    try:
-        os.makedirs(
-            folder_path, exist_ok=True
-        )  # exist_ok=True - nie rzuca błędu jeśli folder już istnieje
-        logger.info(f"Folder '{folder_path}' został utworzony lub już istniał.")
-        return folder_path
-    except OSError as e:
-        logger.error(f"Nie udało się utworzyć folderu '{folder_path}': {e}")
-        return None
+    # Utworzenie i zwrócenie workera.
+    # UI będzie odpowiedzialne za uruchomienie go w QThreadPool i obsługę sygnałów.
+    worker = CreateFolderWorker(
+        parent_directory=parent_dir_normalized, folder_name=folder_name
+    )
+    logger.debug(
+        f"Utworzono CreateFolderWorker dla: {parent_dir_normalized} / {folder_name}"
+    )
+    return worker
 
 
-def rename_folder(folder_path: str, new_folder_name: str) -> str | None:
-    """Zmienia nazwę folderu.
-    Zwraca nową pełną ścieżkę do folderu lub None w przypadku błędu.
+def rename_folder(folder_path: str, new_folder_name: str) -> RenameFolderWorker | None:
+    """
+    Inicjuje operację zmiany nazwy folderu w osobnym wątku.
+
+    Args:
+        folder_path: Aktualna ścieżka do folderu.
+        new_folder_name: Nowa nazwa dla folderu.
+
+    Returns:
+        Instancja RenameFolderWorker, jeśli walidacja wstępna przebiegła pomyślnie,
+        w przeciwnym razie None. UI powinno podłączyć się do sygnałów workera,
+        aby otrzymać wynik operacji lub informację o błędzie.
     """
     # Normalizacja ścieżki folderu
-    folder_path = normalize_path(folder_path)
+    folder_path_normalized = normalize_path(folder_path)
 
-    if not os.path.isdir(folder_path):
-        logger.error(f"Folder '{folder_path}' nie istnieje lub nie jest folderem.")
+    # Szybka walidacja przed utworzeniem workera
+    if not os.path.isdir(folder_path_normalized):
+        logger.error(
+            f"Folder '{folder_path_normalized}' nie istnieje lub nie jest folderem."
+        )
         return None
 
-    # Walidacja nowej nazwy folderu
     if not is_valid_filename(new_folder_name):
         logger.error(
             f"Nowa nazwa folderu '{new_folder_name}' jest nieprawidłowa lub pusta."
         )
         return None
 
-    parent_dir = os.path.dirname(folder_path)
-    new_folder_path = os.path.join(parent_dir, new_folder_name)
-    # Normalizacja ścieżki wyniku
-    new_folder_path = normalize_path(new_folder_path)
+    parent_dir = os.path.dirname(folder_path_normalized)
+    new_folder_path_check = normalize_path(os.path.join(parent_dir, new_folder_name))
 
-    if os.path.exists(new_folder_path):
-        logger.error(f"Folder o nazwie '{new_folder_path}' już istnieje.")
+    if os.path.exists(new_folder_path_check):
+        logger.error(f"Folder o nazwie '{new_folder_path_check}' już istnieje.")
         return None
 
-    try:
-        os.rename(folder_path, new_folder_path)
-        logger.info(
-            f"Zmieniono nazwę folderu z '{folder_path}' na '{new_folder_path}'."
-        )
-        return new_folder_path
-    except OSError as e:
-        logger.error(f"Nie udało się zmienić nazwy folderu '{folder_path}': {e}")
-        return None
+    # Utworzenie i zwrócenie workera.
+    worker = RenameFolderWorker(
+        folder_path=folder_path_normalized, new_folder_name=new_folder_name
+    )
+    logger.debug(
+        f"Utworzono RenameFolderWorker dla: {folder_path_normalized} -> {new_folder_name}"
+    )
+    return worker
 
 
-def delete_folder(folder_path: str, delete_content: bool = False) -> bool:
-    """Usuwa folder. Jeśli delete_content jest True, usuwa folder wraz z zawartością.
-    W przeciwnym razie usuwa tylko pusty folder.
+def delete_folder(
+    folder_path: str, delete_content: bool = False
+) -> DeleteFolderWorker | None:
     """
-    # Normalizacja ścieżki folderu
-    folder_path = normalize_path(folder_path)
+    Inicjuje operację usuwania folderu w osobnym wątku.
 
-    if not os.path.isdir(folder_path):
-        logger.warning(f"Folder '{folder_path}' nie istnieje, nie można usunąć.")
-        return True  # Uznajemy za sukces, jeśli folderu nie ma
+    Args:
+        folder_path: Ścieżka do folderu, który ma zostać usunięty.
+        delete_content: Jeśli True, usuwa folder wraz z zawartością.
+                        W przeciwnym razie usuwa tylko pusty folder.
 
-    try:
-        if delete_content:
-            shutil.rmtree(folder_path)
-            logger.info(f"Folder '{folder_path}' i jego zawartość zostały usunięte.")
-        else:
-            if not os.listdir(folder_path):  # Sprawdź czy folder jest pusty
-                os.rmdir(folder_path)
-                logger.info(f"Pusty folder '{folder_path}' został usunięty.")
-            else:
-                logger.error(
-                    f"Folder '{folder_path}' nie jest pusty. Aby usunąć, ustaw delete_content=True."
-                )
-                return False
-        return True
-    except OSError as e:
-        logger.error(f"Nie udało się usunąć folderu '{folder_path}': {e}")
-        return False
+    Returns:
+        Instancja DeleteFolderWorker, jeśli walidacja wstępna przebiegła pomyślnie,
+        w przeciwnym razie None. UI powinno podłączyć się do sygnałów workera,
+        aby otrzymać wynik operacji lub informację o błędzie.
+    """
+    folder_path_normalized = normalize_path(folder_path)
+
+    # Szybka walidacja przed utworzeniem workera
+    # Nie sprawdzamy tutaj, czy folder istnieje, bo worker to obsłuży
+    # i może to być pożądane (np. jeśli folder został usunięty międzyczasie).
+    # Wystarczy, że ścieżka jest w ogóle sensowna (choć normalize_path już to trochę robi).
+
+    # Możemy dodać walidację, czy ścieżka nie jest np. rootem dysku, dla bezpieczeństwa.
+    # if folder_path_normalized == os.path.abspath(os.sep): # Prosty przykład dla roota
+    #     logger.error(f"Próba usunięcia katalogu głównego: {folder_path_normalized}")
+    #     return None
+
+    worker = DeleteFolderWorker(
+        folder_path=folder_path_normalized, delete_content=delete_content
+    )
+    logger.debug(
+        f"Utworzono DeleteFolderWorker dla: {folder_path_normalized}, delete_content={delete_content}"
+    )
+    return worker
 
 
 def manually_pair_files(
     archive_path: str, preview_path: str, working_directory: str
-) -> FilePair | None:
+) -> ManuallyPairFilesWorker | None:
     """
-    Ręcznie paruje podany plik archiwum z plikiem podglądu.
+    Inicjuje operację ręcznego parowania plików archiwum z plikiem podglądu w osobnym wątku.
 
-    Jeśli nazwy bazowe plików (bez rozszerzeń) są różne, zmienia nazwę pliku podglądu,
+    Jeśli nazwy bazowe plików (bez rozszerzeń) są różne, worker spróbuje zmienić nazwę pliku podglądu,
     aby pasowała do nazwy bazowej pliku archiwum, zachowując oryginalne rozszerzenie podglądu.
-    Przed zmianą nazwy sprawdza, czy plik o docelowej nazwie nie istnieje.
+    Operacja uwzględnia problem wielkości liter w nazwach plików.
 
     Args:
         archive_path (str): Ścieżka absolutna do pliku archiwum.
@@ -170,427 +203,150 @@ def manually_pair_files(
         working_directory (str): Ścieżka do katalogu roboczego (używana do tworzenia FilePair).
 
     Returns:
-        FilePair | None: Obiekt FilePair, jeśli parowanie się powiodło, w przeciwnym razie None.
+        ManuallyPairFilesWorker | None: Instancja workera lub None, jeśli wstępna walidacja się nie powiedzie.
+                                        UI powinno podłączyć się do sygnałów workera.
     """
-    # Normalizacja ścieżek dla spójności
-    archive_path = normalize_path(archive_path)
-    preview_path = normalize_path(preview_path)
-    working_directory = normalize_path(working_directory)
+    # Podstawowa walidacja przed utworzeniem workera
+    if not archive_path or not preview_path or not working_directory:
+        logger.error(
+            "Ścieżki do archiwum, podglądu lub katalogu roboczego nie mogą być puste."
+        )
+        return None
 
+    # Normalizacja nie jest tu konieczna, worker to zrobi.
+    # Sprawdzenie istnienia plików również zrobi worker, bo może to być część logiki (np. emitowanie błędu)
+
+    worker = ManuallyPairFilesWorker(
+        archive_path=archive_path,
+        preview_path=preview_path,
+        working_directory=working_directory,
+    )
+    logger.debug(
+        f"Utworzono ManuallyPairFilesWorker dla: A='{archive_path}', P='{preview_path}'"
+    )
+    return worker
+
+
+def rename_file_pair(
+    file_pair: FilePair, new_base_name: str, working_directory: str
+) -> RenameFilePairWorker | None:
+    """Przygotowuje i zwraca worker do zmiany nazwy pary plików."""
     logger.info(
-        f"Rozpoczęto próbę ręcznego parowania: A='{archive_path}', P='{preview_path}'"
+        f"Żądanie zmiany nazwy pary plików: '{file_pair.base_name}' na '{new_base_name}' w katalogu '{working_directory}'"
     )
 
-    if not os.path.exists(archive_path):
-        logger.error(
-            f"Plik archiwum do ręcznego parowania nie istnieje: {archive_path}"
-        )
-        return None
-    if not os.path.exists(preview_path):
-        logger.error(
-            f"Plik podglądu do ręcznego parowania nie istnieje: {preview_path}"
-        )
+    if not file_pair or not file_pair.archive_path or not file_pair.preview_path:
+        logger.warning("Nieprawidłowy obiekt FilePair lub brakujące ścieżki.")
+        # W przyszłości można rozważyć rzucenie wyjątku zamiast zwracania None
         return None
 
-    archive_base_name, _ = os.path.splitext(os.path.basename(archive_path))
-    preview_base_name, preview_extension = os.path.splitext(
-        os.path.basename(preview_path)
-    )
+    if not new_base_name or not new_base_name.strip():
+        logger.warning("Nowa nazwa bazowa nie może być pusta.")
+        return None
 
-    current_preview_path = preview_path
+    # Sprawdzenie, czy pliki oryginalne istnieją
+    if not os.path.exists(file_pair.archive_path):
+        logger.error(f"Plik archiwum '{file_pair.archive_path}' nie istnieje.")
+        # Można by tu zgłosić błąd do UI inaczej niż przez worker
+        return None
 
-    if archive_base_name.lower() != preview_base_name.lower():
-        logger.info(
-            f"Nazwy bazowe plików są różne: '{archive_base_name}' vs '{preview_base_name}'. Próba zmiany nazwy podglądu."
-        )
+    if not os.path.exists(file_pair.preview_path):
+        logger.error(f"Plik podglądu '{file_pair.preview_path}' nie istnieje.")
+        return None
 
-        # Nowa nazwa pliku podglądu to nazwa bazowa archiwum + oryginalne rozszerzenie podglądu
-        new_preview_filename = archive_base_name + preview_extension
-        # Sprawdź, czy nowa nazwa jest poprawna
-        if not is_valid_filename(new_preview_filename):
-            logger.error(
-                f"Nowa nazwa pliku '{new_preview_filename}' jest nieprawidłowa."
-            )
-            return None
+    # Walidacja nowej nazwy (np. pod kątem niedozwolonych znaków) - pominięto dla uproszczenia,
+    # ale worker powinien to obsłużyć i zgłosić błąd przez sygnał.
 
-        new_preview_path = normalize_path(
-            os.path.join(os.path.dirname(preview_path), new_preview_filename)
-        )
-
-        if os.path.exists(new_preview_path):
-            if new_preview_path.lower() == preview_path.lower():
-                # Przypadek, gdy nazwa różni się tylko wielkością liter, a system plików jest case-insensitive
-                # lub plik o tej samej nazwie (case-sensitive) już istnieje.
-                # W tej sytuacji, jeśli nazwa docelowa jest taka sama jak bieżąca (po normalizacji case), uznajemy to za OK.
-                logger.debug(
-                    f"Plik podglądu '{preview_path}' ma już docelową nazwę (możliwe różnice wielkości liter)."
-                )
-                current_preview_path = (
-                    new_preview_path  # Użyjemy ścieżki z poprawną wielkością liter
-                )
-            else:
-                logger.error(
-                    f"Nie można zmienić nazwy podglądu na '{new_preview_filename}', plik o tej nazwie już istnieje: {new_preview_path}"
-                )
-                return None
-        else:
-            try:
-                os.rename(preview_path, new_preview_path)
-                logger.info(
-                    f"Zmieniono nazwę pliku podglądu z '{os.path.basename(preview_path)}' na '{new_preview_filename}'"
-                )
-                current_preview_path = new_preview_path
-            except OSError as e:
-                logger.error(
-                    f"Nie udało się zmienić nazwy pliku podglądu '{preview_path}' na '{new_preview_path}': {e}"
-                )
-                return None
-    else:
-        logger.info(
-            f"Nazwy bazowe plików są takie same: '{archive_base_name}'. Nie ma potrzeby zmiany nazwy podglądu."
-        )
+    # Sprawdzenie, czy nowe nazwy plików nie kolidują z istniejącymi plikami
+    # (chyba że to te same pliki - co jest dozwolone jeśli np. zmienia się tylko wielkość liter)
+    # Tę logikę dokładniej obsłuży worker.
 
     try:
-        paired_file = FilePair(
-            archive_path=archive_path,
-            preview_path=current_preview_path,  # Używamy aktualnej ścieżki podglądu
-            working_directory=working_directory,
+        worker = RenameFilePairWorker(file_pair, new_base_name, working_directory)
+        logger.debug(
+            f"Utworzono RenameFilePairWorker dla '{file_pair.base_name}' -> '{new_base_name}'"
         )
-        logger.info(
-            f"Pomyślnie ręcznie sparowano: A='{paired_file.get_relative_archive_path()}', P='{paired_file.get_relative_preview_path()}'"
-        )
-        return paired_file
+        return worker
     except Exception as e:
-        logger.error(f"Błąd tworzenia obiektu FilePair podczas ręcznego parowania: {e}")
+        logger.error(f"Nie udało się utworzyć RenameFilePairWorker: {e}", exc_info=True)
         return None
 
 
 # --- Nowe funkcje przeniesione z FilePair ---
 
 
-def rename_file_pair(
-    old_archive_path: str, old_preview_path: str | None, new_base_name: str
-) -> tuple[str, str | None] | None:
-    """
-    Zmienia nazwę bazową dla pary plików (archiwum i podgląd).
-
-    Args:
-        old_archive_path (str): Aktualna ścieżka do pliku archiwum.
-        old_preview_path (str | None): Aktualna ścieżka do pliku podglądu.
-        new_base_name (str): Nowa nazwa bazowa pliku (bez rozszerzenia).
-
-    Returns:
-        tuple[str, str | None] | None: Krotka z nowymi ścieżkami (archiwum, podgląd)
-                                      lub None w przypadku błędu.
-    """
-    # Normalizacja ścieżek dla spójności
-    old_archive_path = normalize_path(old_archive_path)
-    if old_preview_path:
-        old_preview_path = normalize_path(old_preview_path)
-
-    logger.debug(
-        f"Próba zmiany nazwy pary: A='{old_archive_path}', P='{old_preview_path}' na nową nazwę bazową '{new_base_name}'"
-    )
-    directory = os.path.dirname(old_archive_path)
-
-    # Walidacja nowej nazwy przy użyciu funkcji z modułu path_utils
-    if not is_valid_filename(new_base_name):
-        logger.error(f"Nowa nazwa pliku '{new_base_name}' jest nieprawidłowa.")
-        return None
-
-    # Przygotowanie nowej ścieżki dla archiwum
-    _, archive_ext = os.path.splitext(old_archive_path)
-    new_archive_path = normalize_path(
-        os.path.join(directory, new_base_name + archive_ext)
+def delete_file_pair(file_pair: FilePair) -> DeleteFilePairWorker | None:
+    """Przygotowuje i zwraca worker do usuwania pary plików."""
+    logger.info(
+        f"Żądanie usunięcia pary plików: '{file_pair.base_name}' (A: '{file_pair.archive_path}', P: '{file_pair.preview_path}')"
     )
 
-    # Przygotowanie nowej ścieżki dla podglądu, jeśli istnieje
-    new_preview_path = None
-    if old_preview_path:
-        _, preview_ext = os.path.splitext(old_preview_path)
-        new_preview_path = normalize_path(
-            os.path.join(directory, new_base_name + preview_ext)
-        )
-
-    # Sprawdzenie, czy pliki docelowe już nie istnieją (z wyjątkiem samych siebie)
-    if (
-        os.path.exists(new_archive_path)
-        and new_archive_path.lower() != old_archive_path.lower()
-    ):
-        logger.error(f"Plik o nazwie '{new_archive_path}' już istnieje.")
-        return None
-    if (
-        new_preview_path
-        and old_preview_path
-        and os.path.exists(new_preview_path)
-        and new_preview_path.lower() != old_preview_path.lower()
-    ):
-        logger.error(f"Plik o nazwie '{new_preview_path}' już istnieje.")
-        return None
-
-    # Zmienna do śledzenia operacji, które trzeba cofnąć w przypadku błędu
-    operations_done = []
-
-    try:
-        # Zmiana nazwy musi być bezpieczna: jeśli zmiana podglądu się nie powiedzie,
-        # należy przywrócić starą nazwę archiwum.
-        # Najpierw zmieniamy nazwę archiwum.
-        if new_archive_path.lower() != old_archive_path.lower():
-            os.rename(old_archive_path, new_archive_path)
-            logger.info(
-                f"Zmieniono nazwę: '{old_archive_path}' -> '{new_archive_path}'"
-            )
-            operations_done.append(("archive", old_archive_path, new_archive_path))
-        else:
-            logger.debug(f"Nazwa archiwum '{old_archive_path}' pozostaje bez zmian.")
-
-        # Następnie zmieniamy nazwę podglądu, jeśli istnieje.
-        if (
-            old_preview_path
-            and new_preview_path
-            and new_preview_path.lower() != old_preview_path.lower()
-        ):
-            try:
-                os.rename(old_preview_path, new_preview_path)
-                logger.info(
-                    f"Zmieniono nazwę: '{old_preview_path}' -> '{new_preview_path}'"
-                )
-                operations_done.append(("preview", old_preview_path, new_preview_path))
-            except Exception as e_preview:
-                logger.error(
-                    f"Błąd zmiany nazwy podglądu na '{new_preview_path}': {e_preview}. Przywracanie poprzednich zmian."
-                )
-                # Przywrócenie wszystkich dokonanych zmian w kolejności odwrotnej
-                for op_type, old_path, new_path in reversed(operations_done):
-                    try:
-                        os.rename(new_path, old_path)
-                        logger.info(f"Przywrócono nazwę: '{new_path}' -> '{old_path}'")
-                    except Exception as rollback_error:
-                        logger.critical(
-                            f"KRYTYCZNY BŁĄD: Nie udało się przywrócić nazwy {op_type} z '{new_path}' na '{old_path}': {rollback_error}"
-                        )
-                return None
-
-        return new_archive_path, new_preview_path
-    except Exception as e:
-        logger.error(
-            f"Błąd podczas zmiany nazwy pliku archiwum na '{new_archive_path}': {e}"
-        )
-        # Przywrócenie wszystkich dokonanych zmian w kolejności odwrotnej
-        for op_type, old_path, new_path in reversed(operations_done):
-            try:
-                os.rename(new_path, old_path)
-                logger.info(f"Przywrócono nazwę: '{new_path}' -> '{old_path}'")
-            except Exception as rollback_error:
-                logger.critical(
-                    f"KRYTYCZNY BŁĄD: Nie udało się przywrócić nazwy {op_type} z '{new_path}' na '{old_path}': {rollback_error}"
-                )
-        return None
-
-
-def delete_file_pair(archive_path: str, preview_path: str | None) -> bool:
-    """
-    Usuwa parę plików (archiwum i opcjonalnie podgląd).
-
-    Args:
-        archive_path (str): Ścieżka do pliku archiwum.
-        preview_path (str | None): Ścieżka do pliku podglądu.
-
-    Returns:
-        bool: True, jeśli operacja się powiodła (lub pliki nie istniały),
-              False w przypadku błędu.
-    """
-    # Normalizacja ścieżek
-    archive_path = normalize_path(archive_path)
-    if preview_path:
-        preview_path = normalize_path(preview_path)
-
-    logger.debug(f"Próba usunięcia pary plików: A='{archive_path}', P='{preview_path}'")
-    success = True
-
-    # Usuwanie pliku podglądu
-    if preview_path and os.path.exists(preview_path):
-        try:
-            os.remove(preview_path)
-            logger.info(f"Usunięto plik podglądu: {preview_path}")
-        except OSError as e:
-            logger.error(f"Nie udało się usunąć pliku podglądu '{preview_path}': {e}")
-            success = False
-            # Kontynuujemy próbę usunięcia archiwum, nawet jeśli podgląd się nie udał
-
-    # Usuwanie pliku archiwum
-    if os.path.exists(archive_path):
-        try:
-            os.remove(archive_path)
-            logger.info(f"Usunięto plik archiwum: {archive_path}")
-        except OSError as e:
-            logger.error(f"Nie udało się usunąć pliku archiwum '{archive_path}': {e}")
-            success = False
-    else:
-        # Jeśli archiwum nie istnieje, a podgląd tak, to logujemy ostrzeżenie,
-        # ale operację uznajemy za "udaną" w kontekście usunięcia pary.
+    if not file_pair or not file_pair.archive_path or not file_pair.preview_path:
         logger.warning(
-            f"Plik archiwum '{archive_path}' nie istniał podczas próby usunięcia."
+            "Nieprawidłowy obiekt FilePair lub brakujące ścieżki do usunięcia."
         )
-
-    return success
-
-
-def move_file_pair(file_pair: FilePair, new_target_directory: str) -> FilePair | None:
-    """
-    Przenosi parę plików (archiwum i opcjonalny podgląd) do nowego katalogu.
-    Zachowuje oryginalne nazwy plików.
-
-    Args:
-        file_pair (FilePair): Obiekt FilePair do przeniesienia.
-        new_target_directory (str): Ścieżka do katalogu docelowego.
-
-    Returns:
-        FilePair | None: Nowy obiekt FilePair z zaktualizowanymi ścieżkami po przeniesieniu,
-                       lub None w przypadku błędu.
-    """
-    # Normalizacja ścieżki docelowej
-    new_target_directory = normalize_path(new_target_directory)
-
-    logger.debug(
-        f"Próba przeniesienia pary plików: A='{file_pair.archive_path}', "
-        f"P='{file_pair.preview_path}' do '{new_target_directory}'"
-    )
-
-    if not os.path.isdir(new_target_directory):
-        logger.error(f"Katalog docelowy '{new_target_directory}' nie istnieje.")
         return None
 
-    # Przygotowanie nowych ścieżek
-    new_archive_path = normalize_path(
-        os.path.join(new_target_directory, os.path.basename(file_pair.archive_path))
-    )
-    new_preview_path = None
-    if file_pair.preview_path:
-        new_preview_path = normalize_path(
-            os.path.join(new_target_directory, os.path.basename(file_pair.preview_path))
-        )
-
-    # Sprawdzenie, czy pliki o takich nazwach już istnieją w katalogu docelowym
-    # (z wyjątkiem sytuacji, gdy przenosimy plik na samego siebie - co powinno być obsłużone wcześniej)
-    if os.path.exists(new_archive_path) and normalize_path(
-        new_archive_path
-    ) != normalize_path(file_pair.archive_path):
-        logger.error(
-            f"Plik archiwum '{new_archive_path}' już istnieje w katalogu docelowym."
-        )
-        raise FileExistsError(
-            f"Plik archiwum '{os.path.basename(new_archive_path)}' już istnieje w folderze docelowym."
-        )
-
-    if (
-        new_preview_path
-        and os.path.exists(new_preview_path)
-        and file_pair.preview_path
-        and normalize_path(new_preview_path) != normalize_path(file_pair.preview_path)
-    ):
-        logger.error(
-            f"Plik podglądu '{new_preview_path}' już istnieje w katalogu docelowym."
-        )
-        raise FileExistsError(
-            f"Plik podglądu '{os.path.basename(new_preview_path)}' już istnieje w folderze docelowym."
-        )
-
-    # Zmienna do śledzenia operacji, które trzeba cofnąć w przypadku błędu
-    operations_done = []
+    # Sprawdzenie, czy pliki istnieją - worker to obsłuży i może zgłosić postęp/sukces nawet jeśli nie istnieją
+    # if not os.path.exists(file_pair.archive_path) and not os.path.exists(file_pair.preview_path):
+    #     logger.info(f"Żaden z plików pary '{file_pair.base_name}' nie istnieje. Operacja pominięta.")
+    #     # Można by zwrócić specjalny worker, który od razu emituje finished, lub None
+    #     return None
 
     try:
-        # Przeniesienie pliku archiwum
-        # Sprawdzamy, czy ścieżka źródłowa i docelowa są różne przed próbą przeniesienia
-        if normalize_path(file_pair.archive_path) != normalize_path(new_archive_path):
-            shutil.move(file_pair.archive_path, new_archive_path)
-            logger.info(
-                f"Przeniesiono archiwum: '{file_pair.archive_path}' -> '{new_archive_path}'"
-            )
-            operations_done.append(
-                ("archive", file_pair.archive_path, new_archive_path)
-            )
-        else:
-            logger.debug(
-                f"Ścieżka archiwum '{file_pair.archive_path}' jest taka sama jak docelowa, pomijanie przenoszenia."
-            )
-
-        # Przeniesienie pliku podglądu, jeśli istnieje
-        if file_pair.preview_path and new_preview_path:
-            # Sprawdzamy, czy ścieżka źródłowa i docelowa są różne przed próbą przeniesienia
-            if normalize_path(file_pair.preview_path) != normalize_path(
-                new_preview_path
-            ):
-                try:
-                    shutil.move(file_pair.preview_path, new_preview_path)
-                    logger.info(
-                        f"Przeniesiono podgląd: '{file_pair.preview_path}' -> '{new_preview_path}'"
-                    )
-                    operations_done.append(
-                        ("preview", file_pair.preview_path, new_preview_path)
-                    )
-                except Exception as e_preview:
-                    logger.error(
-                        f"Błąd przenoszenia podglądu '{file_pair.preview_path}' do '{new_preview_path}': {e_preview}. Przywracanie poprzednich zmian."
-                    )
-                    # Przywrócenie wszystkich dokonanych zmian w kolejności odwrotnej
-                    for op_type, old_path, moved_path in reversed(operations_done):
-                        try:
-                            shutil.move(moved_path, old_path)
-                            logger.info(
-                                f"Przywrócono plik {op_type}: '{moved_path}' -> '{old_path}'"
-                            )
-                        except Exception as rollback_error:
-                            logger.critical(
-                                f"KRYTYCZNY BŁĄD: Nie udało się przywrócić pliku {op_type} z '{moved_path}' na '{old_path}': {rollback_error}"
-                            )
-                    return None
-            else:
-                logger.debug(
-                    f"Ścieżka podglądu '{file_pair.preview_path}' jest taka sama jak docelowa, pomijanie przenoszenia."
-                )
-
-        # Utworzenie nowego obiektu FilePair z zaktualizowanymi ścieżkami
-        # Ważne: working_directory dla nowego FilePair powinno być katalogiem docelowym
-        # lub wspólnym katalogiem nadrzędnym, jeśli tak jest zdefiniowana logika aplikacji.
-        # Tutaj zakładamy, że working_directory to katalog, w którym znajdują się pliki.
-        # Jeśli logika jest inna, trzeba to dostosować.
-        # Na podstawie poprzedniej implementacji, wydaje się, że working_directory
-        # odnosi się do głównego katalogu skanowania, a nie bezpośredniego folderu pliku.
-        # Dlatego zachowujemy oryginalne working_directory z file_pair.
-        moved_file_pair = FilePair(
-            archive_path=new_archive_path,
-            preview_path=new_preview_path,
-            working_directory=file_pair.working_directory,  # Zachowujemy oryginalne working_directory
-        )
-        logger.info(
-            f"Pomyślnie przeniesiono parę plików. Nowe ścieżki: A='{moved_file_pair.archive_path}', P='{moved_file_pair.preview_path}'"
-        )
-        return moved_file_pair
-
-    except FileExistsError as e_exists:
-        logger.error(f"Błąd przenoszenia - plik już istnieje: {e_exists}")
-        # Nie ma potrzeby rollbacku, bo FileExistsError jest rzucany PRZED operacjami na plikach
-        raise  # Przekazujemy wyjątek dalej, aby obsłużyć go w UI
+        worker = DeleteFilePairWorker(file_pair)
+        logger.debug(f"Utworzono DeleteFilePairWorker dla '{file_pair.base_name}'")
+        return worker
     except Exception as e:
-        logger.error(
-            f"Nieoczekiwany błąd podczas przenoszenia plików do '{new_target_directory}': {e}"
-        )
-        # Przywrócenie wszystkich dokonanych zmian w kolejności odwrotnej
-        for op_type, old_path, moved_path in reversed(operations_done):
-            try:
-                shutil.move(moved_path, old_path)
-                logger.info(
-                    f"Przywrócono plik {op_type}: '{moved_path}' -> '{old_path}'"
-                )
-            except Exception as rollback_error:
-                logger.critical(
-                    f"KRYTYCZNY BŁĄD: Nie udało się przywrócić pliku {op_type} z '{moved_path}' na '{old_path}': {rollback_error}"
-                )
+        logger.error(f"Nie udało się utworzyć DeleteFilePairWorker: {e}", exc_info=True)
         return None
 
 
-def create_pair_from_files(archive_path: str, preview_path: str) -> FilePair | None:
+def move_file_pair(
+    file_pair: FilePair, new_target_directory: str
+) -> MoveFilePairWorker | None:
+    """
+    Przygotowuje i zwraca worker do przenoszenia pary plików do nowego katalogu.
+    """
+    logger.info(
+        f"Żądanie przeniesienia pary plików '{file_pair.base_name}' do katalogu '{new_target_directory}'"
+    )
+
+    if not file_pair or not file_pair.archive_path:
+        logger.warning("Nieprawidłowy obiekt FilePair lub brak ścieżki do archiwum.")
+        return None
+
+    # Preview path jest opcjonalny, więc nie sprawdzamy go tutaj krytycznie
+
+    if not new_target_directory or not new_target_directory.strip():
+        logger.warning("Docelowy katalog nie może być pusty.")
+        return None
+
+    normalized_target_dir = normalize_path(new_target_directory)
+
+    if not os.path.isdir(normalized_target_dir):
+        logger.error(
+            f"Katalog docelowy '{normalized_target_dir}' nie istnieje lub nie jest katalogiem."
+        )
+        return None
+
+    # Dalszą, bardziej szczegółową walidację (np. istnienie plików źródłowych, konflikty w miejscu docelowym)
+    # przeprowadzi worker, aby móc emitować odpowiednie sygnały o błędach.
+
+    try:
+        worker = MoveFilePairWorker(file_pair, normalized_target_dir)
+        logger.debug(
+            f"Utworzono MoveFilePairWorker dla '{file_pair.base_name}' -> '{normalized_target_dir}'"
+        )
+        return worker
+    except Exception as e:
+        logger.error(f"Nie udało się utworzyć MoveFilePairWorker: {e}", exc_info=True)
+        return None
+
+
+def create_pair_from_files(
+    archive_path: str, preview_path: str
+) -> ManuallyPairFilesWorker | None:
     """
     Wrapper dla manually_pair_files - tworzy parę plików z podanych ścieżek.
 
