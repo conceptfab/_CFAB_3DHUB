@@ -11,13 +11,23 @@ from collections import OrderedDict  # Dodaj OrderedDict
 # Third-party imports
 from PIL import Image, UnidentifiedImageError
 from PyQt6.QtCore import QObject  # Dodaj QObject, QEvent
-from PyQt6.QtCore import QEvent, QMimeData, QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import (
+    QEvent,
+    QMimeData,
+    QSize,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
 from PyQt6.QtGui import QAction, QColor, QDesktopServices, QDrag, QPixmap
 from PyQt6.QtWidgets import QHBoxLayout  # Dodaj QHBoxLayout
 from PyQt6.QtWidgets import QVBoxLayout  # Upewnij się, że QVBoxLayout jest tutaj
 from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QMenu, QSizePolicy, QWidget
 
 from src.models.file_pair import FilePair
+from src.ui.delegates.workers import ThumbnailGenerationWorker
 from src.ui.widgets.metadata_controls_widget import (
     MetadataControlsWidget,
 )  # NOWY IMPORT
@@ -28,67 +38,7 @@ from src.utils.image_utils import (
     pillow_image_to_qpixmap,
 )
 
-
-# Definicja Workera
-class ThumbnailLoaderWorker(QObject):
-    finished = pyqtSignal(QPixmap)
-
-    def __init__(
-        self, file_pair: FilePair, target_width: int, target_height: int, parent=None
-    ):
-        super().__init__(parent)
-        self.file_pair = file_pair
-        self.target_width = target_width
-        self.target_height = target_height
-
-    def run(self):
-        preview_path = self.file_pair.get_preview_path()
-        pixmap = None
-
-        if not preview_path or not os.path.exists(preview_path):
-            log_msg = (
-                f"Asynch. worker: Plik podglądu nie istnieje: {preview_path}. "
-                f"Tworzenie placeholdera."
-            )
-            logging.warning(log_msg)
-            pixmap = create_placeholder_pixmap(
-                self.target_width, self.target_height, text="Brak podglądu"
-            )
-        else:
-            try:
-                with Image.open(preview_path) as img:
-                    # Użyj crop_to_square zamiast thumbnail dla kwadratowych miniatur
-                    # Ponieważ target_width == target_height (kafelki są kwadratowe)
-                    thumbnail_img = crop_to_square(img, self.target_width)
-                    pixmap = pillow_image_to_qpixmap(thumbnail_img)
-                    if pixmap.isNull():
-                        # Krótszy komunikat błędu
-                        raise ValueError("Worker: Konwersja QPixmap dała pusty wynik")
-            except FileNotFoundError:
-                logging.error(f"Asynch. worker: Nie znaleziono pliku: {preview_path}")
-                pixmap = create_placeholder_pixmap(
-                    self.target_width, self.target_height, text="Brak pliku"
-                )
-            except UnidentifiedImageError:
-                logging.error(f"Asynch. worker: Nieprawidłowy format: {preview_path}")
-                pixmap = create_placeholder_pixmap(
-                    self.target_width, self.target_height, text="Błąd formatu"
-                )
-            except Exception as e:
-                log_msg = (
-                    f"Asynch. worker: Błąd wczytywania podglądu " f"{preview_path}: {e}"
-                )
-                logging.error(log_msg)
-                pixmap = create_placeholder_pixmap(
-                    self.target_width, self.target_height, text="Błąd"
-                )
-
-        if pixmap is None:  # Ostateczny fallback
-            pixmap = create_placeholder_pixmap(
-                self.target_width, self.target_height, text="Błąd krytyczny"
-            )
-
-        self.finished.emit(pixmap)
+# Definicja Workera - teraz używamy ThumbnailGenerationWorker z workers.py
 
 
 class FileTileWidget(QWidget):
@@ -140,10 +90,9 @@ class FileTileWidget(QWidget):
         self.thumbnail_size = default_thumbnail_size
         self.original_thumbnail: QPixmap | None = None
 
-        # Wątek i worker do ładowania miniatur
-        self.thumbnail_thread: QThread | None = None
-        self.thumbnail_worker: ThumbnailLoaderWorker | None = None
+        # Worker do ładowania miniatur
         self._current_worker_id = 0
+        self._current_thumbnail_worker = None
 
         # Nowe flagi i zmienne do obsługi kliknięć i przeciągania
         self.press_pos = None
@@ -419,8 +368,6 @@ class FileTileWidget(QWidget):
         )
 
         self._current_worker_id = 0  # ID ostatnio uruchomionego workera
-        self._thumbnail_worker: ThumbnailLoaderWorker | None = None
-        self._thumbnail_thread: QThread | None = None
 
         # Ustawienie danych z FilePair
         self.update_data(self.file_pair)
@@ -548,6 +495,7 @@ class FileTileWidget(QWidget):
             self._update_thumbnail_border_color("")
 
     def _load_thumbnail_async(self):
+        """Ładuje miniaturę asynchronicznie używając ThumbnailGenerationWorker i QThreadPool."""
         if not self.file_pair or not self.file_pair.get_preview_path():
             logging.warning(
                 "FileTileWidget: Brak file_pair lub ścieżki podglądu, nie można załadować miniatury."
@@ -563,9 +511,7 @@ class FileTileWidget(QWidget):
                     text="Brak pliku",
                 )
             self.thumbnail_label.setPixmap(error_placeholder)
-            self.original_thumbnail = (
-                error_placeholder  # Zapisz jako oryginalną, aby uniknąć ponownych prób
-            )
+            self.original_thumbnail = error_placeholder
             return
 
         preview_path = self.file_pair.get_preview_path()
@@ -585,42 +531,10 @@ class FileTileWidget(QWidget):
 
         if cached_pixmap and not cached_pixmap.isNull():
             logging.debug(f"Cache HIT dla {preview_path} ({width}x{height})")
-            self._on_thumbnail_loaded(
-                cached_pixmap, self._current_worker_id
-            )  # Przekaż aktualny worker_id
+            self._on_thumbnail_loaded(cached_pixmap, preview_path, width, height)
             return
         else:
             logging.debug(f"Cache MISS dla {preview_path} ({width}x{height})")
-
-        # Przerywanie istniejącego workera, jeśli działa
-        # Sprawdzamy, czy wątek istnieje i czy jest aktywny
-        if self.thumbnail_thread is not None and self.thumbnail_thread.isRunning():
-            logging.debug(
-                f"Przerywanie poprzedniego workera dla {self.file_pair.get_base_name()}"
-            )
-            # Rozłącz stare sygnały, aby uniknąć wywołania slotu przez starego workera
-            if self.thumbnail_worker is not None:
-                try:
-                    self.thumbnail_worker.finished.disconnect(
-                        self._on_thumbnail_loaded_slot
-                    )
-                except TypeError:  # Sygnał mógł nie być podłączony lub już rozłączony
-                    pass
-
-            self.thumbnail_thread.quit()
-            if not self.thumbnail_thread.wait(500):  # Czekaj do 500ms
-                logging.warning(
-                    f"Poprzedni wątek ładowania miniatury dla {self.file_pair.get_base_name()} nie zakończył się w oczekiwanym czasie. Próbuję zakończyć siłowo."
-                )
-                self.thumbnail_thread.terminate()  # Ostateczność
-                self.thumbnail_thread.wait()  # Poczekaj na zakończenie po terminate
-
-            # Po udanym przerwaniu lub terminate, QThread powinien wyemitować 'finished'.
-            # Slot cleanup_worker_thread powinien zająć się deleteLater.
-            # Nie ma potrzeby ręcznego wywoływania deleteLater tutaj, jeśli 'finished' jest poprawnie połączony.
-            # Ustawienie na None jest ważne, aby nowy wątek mógł być utworzony.
-            self.thumbnail_worker = None
-            self.thumbnail_thread = None
 
         # Zwiększ ID dla nowego workera
         self._current_worker_id += 1
@@ -631,90 +545,75 @@ class FileTileWidget(QWidget):
             width, height, text="Ładowanie..."
         )
         self.thumbnail_label.setPixmap(loading_placeholder)
-        # Nie ustawiamy self.original_thumbnail na placeholder ładowania,
-        # bo chcemy, żeby _on_thumbnail_loaded zapisało właściwą miniaturę lub błąd.
 
-        self.thumbnail_thread = QThread(self)
-        self.thumbnail_worker = ThumbnailLoaderWorker(self.file_pair, width, height)
-        self.thumbnail_worker.moveToThread(self.thumbnail_thread)
+        # Przerwij poprzedni worker jeśli istnieje
+        if (
+            hasattr(self, "_current_thumbnail_worker")
+            and self._current_thumbnail_worker
+        ):
+            self._current_thumbnail_worker.interrupt()
 
-        # Połączenie sygnałów - przekazujemy worker_id do slotu
-        # Tworzymy slot lambda, który będzie przechowywał worker_id z momentu tworzenia połączenia
-        self._on_thumbnail_loaded_slot = (
-            lambda pixmap, current_id=worker_id: self._on_thumbnail_loaded(
-                pixmap, current_id
+        # Utwórz nowy worker
+        worker = ThumbnailGenerationWorker(preview_path, width, height)
+        self._current_thumbnail_worker = worker
+
+        # Podłącz sygnały
+        worker.signals.finished.connect(
+            lambda pixmap, path, w, h: (
+                self._on_thumbnail_loaded(pixmap, path, w, h)
+                if self._current_thumbnail_worker == worker
+                else None
             )
         )
-        self.thumbnail_worker.finished.connect(self._on_thumbnail_loaded_slot)
-        self.thumbnail_thread.started.connect(self.thumbnail_worker.run)
-
-        # Sprzątanie
-        self.thumbnail_worker.finished.connect(self.thumbnail_thread.quit)
-
-        def cleanup_worker_thread():
-            # Ta funkcja jest teraz bardziej krytyczna dla poprawnego zarządzania pamięcią
-            sender_thread = (
-                self.sender()
-            )  # Powinien być QThread, który wyemitował 'finished'
-
-            # Usuwamy workera tylko jeśli należy do zakończonego wątku
-            # i jeśli referencje nadal na niego wskazują (nie został zastąpiony)
-            if (
-                self.thumbnail_thread == sender_thread
-                and self.thumbnail_worker is not None
-            ):
-                self.thumbnail_worker.deleteLater()
-                self.thumbnail_worker = None  # Usuń referencję po zleceniu usunięcia
-
-            if self.thumbnail_thread == sender_thread:
-                self.thumbnail_thread.deleteLater()
-                self.thumbnail_thread = None  # Usuń referencję po zleceniu usunięcia
-
-            # logging.debug(f"Wątek {sender_thread} zakończony i zasoby posprzątane.")
-
-        self.thumbnail_thread.finished.connect(cleanup_worker_thread)
-
-        self.thumbnail_thread.start()
-        logging.debug(
-            f"Rozpoczęto asynch. ładowanie dla {self.file_pair.get_base_name()}"
+        worker.signals.error.connect(
+            lambda error_msg, path, w, h: (
+                self._on_thumbnail_error(error_msg, path, w, h)
+                if self._current_thumbnail_worker == worker
+                else None
+            )
         )
 
-    def _on_thumbnail_loaded(self, pixmap: QPixmap | None, worker_id: int):
-        """Obsługuje załadowaną miniaturę z workera."""
-        # Sprawdź, czy to jest odpowiedź od aktualnego workera
-        if worker_id != self._current_worker_id:
-            # logging.debug(f"FileTileWidget: Otrzymano miniaturę od przestarzałego workera ({worker_id}), ignorowanie.")
-            return
+        # Uruchom w thread pool
+        QThreadPool.globalInstance().start(worker)
+
+        logging.debug(
+            f"Rozpoczęto asynch. ładowanie dla {self.file_pair.get_base_name()} (worker_id: {worker_id})"
+        )
+
+    def _on_thumbnail_loaded(self, pixmap: QPixmap, path: str, width: int, height: int):
+        """Obsługuje załadowaną miniaturę z ThumbnailGenerationWorker."""
+        logging.debug(
+            f"FileTileWidget: Otrzymano miniaturę dla {path} ({width}x{height})"
+        )
 
         if pixmap and not pixmap.isNull():
             self.thumbnail_label.setPixmap(pixmap)
-            # Dodaj do cache, jeśli się powiodło
-            if self.file_pair:  # Upewnij się, że file_pair istnieje
-                thumbnail_cache = ThumbnailCache.get_instance()
-                thumbnail_cache.add_thumbnail(
-                    self.file_pair.get_archive_path(),
-                    self.thumbnail_size[0],
-                    self.thumbnail_size[1],
-                    pixmap,
-                )
+            self.original_thumbnail = pixmap
 
-                # Aktualizuj kolor obwódki tylko jeśli jest wybrany kolor
+            # Aktualizuj kolor obwódki tylko jeśli jest wybrany kolor
+            if self.file_pair:
                 color_tag = self.file_pair.get_color_tag()
                 if color_tag and color_tag.strip():
                     self._update_thumbnail_border_color(color_tag)
         else:
-            # Jeśli pixmap jest None lub isNull(), użyj obrazka błędu z cache
-            error_pixmap = ThumbnailCache.get_instance().get_error_icon(
-                self.thumbnail_label.width(), self.thumbnail_label.height()
-            )
-            if error_pixmap:
-                self.thumbnail_label.setPixmap(error_pixmap)
-            else:
-                # Fallback, jeśli nawet get_error_icon zawiedzie
-                self.thumbnail_label.setText("Błąd ładowania")
-                self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            # Fallback na ikonę błędu
+            self._on_thumbnail_error("Otrzymano pustą miniaturę", path, width, height)
 
-        self._current_worker = None  # Zresetuj referencję do workera        # --- Obsługa sygnałów z MetadataControlsWidget ---
+    def _on_thumbnail_error(self, error_msg: str, path: str, width: int, height: int):
+        """Obsługuje błędy ładowania miniaturek."""
+        logging.warning(f"FileTileWidget: Błąd ładowania miniatury {path}: {error_msg}")
+
+        # Użyj ikony błędu z cache
+        error_pixmap = ThumbnailCache.get_error_icon(width, height)
+        if error_pixmap:
+            self.thumbnail_label.setPixmap(error_pixmap)
+            self.original_thumbnail = error_pixmap
+        else:
+            # Ostateczny fallback - tekst
+            self.thumbnail_label.setText("Błąd ładowania")
+            self.thumbnail_label.setAlignment(
+                Qt.AlignmentFlag.AlignCenter
+            )  # --- Obsługa sygnałów z MetadataControlsWidget ---
 
     def _on_tile_selection_changed(self, is_selected: bool):
         """Handle tile selection change from MetadataControlsWidget checkbox."""

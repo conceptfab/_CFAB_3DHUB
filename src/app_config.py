@@ -48,6 +48,11 @@ class AppConfig:
         # Parametry cache dla scanera
         "scanner_max_cache_entries": 100,
         "scanner_max_cache_age_seconds": 3600,  # 1 godzina
+        # Parametry cache dla miniaturek
+        "thumbnail_cache_max_entries": 500,  # Maksymalna liczba miniaturek w cache
+        "thumbnail_cache_max_memory_mb": 100,  # Maksymalna pamięć w MB (przybliżone)
+        "thumbnail_cache_enable_disk": False,  # Czy używać cache na dysku
+        "thumbnail_cache_cleanup_threshold": 0.8,  # Próg czyszczenia (80% limitu)
     }
 
     def __init__(self, config_dir=None, config_file=None):
@@ -453,6 +458,46 @@ class AppConfig:
             int: Maksymalny wiek wpisów w cache w sekundach.
         """
         return self.get("scanner_max_cache_age_seconds", 3600)
+
+    @property
+    def thumbnail_cache_max_entries(self):
+        """
+        Pobiera maksymalną liczbę miniaturek w cache.
+
+        Returns:
+            int: Maksymalna liczba miniaturek w cache.
+        """
+        return self.get("thumbnail_cache_max_entries", 500)
+
+    @property
+    def thumbnail_cache_max_memory_mb(self):
+        """
+        Pobiera maksymalną ilość pamięci dla cache miniaturek w MB.
+
+        Returns:
+            int: Maksymalna pamięć w MB.
+        """
+        return self.get("thumbnail_cache_max_memory_mb", 100)
+
+    @property
+    def thumbnail_cache_enable_disk(self):
+        """
+        Sprawdza czy cache na dysku jest włączony dla miniaturek.
+
+        Returns:
+            bool: True jeśli cache na dysku jest włączony.
+        """
+        return self.get("thumbnail_cache_enable_disk", False)
+
+    @property
+    def thumbnail_cache_cleanup_threshold(self):
+        """
+        Pobiera próg czyszczenia cache miniaturek (wartość od 0.0 do 1.0).
+
+        Returns:
+            float: Próg czyszczenia cache.
+        """
+        return self.get("thumbnail_cache_cleanup_threshold", 0.8)
 
 
 # --- Inicjalizacja domyślnej instancji konfiguracji ---

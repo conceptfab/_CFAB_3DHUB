@@ -7,6 +7,7 @@ import os
 import shutil
 
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
+from PyQt6.QtGui import QPixmap
 
 from src.logic import metadata_manager
 from src.models.file_pair import FilePair
@@ -1261,3 +1262,149 @@ class DataProcessingWorker(QObject):
             logging.error(f"Błąd w DataProcessingWorker: {e}")
         finally:
             self.finished.emit()
+
+
+class ThumbnailGenerationSignals(QObject):
+    """
+    Sygnały dla workera generującego miniatury.
+    """
+
+    finished = pyqtSignal(QPixmap, str, int, int)  # pixmap, path, width, height
+    error = pyqtSignal(str, str, int, int)  # error_message, path, width, height
+
+
+class ThumbnailGenerationWorker(QRunnable):
+    """
+    Worker do asynchronicznego generowania miniaturek z integracją z ThumbnailCache.
+
+    Funkcjonalność:
+    - Sprawdza cache przed ładowaniem
+    - Ładuje i przetwarza obraz w tle
+    - Dodaje wynik do cache
+    - Obsługuje błędy gracefully
+    """
+
+    def __init__(self, path: str, width: int, height: int):
+        super().__init__()
+        self.signals = ThumbnailGenerationSignals()
+        self.path = path
+        self.width = width
+        self.height = height
+        self._interrupted = False
+
+    def run(self):
+        """Wykonuje ładowanie miniatury w tle."""
+        from PIL import Image
+
+        from src.ui.widgets.thumbnail_cache import ThumbnailCache
+        from src.utils.image_utils import (
+            create_placeholder_pixmap,
+            crop_to_square,
+            pillow_image_to_qpixmap,
+        )
+
+        logger.debug(
+            f"ThumbnailWorker: Rozpoczęcie ładowania {self.path} ({self.width}x{self.height})"
+        )
+
+        try:
+            # Sprawdź cache ponownie (może inny worker już załadował)
+            cache = ThumbnailCache.get_instance()
+            cached_pixmap = cache.get_thumbnail(self.path, self.width, self.height)
+
+            if cached_pixmap:
+                logger.debug(f"ThumbnailWorker: Cache HIT dla {self.path}")
+                self.signals.finished.emit(
+                    cached_pixmap, self.path, self.width, self.height
+                )
+                return
+
+            if self._interrupted:
+                logger.debug(f"ThumbnailWorker: Przerwano ładowanie {self.path}")
+                return
+
+            # Sprawdź czy plik istnieje
+            if not self.path or not os.path.exists(self.path):
+                logger.warning(f"ThumbnailWorker: Plik nie istnieje: {self.path}")
+                error_pixmap = cache.get_error_icon(self.width, self.height)
+                if error_pixmap:
+                    cache.add_thumbnail(
+                        self.path, self.width, self.height, error_pixmap
+                    )
+                    self.signals.finished.emit(
+                        error_pixmap, self.path, self.width, self.height
+                    )
+                else:
+                    self.signals.error.emit(
+                        f"Plik nie istnieje: {self.path}",
+                        self.path,
+                        self.width,
+                        self.height,
+                    )
+                return
+
+            # Ładuj i przetwarzaj obraz
+            try:
+                if self.width == self.height:
+                    # Kwadratowa miniatura - użyj crop_to_square
+                    with Image.open(self.path) as img:
+                        if self._interrupted:
+                            return
+                        cropped_img = crop_to_square(img, self.width)
+                        pixmap = pillow_image_to_qpixmap(cropped_img)
+                else:
+                    # Niekwadratowa - standardowe skalowanie
+                    with Image.open(self.path) as img:
+                        if self._interrupted:
+                            return
+                        img.thumbnail(
+                            (self.width, self.height), Image.Resampling.LANCZOS
+                        )
+                        pixmap = pillow_image_to_qpixmap(img)
+
+                if pixmap and not pixmap.isNull():
+                    # Dodaj do cache i wyślij sygnał
+                    cache.add_thumbnail(self.path, self.width, self.height, pixmap)
+                    logger.debug(
+                        f"ThumbnailWorker: Załadowano i dodano do cache {self.path}"
+                    )
+                    self.signals.finished.emit(
+                        pixmap, self.path, self.width, self.height
+                    )
+                else:
+                    raise ValueError("Wygenerowany QPixmap jest pusty")
+
+            except Exception as img_error:
+                logger.error(
+                    f"ThumbnailWorker: Błąd przetwarzania obrazu {self.path}: {img_error}"
+                )
+                # Użyj ikony błędu jako fallback
+                error_pixmap = cache.get_error_icon(self.width, self.height)
+                if error_pixmap:
+                    cache.add_thumbnail(
+                        self.path, self.width, self.height, error_pixmap
+                    )
+                    self.signals.finished.emit(
+                        error_pixmap, self.path, self.width, self.height
+                    )
+                else:
+                    self.signals.error.emit(
+                        f"Błąd ładowania: {img_error}",
+                        self.path,
+                        self.width,
+                        self.height,
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"ThumbnailWorker: Nieoczekiwany błąd dla {self.path}: {e}",
+                exc_info=True,
+            )
+            self.signals.error.emit(
+                f"Nieoczekiwany błąd: {e}", self.path, self.width, self.height
+            )
+
+    def interrupt(self):
+        """Przerywa wykonywanie workera."""
+        self._interrupted = True
+        logger.debug(f"ThumbnailWorker: Przerwanie dla {self.path}")

@@ -1,18 +1,43 @@
 import logging
+import os
+import time
+from collections import OrderedDict
+from typing import Optional
 
 from PIL import Image
 from PyQt6.QtCore import QDir, QSize, Qt
 from PyQt6.QtGui import QIcon, QImage, QPixmap
 
-from src.utils.image_utils import crop_to_square, pillow_image_to_qpixmap
+from src.app_config import config
+from src.utils.image_utils import (
+    create_placeholder_pixmap,
+    crop_to_square,
+    pillow_image_to_qpixmap,
+)
+from src.utils.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
 
 
 class ThumbnailCache:
     _instance = None
-    _cache = {}  # key: (path, width, height) -> QPixmap
-    _error_icon = None  # Cache for a generic error icon
+
+    def __init__(self):
+        # Używamy OrderedDict dla mechanizmu LRU
+        self._cache = (
+            OrderedDict()
+        )  # key: (normalized_path, width, height) -> (QPixmap, timestamp, size_bytes)
+        self._error_icon = None  # Cache for a generic error icon
+        self._total_memory_bytes = 0  # Przybliżony rozmiar cache w bajtach
+
+        # Parametry z konfiguracji
+        self._max_entries = config.thumbnail_cache_max_entries
+        self._max_memory_mb = config.thumbnail_cache_max_memory_mb
+        self._cleanup_threshold = config.thumbnail_cache_cleanup_threshold
+
+        logger.info(
+            f"ThumbnailCache zainicjalizowany: max_entries={self._max_entries}, max_memory={self._max_memory_mb}MB"
+        )
 
     @classmethod
     def get_instance(cls):
@@ -21,38 +46,20 @@ class ThumbnailCache:
         return cls._instance
 
     @classmethod
-    def get_error_icon(cls, width: int, height: int) -> QPixmap | None:
+    def get_error_icon(cls, width: int, height: int) -> Optional[QPixmap]:
+        """Zwraca ikonę błędu lub None jeśli nie udało się jej utworzyć."""
         if cls._error_icon is None:
-            # Try to load a standard Qt icon or a custom one if available
-            # SP_MessageBoxWarning is a good candidate for an error/warning icon
             try:
-                style = QDir.searchPaths(
-                    "qtstyleplugins"
-                )  # Placeholder, proper way to get style
-                # In a real Qt app, you'd use self.style() or QApplication.style()
-                # For now, let's try to create a simple one if standard icons are hard to get
-                # This part is tricky without QApplication instance or widget context for style()
-                # Fallback: create a simple pixmap with a red X or similar
-                # As a placeholder, we'll return None, expecting UI to handle it
-                # Ideally, load from a resource file:
-                # cls._error_icon = QPixmap(":/icons/error_thumbnail.png")
-                # If not available, create a simple one:
-                pixmap = QPixmap(QSize(64, 64))
-                pixmap.fill(Qt.GlobalColor.transparent)
-                # painter = QPainter(pixmap)
-                # pen = QPen(Qt.GlobalColor.red, 2)
-                # painter.setPen(pen)
-                # painter.drawLine(10, 10, 54, 54)
-                # painter.drawLine(10, 54, 54, 10)
-                # painter.end()
-                # cls._error_icon = pixmap # Actual drawing commented out for simplicity
-                # For now, let's assume no generic error icon is easily creatable here
-                # and let the caller handle None.
-                # A better approach is to have a resource file with a dedicated error image.                pass  # No generic icon generation for now
+                # Użyj prostego placeholdera zamiast skomplikowanej logiki
+                cls._error_icon = create_placeholder_pixmap(
+                    64, 64, color="#FF5555", text="Błąd"
+                )
+                logger.debug("Utworzono ikonę błędu dla cache miniaturek")
             except Exception as e:
-                logger.error(f"Nie można załadować standardowej ikony błędu: {e}")
+                logger.error(f"Nie można utworzyć ikony błędu: {e}")
+                return None
 
-        if cls._error_icon:
+        if cls._error_icon and not cls._error_icon.isNull():
             return cls._error_icon.scaled(
                 QSize(width, height),
                 Qt.AspectRatioMode.KeepAspectRatio,
@@ -62,14 +69,28 @@ class ThumbnailCache:
 
     def load_pixmap_from_path(
         self, path: str, width: int, height: int
-    ) -> QPixmap | None:
+    ) -> Optional[QPixmap]:
         """
         Ładuje i przycina miniaturę z podanej ścieżki do kwadratowych proporcji.
-        Zwraca QPixmap lub None jeśli ładowanie się nie powiedzie.
+
+        UWAGA: Ta metoda jest synchroniczna i może blokować UI!
+        Zalecane jest używanie asynchronicznych workerów do ładowania miniaturek.
+
+        Returns:
+            QPixmap lub None jeśli ładowanie się nie powiedzie.
         """
+        logger.warning(
+            "load_pixmap_from_path: Synchroniczne ładowanie miniatury - może blokować UI!"
+        )
+
         if not path:
             logger.warning("Próba załadowania miniatury z pustej ścieżki.")
             return None
+
+        if not os.path.exists(path):
+            logger.warning(f"Plik nie istnieje: {path}")
+            return None
+
         try:
             # Jeśli docelowy rozmiar to kwadrat (width == height), użyj crop_to_square
             if width == height:
@@ -105,40 +126,137 @@ class ThumbnailCache:
             logger.error(f"Błąd podczas ładowania miniatury {path}: {e}")
             return None
 
-    def get_thumbnail(self, path: str, width: int, height: int) -> QPixmap | None:
+    def get_thumbnail(self, path: str, width: int, height: int) -> Optional[QPixmap]:
         """
         Pobiera miniaturę z cache. Zwraca None jeśli nie ma w cache.
-        Nie ładuje z dysku.
+        Aktualizuje pozycję w LRU cache przy dostępie.
         """
-        cache_key = (path, width, height)
-        return self._cache.get(cache_key)
+        cache_key = self._normalize_cache_key(path, width, height)
+
+        if cache_key in self._cache:
+            # Aktualizuj pozycję w LRU
+            self._update_cache_access(cache_key)
+            pixmap, timestamp, size_bytes = self._cache[cache_key]
+            logger.debug(f"Cache HIT: {path} ({width}x{height})")
+            return pixmap
+
+        logger.debug(f"Cache MISS: {path} ({width}x{height})")
+        return None
 
     def add_thumbnail(self, path: str, width: int, height: int, pixmap: QPixmap):
-        """Dodaje załadowaną miniaturę do cache."""
-        if path and pixmap and not pixmap.isNull():
-            cache_key = (path, width, height)
-            self._cache[cache_key] = pixmap
-            logger.debug(f"Dodano do cache: {path} ({width}x{height})")
-        else:
+        """Dodaje załadowaną miniaturę do cache z obsługą LRU."""
+        if not path or not pixmap or pixmap.isNull():
             logger.warning(
                 f"Próba dodania nieprawidłowej miniatury do cache dla: {path}"
             )
+            return
+
+        cache_key = self._normalize_cache_key(path, width, height)
+        size_bytes = self._estimate_pixmap_size(pixmap)
+        timestamp = time.time()
+
+        # Usuń starą wersję jeśli istnieje
+        if cache_key in self._cache:
+            old_pixmap, old_timestamp, old_size = self._cache[cache_key]
+            self._total_memory_bytes -= old_size
+
+        # Dodaj nową miniaturę
+        self._cache[cache_key] = (pixmap, timestamp, size_bytes)
+        self._total_memory_bytes += size_bytes
+
+        logger.debug(
+            f"Dodano do cache: {path} ({width}x{height}), rozmiar: {size_bytes//1024}KB"
+        )
+
+        # Wyczyść cache jeśli potrzeba
+        self._cleanup_cache()
 
     def clear_cache(self):
         """Czyści całą pamięć podręczną miniatur."""
         self._cache.clear()
+        self._total_memory_bytes = 0
         logger.info("Pamięć podręczna miniatur została wyczyszczona.")
 
     def remove_thumbnail(self, path: str, width: int, height: int):
         """Usuwa konkretną miniaturę z cache."""
-        cache_key = (path, width, height)
+        cache_key = self._normalize_cache_key(path, width, height)
         if cache_key in self._cache:
+            pixmap, timestamp, size_bytes = self._cache[cache_key]
             del self._cache[cache_key]
+            self._total_memory_bytes -= size_bytes
             logger.debug(f"Usunięto z cache: {path} ({width}x{height})")
 
     def get_cache_size(self) -> int:
         """Zwraca liczbę elementów w cache."""
         return len(self._cache)
+
+    def get_cache_memory_usage(self) -> dict:
+        """Zwraca statystyki użycia pamięci cache."""
+        return {
+            "entries": len(self._cache),
+            "memory_bytes": self._total_memory_bytes,
+            "memory_mb": self._total_memory_bytes / (1024 * 1024),
+            "max_entries": self._max_entries,
+            "max_memory_mb": self._max_memory_mb,
+        }
+
+    def _normalize_cache_key(self, path: str, width: int, height: int) -> tuple:
+        """Tworzy znormalizowany klucz cache."""
+        normalized_path = normalize_path(path) if path else ""
+        return (normalized_path, width, height)
+
+    def _estimate_pixmap_size(self, pixmap: QPixmap) -> int:
+        """Szacuje rozmiar QPixmap w bajtach."""
+        if not pixmap or pixmap.isNull():
+            return 0
+        # Przybliżenie: szerokość * wysokość * 4 bajty (RGBA)
+        return pixmap.width() * pixmap.height() * 4
+
+    def _cleanup_cache(self):
+        """Czyści cache według strategii LRU gdy przekracza limity."""
+        max_memory_bytes = self._max_memory_mb * 1024 * 1024
+        cleanup_entries_threshold = int(self._max_entries * self._cleanup_threshold)
+        cleanup_memory_threshold = int(max_memory_bytes * self._cleanup_threshold)
+
+        # Sprawdź czy potrzeba czyszczenia
+        needs_cleanup = (
+            len(self._cache) > cleanup_entries_threshold
+            or self._total_memory_bytes > cleanup_memory_threshold
+        )
+
+        if not needs_cleanup:
+            return
+
+        initial_count = len(self._cache)
+        initial_memory = self._total_memory_bytes
+
+        # Usuń najstarsze elementy (LRU) aż będziemy poniżej progów
+        target_entries = int(self._max_entries * 0.7)  # Usuń do 70% limitu
+        target_memory = int(max_memory_bytes * 0.7)
+
+        removed_count = 0
+        while (
+            len(self._cache) > target_entries
+            or self._total_memory_bytes > target_memory
+        ) and self._cache:
+            # OrderedDict.popitem(last=False) usuwa najstarszy element (FIFO = LRU)
+            key, (pixmap, timestamp, size_bytes) = self._cache.popitem(last=False)
+            self._total_memory_bytes -= size_bytes
+            removed_count += 1
+
+        if removed_count > 0:
+            logger.info(
+                f"Cache cleanup: usunięto {removed_count} miniaturek. "
+                f"Rozmiar: {initial_count}→{len(self._cache)} elementów, "
+                f"Pamięć: {initial_memory//1024//1024}→{self._total_memory_bytes//1024//1024}MB"
+            )
+
+    def _update_cache_access(self, cache_key: tuple):
+        """Aktualizuje dostęp do elementu cache (przenosi na koniec dla LRU)."""
+        if cache_key in self._cache:
+            # Przeniesienie na koniec (most recently used)
+            pixmap, timestamp, size_bytes = self._cache.pop(cache_key)
+            self._cache[cache_key] = (pixmap, time.time(), size_bytes)
 
 
 # Przykład użycia (do testów)
