@@ -19,7 +19,7 @@ def run():
 
     # Wczytaj plik styles.qss i przekaż go do funkcji main
     style_sheet = ""
-    style_path = os.path.join(_PROJECT_ROOT, "styles.qss")
+    style_path = os.path.join(_PROJECT_ROOT, "src", "resources", "styles.qss")
     if os.path.exists(style_path):
         print(f"Wczytywanie stylów z: {style_path}")
         try:
