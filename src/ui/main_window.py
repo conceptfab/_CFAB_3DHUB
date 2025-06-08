@@ -80,9 +80,27 @@ class MainWindow(QMainWindow):
         self.resize_timer.timeout.connect(self._update_gallery_view)
 
         # Konfiguracja rozmiaru miniatur
-        self.min_thumbnail_size = app_config.MIN_THUMBNAIL_SIZE
-        self.max_thumbnail_size = app_config.MAX_THUMBNAIL_SIZE
-        self.current_thumbnail_size = app_config.DEFAULT_THUMBNAIL_SIZE
+        self.app_config = app_config.AppConfig()  # Użyj instancji AppConfig
+        self.min_thumbnail_size = self.app_config.min_thumbnail_size
+        self.max_thumbnail_size = self.app_config.max_thumbnail_size
+
+        # Wymuś początkową pozycję suwaka na 50% (środek)
+        self.initial_slider_position = 50
+
+        # Oblicz current_thumbnail_size na podstawie wymuszonej pozycji suwaka
+        size_range = self.max_thumbnail_size - self.min_thumbnail_size
+        if (
+            size_range <= 0
+        ):  # Zabezpieczenie przed ujemnym zakresem lub dzieleniem przez zero
+            self.current_thumbnail_size = self.min_thumbnail_size
+        else:
+            self.current_thumbnail_size = self.min_thumbnail_size + int(
+                (size_range * self.initial_slider_position) / 100
+            )
+
+        logging.info(
+            f"Initial slider position set to: {self.initial_slider_position}%, resulting thumbnail size: {self.current_thumbnail_size}px"
+        )
 
         # Konfiguracja okna
         self.setWindowTitle("CFAB_3DHUB")
@@ -171,7 +189,10 @@ class MainWindow(QMainWindow):
         self.size_slider.setOrientation(Qt.Orientation.Horizontal)
         self.size_slider.setMinimum(0)
         self.size_slider.setMaximum(100)
-        self.size_slider.setValue(50)
+
+        # Ustawienie wartości początkowej suwaka na wymuszone 50%
+        self.size_slider.setValue(self.initial_slider_position)
+
         self.size_slider.sliderReleased.connect(self._update_thumbnail_size)
         self.size_control_layout.addWidget(self.size_slider)
 
@@ -791,15 +812,22 @@ class MainWindow(QMainWindow):
         value = self.size_slider.value()
 
         # Oblicz nowy rozmiar
-        size_range = self.max_thumbnail_size[0] - self.min_thumbnail_size[0]
-        new_width = self.min_thumbnail_size[0] + int((size_range * value) / 100)
-        new_height = new_width
+        # Użyj self.min_thumbnail_size i self.max_thumbnail_size, które są teraz int
+        size_range = self.max_thumbnail_size - self.min_thumbnail_size
+        if size_range <= 0:  # Zapobieganie błędom, jeśli min >= max
+            new_width = self.current_thumbnail_size
+        else:
+            new_width = self.min_thumbnail_size + int((size_range * value) / 100)
+
+        new_height = new_width  # Zakładamy kwadratowe miniatury
         new_size = (new_width, new_height)
 
         logging.debug(f"Aktualizacja rozmiaru miniatur na: {new_size}")
 
         # Zapisz pozycję suwaka do konfiguracji
-        app_config.set_thumbnail_slider_position(value)
+        self.app_config.set_thumbnail_slider_position(
+            value
+        )  # Użyj instancji app_config
 
         # Zaktualizuj rozmiar w gallery managerze
         self.gallery_manager.update_thumbnail_size(new_size)

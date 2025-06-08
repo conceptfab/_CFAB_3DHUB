@@ -20,10 +20,10 @@ class AppConfig:
     # --- Domyślne wartości konfiguracji ---
     DEFAULT_CONFIG = {
         # UI
-        "thumbnail_size": 150,
+        "thumbnail_size": 250,
         "thumbnail_slider_position": 50,
         "min_thumbnail_size": 100,
-        "max_thumbnail_size": 400,
+        "max_thumbnail_size": 600,  # Zwiększono z 400
         # Obsługiwane rozszerzenia
         "supported_archive_extensions": [".rar", ".zip", ".7z", ".tar", ".gz", ".bz2"],
         "supported_preview_extensions": [
@@ -82,8 +82,12 @@ class AppConfig:
     def _update_derived_values(self):
         """Aktualizuje wartości pochodne na podstawie konfiguracji."""
         slider_pos = self._config.get("thumbnail_slider_position", 50)
-        min_size = self._config.get("min_thumbnail_size", 50)
-        max_size = self._config.get("max_thumbnail_size", 300)
+        min_size = self._config.get(
+            "min_thumbnail_size", self.DEFAULT_CONFIG["min_thumbnail_size"]
+        )
+        max_size = self._config.get(
+            "max_thumbnail_size", self.DEFAULT_CONFIG["max_thumbnail_size"]
+        )
 
         size_range = max_size - min_size
         width = min_size + int((size_range * slider_pos) / 100)
@@ -406,7 +410,21 @@ class AppConfig:
         Returns:
             int: Maksymalny rozmiar.
         """
-        return self.get("max_thumbnail_size", 300)
+        return self.get("max_thumbnail_size", self.DEFAULT_CONFIG["max_thumbnail_size"])
+
+    @property
+    def default_thumbnail_size(self):
+        """
+        Domyślny rozmiar miniatury (obliczony lub z DEFAULT_CONFIG).
+
+        Returns:
+            int: Domyślny rozmiar miniatury.
+        """
+        # Zwraca obliczony _thumbnail_size[0] jeśli dostępny,
+        # w przeciwnym razie wartość z DEFAULT_CONFIG.
+        if hasattr(self, "_thumbnail_size") and self._thumbnail_size:
+            return self._thumbnail_size[0]
+        return self.DEFAULT_CONFIG["thumbnail_size"]
 
     @property
     def supported_archive_extensions(self):
@@ -522,9 +540,9 @@ def set_thumbnail_slider_position(position: int):
 SUPPORTED_ARCHIVE_EXTENSIONS = config.supported_archive_extensions
 SUPPORTED_PREVIEW_EXTENSIONS = config.supported_preview_extensions
 PREDEFINED_COLORS_FILTER = config.predefined_colors_filter
-MIN_THUMBNAIL_SIZE = (config.min_thumbnail_size, config.min_thumbnail_size)
-MAX_THUMBNAIL_SIZE = (config.max_thumbnail_size, config.max_thumbnail_size)
-DEFAULT_THUMBNAIL_SIZE = config.thumbnail_size
+MIN_THUMBNAIL_SIZE = config.min_thumbnail_size  # Zmieniono na int
+MAX_THUMBNAIL_SIZE = config.max_thumbnail_size  # Zmieniono na int
+DEFAULT_THUMBNAIL_SIZE = config.default_thumbnail_size  # Użycie nowej właściwości
 
 # Parametry cache dla skanera
 SCANNER_MAX_CACHE_ENTRIES = config.scanner_max_cache_entries

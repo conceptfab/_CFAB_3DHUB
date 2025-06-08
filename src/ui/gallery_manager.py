@@ -25,31 +25,49 @@ class GalleryManager:
         self.tiles_layout = tiles_layout
         self.gallery_tile_widgets: Dict[str, FileTileWidget] = {}
         self.file_pairs_list: List[FilePair] = []
-        self.current_thumbnail_size = app_config.DEFAULT_THUMBNAIL_SIZE
+        # Inicjalizuj current_thumbnail_size jako int, zgodnie z app_config
+        self.current_thumbnail_size = (
+            app_config.DEFAULT_THUMBNAIL_SIZE
+        )  # Powinien być int
 
     def clear_gallery(self):
         """
         Czyści galerię kafelków - usuwa wszystkie widgety z pamięci.
         """
-        # Usuń wszystkie widgety z layoutu
-        while self.tiles_layout.count():
-            item = self.tiles_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.setParent(None)
-                widget.deleteLater()
+        self.tiles_container.setUpdatesEnabled(False)
+        try:
+            # Usuń wszystkie widgety z layoutu
+            while self.tiles_layout.count():
+                item = self.tiles_layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    # Usuń widget z layoutu, ale nie usuwaj go jeszcze z pamięci,
+                    # jeśli jest w self.gallery_tile_widgets
+                    widget.setVisible(False)
+                    self.tiles_layout.removeWidget(widget)  # Jawne usunięcie
 
-        # Usuń pozostałe widgety ze słownika
-        for tile in self.gallery_tile_widgets.values():
-            tile.deleteLater()
-        self.gallery_tile_widgets.clear()
+            # Usuń widgety ze słownika i pamięci
+            for archive_path in list(
+                self.gallery_tile_widgets.keys()
+            ):  # Iteruj po kopii kluczy
+                tile = self.gallery_tile_widgets.pop(archive_path)
+                tile.setParent(None)
+                tile.deleteLater()
+            self.gallery_tile_widgets.clear()  # Upewnij się, że słownik jest pusty
+        finally:
+            self.tiles_container.setUpdatesEnabled(True)
+            self.tiles_container.update()
 
     def create_tile_widget_for_pair(self, file_pair: FilePair, parent_widget):
         """
         Tworzy pojedynczy kafelek dla pary plików.
         """
         try:
-            tile = FileTileWidget(file_pair, self.current_thumbnail_size, parent_widget)
+            # Przekaż current_thumbnail_size jako int, jeśli FileTileWidget tego oczekuje
+            # lub dostosuj FileTileWidget do przyjmowania krotki (width, height)
+            # Zakładając, że FileTileWidget oczekuje krotki:
+            tile_size_tuple = (self.current_thumbnail_size, self.current_thumbnail_size)
+            tile = FileTileWidget(file_pair, tile_size_tuple, parent_widget)
             # Ukryj na starcie, update_gallery_view zdecyduje o widoczności
             tile.setVisible(False)
             self.gallery_tile_widgets[file_pair.get_archive_path()] = tile
@@ -69,20 +87,32 @@ class GalleryManager:
         self.tiles_container.setUpdatesEnabled(False)
 
         try:
-            # Usuń wszystkie widgety z layoutu (ale nie z pamięci/słownika)
+            # Najpierw ukryj wszystkie istniejące widgety w layoucie
+            # i usuń je z layoutu, aby móc je dodać w nowej kolejności
+            for i in range(self.tiles_layout.count()):
+                item = self.tiles_layout.itemAt(i)
+                if item:
+                    widget = item.widget()
+                    if widget:
+                        widget.setVisible(False)
+
+            # Usuń wszystkie elementy z layoutu, ale nie widgety z pamięci
+            # Widgety zostaną dodane ponownie w odpowiedniej kolejności
             while self.tiles_layout.count():
                 item = self.tiles_layout.takeAt(0)
-                widget = item.widget()
-                if widget:
-                    widget.setVisible(False)
+                # Nie usuwamy widgetu (widget.deleteLater()), bo może być ponownie użyty
 
             if not self.file_pairs_list:
                 logging.debug("Lista par (po filtracji) pusta, galeria pusta.")
+                # Upewnij się, że wszystkie widgety są ukryte, jeśli lista jest pusta
+                for tile_widget in self.gallery_tile_widgets.values():
+                    tile_widget.setVisible(False)
                 return
 
             container_width = self.tiles_container.width()
+            # Użyj self.current_thumbnail_size bezpośrednio, bo to int
             tile_width_with_spacing = (
-                self.current_thumbnail_size[0] + self.tiles_layout.spacing() + 10
+                self.current_thumbnail_size + self.tiles_layout.spacing() + 10
             )
             cols = max(1, math.floor(container_width / tile_width_with_spacing))
 
@@ -90,6 +120,9 @@ class GalleryManager:
             for file_pair in self.file_pairs_list:
                 tile = self.gallery_tile_widgets.get(file_pair.get_archive_path())
                 if tile:
+                    # Jeśli kafelek jest już zarządzany przez layout, nie trzeba go ponownie dodawać,
+                    # wystarczy ustawić widoczność i pozycję.
+                    # Jednakże, ponieważ czyścimy layout na początku (takeAt), musimy dodać go ponownie.
                     tile.setVisible(True)
                     self.tiles_layout.addWidget(tile, row, col)
                     col += 1
@@ -107,7 +140,9 @@ class GalleryManager:
                 is_on_list = any(
                     fp.get_archive_path() == archive_path for fp in self.file_pairs_list
                 )
-                if not is_on_list:
+                if (
+                    not is_on_list and tile_widget.isVisible()
+                ):  # Ukryj tylko jeśli jest widoczny
                     tile_widget.setVisible(False)
         finally:
             # Włącz aktualizacje i zaplanuj odświeżenie
@@ -131,12 +166,16 @@ class GalleryManager:
     def update_thumbnail_size(self, new_size: tuple):
         """
         Aktualizuje rozmiar miniatur i przerenderowuje galerię.
+        new_size to krotka (width, height) z main_window.
         """
-        self.current_thumbnail_size = new_size
+        # current_thumbnail_size w GalleryManager powinien być int (szerokość)
+        # Zakładamy, że new_size[0] to nowa szerokość
+        self.current_thumbnail_size = new_size[0]
 
         # Zaktualizuj rozmiar w kafelkach
         for tile in self.gallery_tile_widgets.values():
-            tile.set_thumbnail_size(self.current_thumbnail_size)
+            # FileTileWidget.set_thumbnail_size oczekuje krotki (width, height)
+            tile.set_thumbnail_size(new_size)
 
         # Przerenderuj galerię z nowymi rozmiarami
         self.update_gallery_view()
