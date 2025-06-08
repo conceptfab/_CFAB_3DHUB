@@ -478,9 +478,14 @@ class FileOperationsUI:
             progress_dialog.setAutoReset(True)
             progress_dialog.setValue(0)
 
+            # Przechwycenie file_pair_to_move dla użycia w lambdzie
+            original_file_pair_for_handler = file_pair_to_move
             worker.signals.finished.connect(
-                lambda old_fp, new_fp: self._handle_move_file_pair_finished(
-                    old_fp, new_fp, target_folder_path, progress_dialog
+                lambda new_fp: self._handle_move_file_pair_finished(  # Poprawiona lambda
+                    original_file_pair_for_handler,
+                    new_fp,
+                    target_folder_path,
+                    progress_dialog,
                 )
             )
             worker.signals.error.connect(

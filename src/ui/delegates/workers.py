@@ -250,8 +250,8 @@ class DeleteFolderWorker(QRunnable):
                     f"Element '{folder_path_normalized}' nie istnieje, nie można usunąć."
                 )
                 self.signals.finished.emit(
-                    True
-                )  # Uznajemy za sukces, jeśli elementu nie ma
+                    folder_path_normalized
+                )  # Uznajemy za sukces, jeśli elementu nie ma, zwracamy ścieżkę
                 return
 
             if not os.path.isdir(folder_path_normalized):
@@ -279,7 +279,9 @@ class DeleteFolderWorker(QRunnable):
                 self.signals.progress.emit(
                     100, f"Usunięto folder i zawartość: {folder_path_normalized}"
                 )
-                self.signals.finished.emit(True)
+                self.signals.finished.emit(
+                    folder_path_normalized
+                )  # Zmieniono z True na folder_path_normalized
             else:
                 if not os.listdir(
                     folder_path_normalized
@@ -294,7 +296,9 @@ class DeleteFolderWorker(QRunnable):
                     self.signals.progress.emit(
                         100, f"Usunięto pusty folder: {folder_path_normalized}"
                     )
-                    self.signals.finished.emit(True)
+                    self.signals.finished.emit(
+                        folder_path_normalized
+                    )  # Zmieniono z True na folder_path_normalized
                 else:
                     logger.error(
                         f"Folder '{folder_path_normalized}' nie jest pusty. Aby usunąć, ustaw delete_content=True."
