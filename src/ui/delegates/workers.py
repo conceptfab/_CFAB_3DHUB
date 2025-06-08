@@ -1359,3 +1359,200 @@ class DataProcessingWorker(QObject):
             logging.error(f"Błąd w DataProcessingWorker: {e}")
         finally:
             self.finished.emit()
+
+
+class BulkDeleteWorker(BaseWorker):
+    """
+    Worker do masowego usuwania par plików.
+    Wykonuje operacje usuwania w tle, aby nie blokować głównego wątku UI.
+    """
+
+    def __init__(self, files_to_delete: list[FilePair]):
+        """
+        Inicjalizacja workera usuwającego wiele par plików.
+
+        Args:
+            files_to_delete: Lista obiektów FilePair do usunięcia
+        """
+        super().__init__()
+        self.files_to_delete = files_to_delete
+        self._worker_name = "BulkDeleteWorker"
+
+    def run(self):
+        """Wykonuje operację masowego usuwania plików."""
+        if not self.files_to_delete:
+            self.emit_finished([])
+            return
+
+        total_count = len(self.files_to_delete)
+        deleted_pairs = []
+        failed_pairs = []
+
+        for i, file_pair in enumerate(self.files_to_delete):
+            # Sprawdź przerwanie
+            if self.check_interruption():
+                break
+
+            try:
+                # Oblicz i zaraportuj postęp
+                progress_percent = int((i / total_count) * 100)
+                self.emit_progress(
+                    progress_percent,
+                    f"Usuwanie {i+1}/{total_count}: {file_pair.get_base_name()}",
+                )
+
+                # Wykonaj operację usunięcia plików
+                if os.path.exists(file_pair.archive_path):
+                    os.remove(file_pair.archive_path)
+
+                if file_pair.preview_path and os.path.exists(file_pair.preview_path):
+                    os.remove(file_pair.preview_path)
+
+                deleted_pairs.append(file_pair)
+                logger.debug(f"Usunięto pliki dla {file_pair.get_base_name()}")
+
+            except Exception as e:
+                self.emit_error(
+                    f"Nie udało się usunąć plików dla {file_pair.get_base_name()}: {str(e)}",
+                    e,
+                )
+                failed_pairs.append(file_pair)
+
+        # Zwróć listę pomyślnie usuniętych par
+        self.emit_progress(100, f"Usunięto {len(deleted_pairs)} z {total_count} plików")
+        self.emit_finished(deleted_pairs)
+
+
+class BulkMoveWorker(BaseWorker):
+    """
+    Worker do masowego przenoszenia par plików.
+    Wykonuje operacje przenoszenia w tle, aby nie blokować głównego wątku UI.
+    """
+
+    def __init__(self, files_to_move: list[FilePair], destination_dir: str):
+        """
+        Inicjalizacja workera przenoszącego wiele par plików.
+
+        Args:
+            files_to_move: Lista obiektów FilePair do przeniesienia
+            destination_dir: Katalog docelowy
+        """
+        super().__init__()
+        self.files_to_move = files_to_move
+        self.destination_dir = destination_dir
+        self._worker_name = "BulkMoveWorker"
+
+    def run(self):
+        """Wykonuje operację masowego przenoszenia plików."""
+        if not self.files_to_move or not self.destination_dir:
+            self.emit_finished([])
+            return
+
+        total_count = len(self.files_to_move)
+        moved_pairs = []
+        failed_pairs = []
+
+        for i, file_pair in enumerate(self.files_to_move):
+            # Sprawdź przerwanie
+            if self.check_interruption():
+                break
+
+            try:
+                # Oblicz i zaraportuj postęp
+                progress_percent = int((i / total_count) * 100)
+                self.emit_progress(
+                    progress_percent,
+                    f"Przenoszenie {i+1}/{total_count}: {file_pair.get_base_name()}",
+                )
+
+                # Wykonaj operację przeniesienia plików
+                import shutil
+
+                # Przenieś plik archiwum
+                if os.path.exists(file_pair.archive_path):
+                    archive_name = os.path.basename(file_pair.archive_path)
+                    new_archive_path = os.path.join(self.destination_dir, archive_name)
+                    shutil.move(file_pair.archive_path, new_archive_path)
+
+                # Przenieś plik podglądu (jeśli istnieje)
+                if file_pair.preview_path and os.path.exists(file_pair.preview_path):
+                    preview_name = os.path.basename(file_pair.preview_path)
+                    new_preview_path = os.path.join(self.destination_dir, preview_name)
+                    shutil.move(file_pair.preview_path, new_preview_path)
+
+                moved_pairs.append(file_pair)
+                logger.debug(
+                    f"Przeniesiono pliki dla {file_pair.get_base_name()} do {self.destination_dir}"
+                )
+
+            except Exception as e:
+                self.emit_error(
+                    f"Nie udało się przenieść plików dla {file_pair.get_base_name()}: {str(e)}",
+                    e,
+                )
+                failed_pairs.append(file_pair)
+
+        # Zwróć listę pomyślnie przeniesionych par
+        self.emit_progress(
+            100, f"Przeniesiono {len(moved_pairs)} z {total_count} plików"
+        )
+        self.emit_finished(moved_pairs)
+
+
+class SaveMetadataWorker(BaseWorker):
+    """
+    Worker do zapisu metadanych w tle.
+    Wykonuje operację zapisu metadanych, aby nie blokować głównego wątku UI.
+    """
+
+    def __init__(
+        self,
+        working_directory: str,
+        file_pairs: list[FilePair],
+        unpaired_archives: list[str] = None,
+        unpaired_previews: list[str] = None,
+    ):
+        """
+        Inicjalizacja workera zapisującego metadane.
+
+        Args:
+            working_directory: Katalog roboczy aplikacji
+            file_pairs: Lista par plików z metadanymi
+            unpaired_archives: Lista niesparowanych plików archiwów
+            unpaired_previews: Lista niesparowanych plików podglądu
+        """
+        super().__init__()
+        self.working_directory = working_directory
+        self.file_pairs = file_pairs
+        self.unpaired_archives = unpaired_archives or []
+        self.unpaired_previews = unpaired_previews or []
+        self._worker_name = "SaveMetadataWorker"
+
+    def run(self):
+        """Wykonuje operację zapisu metadanych."""
+        try:
+            self.emit_progress(0, "Rozpoczęto zapis metadanych")
+
+            # Przygotujmy dane do zapisu
+            self.emit_progress(30, "Przygotowywanie danych...")
+
+            # Wykonaj zapis metadanych
+            self.emit_progress(
+                50, f"Zapisywanie metadanych dla {len(self.file_pairs)} elementów..."
+            )
+            success = metadata_manager.save_metadata(
+                self.working_directory,
+                self.file_pairs,
+                self.unpaired_archives,
+                self.unpaired_previews,
+            )
+
+            if not success:
+                self.emit_error("Nie udało się zapisać metadanych.")
+                return
+
+            self.emit_progress(100, "Metadane zapisane pomyślnie")
+            self.emit_finished(True)
+
+        except Exception as e:
+            self.emit_error(f"Błąd podczas zapisu metadanych: {str(e)}", e)

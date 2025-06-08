@@ -103,12 +103,12 @@ class TestScanner(unittest.TestCase):
         # Test dla nieistniejącego katalogu
         non_existent_dir = os.path.join(self.test_dir, "non_existent")
         mod_time = get_directory_modification_time(non_existent_dir)
-        self.assertEqual(mod_time, 0)
-
-        # Test dla błędu dostępu
+        self.assertEqual(mod_time, 0)        # Test dla błędu dostępu
         with mock.patch("os.scandir", side_effect=PermissionError("Access denied")):
             mod_time = get_directory_modification_time(self.test_dir)
-            self.assertGreaterEqual(mod_time, 0)    def test_is_cache_valid(self):
+            self.assertGreaterEqual(mod_time, 0)
+
+    def test_is_cache_valid(self):
         """Test funkcji is_cache_valid."""
         clear_cache()  # Upewniamy się, że cache jest pusty
         

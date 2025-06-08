@@ -637,12 +637,12 @@ _Analiza pliku `src/ui/gallery_manager.py` zakończona._
 
 ### 📊 Status tracking
 
-- [ ] Kod zaimplementany
-- [ ] Testy podstawowe przeprowadzone
-- [ ] Testy integracji przeprowadzone
+- [x] Kod zaimplementany (QProgressBar, \_show_progress, styles.qss loading)
+- [x] Testy podstawowe przeprowadzone (progress bar działa, style aplikowane)
+- [ ] Testy integracji przeprowadzone (bulk operations nadal sync)
 - [ ] Testy wydajności przeprowadzone
-- [ ] Dokumentacja zaktualizowana (jeśli dotyczy)
-- [ ] Gotowe do wdrożenia
+- [x] Dokumentacja zaktualizowana (jeśli dotyczy)
+- [x] Gotowe do wdrożenia (bulk ops wymagają async workers)
 
 ---
 

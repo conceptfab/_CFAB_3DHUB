@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Optional
 
-from PyQt6.QtCore import QDir, Qt, QThread, QTimer
+from PyQt6.QtCore import QDir, Qt, QThread, QThreadPool, QTimer, QUrl
 from PyQt6.QtGui import QFileSystemModel, QPixmap
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -17,11 +17,14 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
+    QProgressDialog,
     QPushButton,
     QScrollArea,
     QSizePolicy,
     QSlider,
     QSplitter,
+    QStatusBar,
     QTabWidget,
     QTreeView,
     QVBoxLayout,
@@ -31,7 +34,14 @@ from PyQt6.QtWidgets import (
 from src import app_config
 from src.logic import file_operations, metadata_manager
 from src.models.file_pair import FilePair
-from src.ui.delegates.workers import DataProcessingWorker, ScanFolderWorker
+from src.ui.delegates.workers import (
+    BaseWorker,
+    BulkDeleteWorker,
+    BulkMoveWorker,
+    DataProcessingWorker,
+    SaveMetadataWorker,
+    ScanFolderWorker,
+)
 from src.ui.directory_tree_manager import DirectoryTreeManager
 from src.ui.file_operations_ui import FileOperationsUI
 from src.ui.gallery_manager import GalleryManager
@@ -105,6 +115,29 @@ class MainWindow(QMainWindow):
         # Konfiguracja okna
         self.setWindowTitle("CFAB_3DHUB")
         self.setMinimumSize(800, 600)
+
+        # Inicjalizacja paska statusu
+        self.status_bar = QStatusBar(self)
+        self.setStatusBar(self.status_bar)
+
+        # Inicjalizacja globalnego paska postępu
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(15)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)  # Początkowy stan - ukryty
+
+        # Etykieta postępu
+        self.progress_label = QLabel("Gotowy")
+        self.progress_label.setStyleSheet("color: gray; font-style: italic;")
+
+        # Dodanie etykiety i paska postępu do paska statusu
+        self.status_bar.addWidget(self.progress_label, 1)
+        self.status_bar.addPermanentWidget(self.progress_bar, 2)
+
+        # Inicjalizacja globalnego thread poola dla workerów QRunnable
+        self.thread_pool = QThreadPool.globalInstance()
+        logging.debug(f"Maksymalna liczba wątków: {self.thread_pool.maxThreadCount()}")
 
         # Centralny widget
         self.central_widget = QWidget()
@@ -835,33 +868,52 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         """
         Obsługuje zmianę rozmiaru okna.
-        """
-        # Opóźnienie przerenderowania galerii
+        """  # Opóźnienie przerenderowania galerii
         self.resize_timer.start(150)
         super().resizeEvent(event)
 
     def _save_metadata(self):
         """
-        Zapisuje metadane dla wszystkich par plików.
+        Zapisuje metadane dla wszystkich par plików w osobnym wątku.
         """
         logging.info(
             f"🔄 _save_metadata wywołane - katalog: {self.current_working_directory}"
         )
-        if self.current_working_directory:
-            logging.info(
-                f"📊 Zapisuję metadane dla {len(self.all_file_pairs)} par plików"
-            )
-            if not metadata_manager.save_metadata(
-                self.current_working_directory,
-                self.all_file_pairs,
-                self.unpaired_archives,
-                self.unpaired_previews,
-            ):
-                logging.error("❌ Nie udało się zapisać metadanych.")
-            else:
-                logging.info("✅ Metadane zapisane pomyślnie.")
-        else:
+        if not self.current_working_directory:
             logging.debug("Brak folderu roboczego lub par plików do zapisu metadanych.")
+            return
+
+        # Utwórz workera do zapisu metadanych
+        worker = SaveMetadataWorker(
+            self.current_working_directory,
+            self.all_file_pairs,
+            self.unpaired_archives,
+            self.unpaired_previews,
+        )
+
+        # Podłącz sygnały
+        self._setup_worker_connections(worker)
+        worker.signals.finished.connect(self._on_metadata_saved)
+
+        # Uruchom workera
+        self._show_progress(
+            0, f"Zapisywanie metadanych dla {len(self.all_file_pairs)} par plików..."
+        )
+        self.thread_pool.start(worker)
+
+    def _on_metadata_saved(self, success):
+        """
+        Slot wywoływany po zakończeniu zapisu metadanych.
+
+        Args:
+            success: True jeśli metadane zostały zapisane pomyślnie
+        """
+        if success:
+            self._show_progress(100, "Metadane zapisane pomyślnie")
+            logging.info("✅ Metadane zapisane pomyślnie.")
+        else:
+            self._show_progress(100, "Nie udało się zapisać metadanych")
+            logging.error("❌ Nie udało się zapisać metadanych.")
 
     def open_archive(self, file_pair: FilePair):
         """
@@ -934,9 +986,7 @@ class MainWindow(QMainWindow):
 
     def _clear_all_selections(self):
         """Clears all tile selections."""
-        self.selected_tiles.clear()
-
-        # Update all visible tiles to reflect cleared selection
+        self.selected_tiles.clear()  # Update all visible tiles to reflect cleared selection
         if hasattr(self, "gallery_manager") and self.gallery_manager:
             for tile_widget in self.gallery_manager.get_all_tile_widgets():
                 if hasattr(tile_widget, "metadata_controls"):
@@ -958,7 +1008,7 @@ class MainWindow(QMainWindow):
             logging.debug(f"Selected all {len(self.selected_tiles)} visible tiles")
 
     def _perform_bulk_delete(self):
-        """Performs bulk delete operation on selected tiles."""
+        """Performs bulk delete operation on selected tiles using a worker thread."""
         if not self.selected_tiles:
             return
 
@@ -972,47 +1022,53 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            deleted_pairs = []
-            for file_pair in self.selected_tiles.copy():
-                try:
-                    # Use the existing file operations
-                    if hasattr(self, "file_operations_ui") and self.file_operations_ui:
-                        # Remove files
-                        import os
+            # Utwórz workera do masowego usuwania
+            worker = BulkDeleteWorker(list(self.selected_tiles))
 
-                        if os.path.exists(file_pair.archive_path):
-                            os.remove(file_pair.archive_path)
-                        if os.path.exists(file_pair.preview_path):
-                            os.remove(file_pair.preview_path)
-                        deleted_pairs.append(file_pair)
-                        logging.debug(f"Deleted files for {file_pair.get_base_name()}")
-                except Exception as e:
-                    logging.error(
-                        f"Failed to delete files for {file_pair.get_base_name()}: {e}"
-                    )
+            # Podłącz sygnały
+            self._setup_worker_connections(worker)
+            worker.signals.finished.connect(self._on_bulk_delete_finished)
 
-            # Remove deleted pairs from data structures
-            for file_pair in deleted_pairs:
-                if file_pair in self.all_file_pairs:
-                    self.all_file_pairs.remove(file_pair)
-                self.selected_tiles.discard(file_pair)
+            # Uruchom workera
+            self._show_progress(0, f"Usuwanie {count} plików...")
+            self.thread_pool.start(worker)
 
-            # Refresh view
-            self._apply_filters_and_update_view()
-            self._save_metadata()
+    def _on_bulk_delete_finished(self, deleted_pairs):
+        """
+        Slot wywoływany po zakończeniu masowego usuwania plików.
 
-            QMessageBox.information(
-                self,
-                "Usuwanie zakończone",
-                f"Usunięto {len(deleted_pairs)} z {count} zaznaczonych plików.",
-            )
+        Args:
+            deleted_pairs: Lista pomyślnie usuniętych par plików
+        """
+        if not deleted_pairs:
+            self._show_progress(100, "Usuwanie przerwane lub nieudane")
+            return
+
+        # Usuń pary z głównej listy i selekcji
+        for file_pair in deleted_pairs:
+            if file_pair in self.all_file_pairs:
+                self.all_file_pairs.remove(file_pair)
+            self.selected_tiles.discard(file_pair)
+
+        # Odśwież widok
+        self._apply_filters_and_update_view()
+
+        # Zapisz metadane (to również będzie asynchroniczne)
+        self._save_metadata()
+        # Wyświetl podsumowanie
+        self._show_progress(100, f"Usunięto {len(deleted_pairs)} plików")
+        QMessageBox.information(
+            self,
+            "Usuwanie zakończone",
+            f"Usunięto {len(deleted_pairs)} z {len(self.selected_tiles) + len(deleted_pairs)} zaznaczonych plików.",
+        )
 
     def _perform_bulk_move(self):
-        """Performs bulk move operation on selected tiles."""
+        """Wykonuje masową operację przenoszenia zaznaczonych kafelków przy użyciu wątku roboczego."""
         if not self.selected_tiles:
             return
 
-        # Get destination directory
+        # Pobierz katalog docelowy
         destination = QFileDialog.getExistingDirectory(
             self, "Wybierz folder docelowy", self.current_working_directory or ""
         )
@@ -1021,47 +1077,48 @@ class MainWindow(QMainWindow):
             return
 
         count = len(self.selected_tiles)
-        moved_pairs = []
 
-        for file_pair in self.selected_tiles.copy():
-            try:
-                import os
-                import shutil
+        # Utwórz workera do masowego przenoszenia
+        worker = BulkMoveWorker(list(self.selected_tiles), destination)
 
-                # Move archive file
-                if os.path.exists(file_pair.archive_path):
-                    archive_name = os.path.basename(file_pair.archive_path)
-                    new_archive_path = os.path.join(destination, archive_name)
-                    shutil.move(file_pair.archive_path, new_archive_path)
+        # Podłącz sygnały
+        self._setup_worker_connections(worker)
+        worker.signals.finished.connect(self._on_bulk_move_finished)
 
-                # Move preview file
-                if os.path.exists(file_pair.preview_path):
-                    preview_name = os.path.basename(file_pair.preview_path)
-                    new_preview_path = os.path.join(destination, preview_name)
-                    shutil.move(file_pair.preview_path, new_preview_path)
+        # Uruchom workera
+        self._show_progress(0, f"Przenoszenie {count} plików...")
+        self.thread_pool.start(worker)
 
-                moved_pairs.append(file_pair)
-                logging.debug(
-                    f"Moved files for {file_pair.get_base_name()} to {destination}"
-                )
+    def _on_bulk_move_finished(self, moved_pairs):
+        """
+        Slot wywoływany po zakończeniu operacji przenoszenia.
 
-            except Exception as e:
-                logging.error(
-                    f"Failed to move files for {file_pair.get_base_name()}: {e}"
-                )
+        Args:
+            moved_pairs: Lista pomyślnie przeniesionych par plików
+        """
+        if not moved_pairs:
+            self._show_progress(100, "Przenoszenie przerwane lub nieudane")
+            return
 
-        # Remove moved pairs from data structures
+        # Usuń przeniesione pary z struktur danych
         for file_pair in moved_pairs:
             if file_pair in self.all_file_pairs:
                 self.all_file_pairs.remove(file_pair)
-            self.selected_tiles.discard(file_pair)  # Refresh view
+            self.selected_tiles.discard(file_pair)
+
+        # Odśwież widok
         self._apply_filters_and_update_view()
         self._save_metadata()
+
+        destination = (
+            os.path.dirname(moved_pairs[0].archive_path) if moved_pairs else "nieznany"
+        )
+        self._show_progress(100, f"Przeniesiono {len(moved_pairs)} plików")
 
         QMessageBox.information(
             self,
             "Przenoszenie zakończone",
-            f"Przeniesiono {len(moved_pairs)} z {count} zaznaczonych plików do:\n{destination}",
+            f"Przeniesiono {len(moved_pairs)} z {len(self.selected_tiles) + len(moved_pairs)} zaznaczonych plików do:\n{destination}",
         )
 
     def _handle_stars_changed(self, file_pair: FilePair, new_star_count: int):
@@ -1133,100 +1190,64 @@ class MainWindow(QMainWindow):
 
     def handle_file_drop_on_folder(
         self, source_file_paths: list[str], target_folder_path: str
-    ) -> bool:
+    ):
         """
         Obsługuje upuszczenie plików na folder w drzewie katalogów.
+        Konwertuje ścieżki na QUrl i przekierowuje do FileOperationsUI.
 
         Args:
-            source_file_paths: Lista ścieżek do plików źródłowych (archiwum i podgląd).
-            target_folder_path: Ścieżka do folderu docelowego.
-
-        Returns:
-            True jeśli operacja się powiodła, False w przeciwnym razie.
+            source_file_paths: Lista ścieżek do plików do przeniesienia
+            target_folder_path: Ścieżka do katalogu docelowego
         """
-        logging.debug(
-            f"Otrzymano żądanie przeniesienia plików: {source_file_paths} "
-            f"do folderu: {target_folder_path}"
-        )
 
-        if not source_file_paths or len(source_file_paths) != 2:
-            logging.warning(
-                "Nieprawidłowa liczba plików źródłowych do przeniesienia: "
-                f"{len(source_file_paths)}"
-            )
-            QMessageBox.warning(
-                self,
-                "Błąd Przenoszenia",
-                "Nie udało się zidentyfikować pary plików do przeniesienia.",
-            )
-            return False
+        # Konwertuj ścieżki plików na QUrl
+        urls = [QUrl.fromLocalFile(path) for path in source_file_paths]
 
-        # Zidentyfikuj FilePair na podstawie ścieżek źródłowych
-        # Zakładamy, że jedna ze ścieżek to archiwum, a druga to podgląd
-        # Musimy znaleźć, która jest która i czy pasują do istniejącej pary
-
-        original_file_pair: Optional[FilePair] = None
-
-        # Normalizuj ścieżki, aby uniknąć problemów z porównywaniem
-        normalized_source_paths = {normalize_path(p) for p in source_file_paths}
-
-        for fp in self.all_file_pairs:
-            fp_paths = {
-                normalize_path(fp.archive_path),
-                normalize_path(fp.preview_path),
-            }
-            if fp_paths == normalized_source_paths:
-                original_file_pair = fp
-                break
-
-        if not original_file_pair:
-            logging.warning(
-                f"Nie znaleziono pasującej pary plików dla: {source_file_paths}"
-            )
-            QMessageBox.warning(
-                self,
-                "Błąd Przenoszenia",
-                "Nie udało się zidentyfikować oryginalnej pary plików w aplikacji.",
-            )
-            return False
-
-        logging.info(
-            f"Znaleziono parę plików do przeniesienia: {original_file_pair.base_name}"
-        )
-
-        # Wywołaj metodę UI do przenoszenia
-        new_file_pair = self.file_operations_ui.move_file_pair_ui(
-            original_file_pair, target_folder_path
-        )
-
-        if new_file_pair:
-            # Aktualizacja self.all_file_pairs
-            try:
-                self.all_file_pairs.remove(original_file_pair)
-                self.all_file_pairs.append(new_file_pair)
-                logging.info(
-                    f"Zaktualizowano listę all_file_pairs. Usunięto: "
-                    f"{original_file_pair.base_name}, dodano: {new_file_pair.base_name}"
-                )
-            except ValueError:
-                logging.error(
-                    f"Nie udało się usunąć oryginalnej pary plików "
-                    f"{original_file_pair.base_name} z listy all_file_pairs."
-                )
-                # Mimo to kontynuujemy, bo pliki zostały przeniesione
-
-            # Odśwież widok galerii
-            self._apply_filters_and_update_view()
-
-            # Zapisz metadane
-            self._save_metadata()
-
-            logging.info(
-                f"Pomyślnie przeniesiono i zaktualizowano UI dla {new_file_pair.base_name}"
-            )
-            return True
+        # Przekieruj do FileOperationsUI
+        if self.file_operations_ui:
+            self.file_operations_ui.handle_drop_on_folder(urls, target_folder_path)
         else:
-            logging.warning(
-                f"Przenoszenie pary plików {original_file_pair.base_name} nie powiodło się."
-            )
-            return False
+            logging.error("FileOperationsUI nie jest zainicjalizowany")
+
+    # ---- Metody do obsługi operacji asynchronicznych i postępu ----
+
+    def _show_progress(self, percent: int, message: str):
+        """
+        Aktualizuje pasek postępu i etykietę postępu.
+
+        Args:
+            percent: Wartość postępu (0-100)
+            message: Wiadomość do wyświetlenia
+        """
+        self.progress_bar.setValue(percent)
+        self.progress_label.setText(message)
+        self.progress_bar.setVisible(True)
+
+        # Jeśli osiągnięto 100%, ukryj pasek po krótkim czasie
+        if percent >= 100:
+            QTimer.singleShot(3000, self._hide_progress)
+
+    def _hide_progress(self):
+        """Ukrywa pasek postępu i resetuje etykietę."""
+        self.progress_bar.setVisible(False)
+        self.progress_label.setText("Gotowy")
+
+    def _setup_worker_connections(self, worker: BaseWorker):
+        """
+        Konfiguruje połączenia sygnałów dla workera.
+
+        Args:
+            worker: Instancja BaseWorker do skonfigurowania
+        """
+        worker.signals.progress.connect(self._show_progress)
+        worker.signals.error.connect(self._handle_worker_error)
+
+    def _handle_worker_error(self, error_message: str):
+        """
+        Obsługuje błędy zgłaszane przez workery.
+
+        Args:
+            error_message: Komunikat o błędzie
+        """
+        QMessageBox.critical(self, "Błąd", error_message)
+        self._hide_progress()

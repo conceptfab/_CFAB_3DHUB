@@ -1,5 +1,5 @@
 
-2. Brakuje opcji by wybrany folder otworzyć w eksplorerze
+2. Brakuje opcji by wybrany folder otworzyć w eksplorerze w menu pod prawym przyciskiem
 3. W drzewie folderów powinna być przy kazdym folderze informacja ile zajmuje GB
 4. W drzewie folderów powinna być opcja Zwin/rozwin foldery
 5. checkbox do zaznacznia kafelków powinien mieć identyczne marginesy od lewej i od dołu

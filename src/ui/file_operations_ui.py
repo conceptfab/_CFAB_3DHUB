@@ -20,7 +20,9 @@ from src.logic.file_operations import (
     MoveFilePairWorker,
     RenameFilePairWorker,
 )
+from src.logic.scanner import collect_files, create_file_pairs
 from src.models.file_pair import FilePair
+from src.ui.delegates.workers import BulkMoveWorker
 from src.utils.path_utils import normalize_path  # Dodano import normalize_path
 
 logger = logging.getLogger(__name__)
@@ -362,8 +364,7 @@ class FileOperationsUI:
                 self.parent_window,
                 "Błąd inicjalizacji",
                 "Nie można zainicjować operacji ręcznego parowania. Sprawdź logi.",
-            )
-        # Usunięto return None
+            )  # Usunięto return None
 
     def _handle_manual_pairing_finished(
         self, new_file_pair: FilePair, progress_dialog: QProgressDialog
@@ -387,24 +388,75 @@ class FileOperationsUI:
     def handle_drop_on_folder(self, urls: List, target_folder_path: str):
         """
         Obsługuje upuszczenie plików na folder w drzewie.
+
+        Args:
+            urls: Lista QUrl obiektów reprezentujących pliki do przeniesienia
+            target_folder_path: Ścieżka do folderu docelowego
         """
         file_paths = [url.toLocalFile() for url in urls]
         logging.debug(f"Upuszczono pliki {file_paths} na folder {target_folder_path}")
 
-        reply = QMessageBox.question(
-            self.parent_window,
-            "Przenoszenie plików",
-            f"Czy chcesz przenieść {len(file_paths)} elementów "
-            f"do folderu '{os.path.basename(target_folder_path)}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
+        # Bezpośrednio rozpocznij przenoszenie bez pytania
+        logging.info("Rozpoczynanie przenoszenia plików...")
+        # Informuj o rozpoczęciu w pasku statusu
+        if hasattr(self.parent_window, "_show_progress"):
+            self.parent_window._show_progress(
+                0, f"Przenoszenie {len(file_paths)} elementów..."
+            )
 
-        if reply == QMessageBox.StandardButton.Yes:
-            logging.info("Rozpoczynanie przenoszenia plików...")
-            # TODO: Implementacja przenoszenia plików
+        try:
+            # Zbierz wszystkie pliki z podanych ścieżek
+            all_files = []
+            for file_path in file_paths:
+                if os.path.isfile(file_path):
+                    all_files.append(file_path)
+                elif os.path.isdir(file_path):
+                    # Jeśli to folder, zbierz pliki z niego
+                    dir_file_map = collect_files(file_path, max_depth=1)
+                    for files_list in dir_file_map.values():
+                        all_files.extend(files_list)
+
+            if not all_files:
+                if hasattr(self.parent_window, "_show_progress"):
+                    self.parent_window._show_progress(
+                        100, "Nie znaleziono plików do przeniesienia"
+                    )
+                logging.warning("Nie znaleziono plików do przeniesienia")
+                return False
+
+            # Utwórz tymczasowy file_map dla algorytmu create_file_pairs
+            temp_file_map = {}
+            for file_path in all_files:
+                dir_path = os.path.dirname(file_path)
+                if dir_path not in temp_file_map:
+                    temp_file_map[dir_path] = []
+                temp_file_map[dir_path].append(file_path)
+
+            # Utwórz pary plików używając strategii "best_match"
+            file_pairs, _ = create_file_pairs(
+                temp_file_map,
+                target_folder_path,  # Użyj target_folder jako base_directory
+                pair_strategy="best_match",
+            )
+
+            if not file_pairs:
+                # Jeśli nie udało się utworzyć par, spróbuj przenieść pliki indywidualnie
+                # (to może się zdarzyć dla pojedynczych plików bez pary)
+                logging.warning(
+                    "Nie udało się utworzyć par plików. Przenoszenie pojedynczych plików."
+                )
+                self._move_individual_files(all_files, target_folder_path)
+                return True
+
+            # Użyj BulkMoveWorker do przeniesienia par plików
+            self._move_file_pairs_bulk(file_pairs, target_folder_path)
             return True
-        return False
+
+        except Exception as e:
+            logging.error(f"Błąd podczas przenoszenia plików: {e}", exc_info=True)
+            if hasattr(self.parent_window, "_show_progress"):
+                self.parent_window._show_progress(100, f"Błąd przenoszenia: {str(e)}")
+            return False
 
     def show_unpaired_context_menu(
         self, position, list_widget: QListWidget, list_type: str
@@ -549,3 +601,128 @@ class FileOperationsUI:
             # else:
             #     self.parent_window.refresh_all_views() # Odśwież stary folder
             #     # Można też rozważyć zmianę folderu na docelowy i zaznaczenie tam elementu
+
+    def _move_individual_files(self, files: list[str], target_folder_path: str):
+        """
+        Przenosi pojedyncze pliki do folderu docelowego.
+
+        Args:
+            files: Lista ścieżek plików do przeniesienia
+            target_folder_path: Ścieżka do folderu docelowego
+        """
+        import shutil
+
+        try:
+            for i, file_path in enumerate(files):
+                filename = os.path.basename(file_path)
+                destination_path = os.path.join(target_folder_path, filename)
+
+                # Informuj o postępie w pasku statusu
+                if hasattr(self.parent_window, "_show_progress"):
+                    progress_percent = int((i / len(files)) * 100)
+                    self.parent_window._show_progress(
+                        progress_percent, f"Przenoszenie: {filename}"
+                    )
+
+                try:
+                    shutil.move(file_path, destination_path)
+                    logging.debug(f"Przeniesiono: {file_path} -> {destination_path}")
+                except Exception as e:
+                    logging.error(f"Błąd przenoszenia {file_path}: {e}")
+                    # Usunięto QMessageBox.warning - błędy tylko w logach            # Zakończenie operacji
+            if hasattr(self.parent_window, "_show_progress"):
+                self.parent_window._show_progress(
+                    100, f"Przeniesiono {len(files)} plików"
+                )
+
+        except Exception as e:
+            logging.error(f"Błąd podczas przenoszenia plików: {e}")
+            if hasattr(self.parent_window, "_show_progress"):
+                self.parent_window._show_progress(100, f"Błąd: {str(e)}")
+
+        # Odśwież widoki po przeniesieniu
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
+        ):
+            self.parent_window.refresh_all_views()
+
+    def _move_file_pairs_bulk(
+        self, file_pairs: list[FilePair], target_folder_path: str
+    ):
+        """
+        Przenosi pary plików używając BulkMoveWorker.
+
+        Args:
+            file_pairs: Lista par plików do przeniesienia
+            target_folder_path: Ścieżka do folderu docelowego
+        """
+        if not file_pairs:
+            return
+
+        # Utwórz workera do masowego przenoszenia
+        worker = BulkMoveWorker(file_pairs, target_folder_path)
+
+        # Informuj o rozpoczęciu w pasku statusu
+        if hasattr(self.parent_window, "_show_progress"):
+            self.parent_window._show_progress(
+                0, f"Przenoszenie {len(file_pairs)} par plików..."
+            )
+
+        # Podłącz sygnały workera
+        worker.signals.finished.connect(
+            lambda moved_pairs: self._handle_bulk_move_finished(moved_pairs)
+        )
+        worker.signals.error.connect(
+            lambda err_msg: self._handle_bulk_move_error(err_msg)
+        )
+        worker.signals.progress.connect(
+            lambda percent, msg: self._handle_bulk_move_progress(percent, msg)
+        )  # Uruchom workera
+        QThreadPool.globalInstance().start(worker)
+
+    def _handle_bulk_move_finished(self, moved_pairs: list[FilePair]):
+        """
+        Obsługuje zakończenie masowego przenoszenia par plików.
+
+        Args:
+            moved_pairs: Lista pomyślnie przeniesionych par
+        """
+        logger.info(f"Pomyślnie przeniesiono {len(moved_pairs)} par plików")
+
+        # Informuj o zakończeniu w pasku statusu i ukryj po chwili
+        if hasattr(self.parent_window, "_show_progress"):
+            self.parent_window._show_progress(
+                100, f"Przeniesiono {len(moved_pairs)} par plików"
+            )
+        if hasattr(self.parent_window, "_hide_progress"):
+            self.parent_window._hide_progress()
+
+        # Odśwież widoki
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
+        ):
+            self.parent_window.refresh_all_views()
+
+    def _handle_bulk_move_error(self, error_message: str):
+        """
+        Obsługuje błędy podczas masowego przenoszenia.
+
+        Args:
+            error_message: Komunikat błędu
+        """
+        logger.error(f"Błąd masowego przenoszenia: {error_message}")
+        if hasattr(self.parent_window, "_show_progress"):
+            self.parent_window._show_progress(100, f"Błąd: {error_message}")
+        if hasattr(self.parent_window, "_hide_progress"):
+            self.parent_window._hide_progress()
+
+    def _handle_bulk_move_progress(self, percent: int, message: str):
+        """
+        Obsługuje postęp masowego przenoszenia.
+
+        Args:
+            percent: Procent ukończenia
+            message: Komunikat postępu
+        """
+        if hasattr(self.parent_window, "_show_progress"):
+            self.parent_window._show_progress(percent, message)

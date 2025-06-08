@@ -17,6 +17,33 @@ def run():
     # Jeszcze krótszy komunikat
     print(f"Root in path: {_PROJECT_ROOT}")
 
+    # Wczytaj plik styles.qss i przekaż go do funkcji main
+    style_sheet = ""
+    style_path = os.path.join(_PROJECT_ROOT, "styles.qss")
+    if os.path.exists(style_path):
+        print(f"Wczytywanie stylów z: {style_path}")
+        try:
+            # Próbuj najpierw z UTF-8 (najbardziej powszechne kodowanie)
+            with open(style_path, "r", encoding="utf-8") as style_file:
+                style_sheet = style_file.read()
+                print(f"Załadowano {len(style_sheet)} bajtów stylów (UTF-8)")
+        except UnicodeDecodeError:
+            # Jeśli UTF-8 nie zadziała, spróbuj z UTF-16
+            try:
+                with open(style_path, "r", encoding="utf-16") as style_file:
+                    style_sheet = style_file.read()
+                    print(f"Załadowano {len(style_sheet)} bajtów stylów (UTF-16)")
+            except UnicodeDecodeError:
+                # Jako ostateczność, spróbuj z Latin-1 (ignoruje błędy kodowania)
+                with open(style_path, "r", encoding="latin-1") as style_file:
+                    style_sheet = style_file.read()
+                    print(f"Załadowano {len(style_sheet)} bajtów stylów (Latin-1)")
+                print(
+                    "UWAGA: Używanie awaryjnego kodowania Latin-1, mogą wystąpić problemy ze znakami specjalnymi."
+                )
+    else:
+        print(f"UWAGA: Nie znaleziono pliku stylów: {style_path}")
+
     # Sprawdź, czy użytkownik chce włączyć tryb debugowania
     import sys
 
@@ -27,7 +54,8 @@ def run():
 
         logging.getLogger("src.logic.scanner").setLevel(logging.DEBUG)
 
-    main()
+    # Przekazujemy style do funkcji main
+    main(style_sheet=style_sheet)
 
 
 if __name__ == "__main__":
