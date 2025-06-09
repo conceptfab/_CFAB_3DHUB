@@ -11,11 +11,8 @@ if _PROJECT_ROOT not in sys.path:
 
 # Import głównej funkcji aplikacji teraz, gdy sys.path jest ustawione.
 from src.main import main  # noqa: E402
-from src.utils.arg_parser import (
-    get_app_version,
-    parse_args,  # noqa: E402
-    setup_logging_from_args,
-)
+from src.utils.arg_parser import parse_args  # noqa: E402
+from src.utils.arg_parser import get_app_version, setup_logging_from_args
 from src.utils.style_loader import get_style_path, load_styles  # noqa: E402
 
 

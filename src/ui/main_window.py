@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src import app_config
+from src.controllers.main_window_controller import MainWindowController
 from src.logic import file_operations, metadata_manager
 from src.models.file_pair import FilePair
 from src.services.file_operations_service import FileOperationsService
@@ -79,7 +80,10 @@ class MainWindow(QMainWindow):
         # KRYTYCZNE: AppConfig musi być pierwsze - inne komponenty go używają!
         self.app_config = app_config.AppConfig()
 
-        # ETAP 2: Serwisy biznesowe - separacja logiki od UI
+        # ETAP 2 FINAL: MVC Controller - centralna logika biznesowa
+        self.controller = MainWindowController(self)
+
+        # LEGACY: Zachowane dla kompatybilności (stopniowe usuwanie)
         self.file_operations_service = FileOperationsService()
         self.scanning_service = ScanningService()
 
@@ -875,34 +879,25 @@ class MainWindow(QMainWindow):
 
     def _start_folder_scanning(self):
         """
-        Rozpoczyna skanowanie folderu w osobnym wątku.
+        ETAP 2 FINAL: Delegacja skanowania do MainWindowController (MVC).
         """
-        # Wyczyść cache skanowania
-        from src.logic.scanner import clear_cache
-
-        clear_cache()
-
-        # Rozpocznij skanowanie w tle
+        # UI Feedback
         self.select_folder_button.setText("Skanowanie...")
         self.select_folder_button.setEnabled(False)
 
-        # Uruchom workera skanowania
-        self.scan_thread = QThread()
-        self.scan_worker = ScanFolderWorker()
-        self.scan_worker.directory_to_scan = self.current_working_directory
-        self.scan_worker.moveToThread(self.scan_thread)
-
-        self.scan_thread.started.connect(self.scan_worker.run)
-        self.scan_worker.finished.connect(self._handle_scan_finished)
-        self.scan_worker.finished.connect(self.scan_thread.quit)
-        self.scan_worker.error.connect(self._handle_scan_error)
-        self.scan_worker.error.connect(self.scan_thread.quit)
-        self.scan_thread.finished.connect(self._on_scan_thread_finished)
-
-        self.scan_thread.start()
-        logging.info(
-            f"Uruchomiono wątek skanowania dla: " f"{self.current_working_directory}"
+        # DELEGACJA DO KONTROLERA - NO MORE WORKER THREADS!
+        success = self.controller.handle_folder_selection(
+            self.current_working_directory
         )
+
+        # Przywróć UI state
+        self.select_folder_button.setText("Wybierz Folder")
+        self.select_folder_button.setEnabled(True)
+
+        if success:
+            logging.info(f"Controller scan SUCCESS: {self.current_working_directory}")
+        else:
+            logging.warning(f"Controller scan FAILED: {self.current_working_directory}")
 
     def _on_scan_thread_finished(self):
         """
@@ -1326,13 +1321,15 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Błąd Podglądu", error_message)
 
     def _handle_tile_selection_changed(self, file_pair: FilePair, is_selected: bool):
-        """
-        Obsługuje zmianę stanu selekcji kafelka.
-        """
+        """ETAP 2 FINAL: Delegacja tile selection do MainWindowController (MVC)."""
         logging.info(
-            f"✅ _handle_tile_selection_changed wywołane: {file_pair.get_base_name()} -> {is_selected}"
+            f"✅ Controller tile selection: {file_pair.get_base_name()} -> {is_selected}"
         )
 
+        # DELEGACJA DO KONTROLERA
+        self.controller.handle_tile_selection(file_pair, is_selected)
+
+        # LEGACY: Aktualizuj lokalny stan (stopniowo usuwane)
         if is_selected:
             self.selected_tiles.add(file_pair)
         else:
@@ -1341,10 +1338,7 @@ class MainWindow(QMainWindow):
         # Update bulk operations UI visibility
         self._update_bulk_operations_visibility()
 
-        logging.debug(
-            f"Tile selection changed for {file_pair.get_base_name()}: {is_selected}. "
-            f"Total selected: {len(self.selected_tiles)}"
-        )
+        logging.debug(f"Total selected tiles: {len(self.selected_tiles)}")
 
     def _update_bulk_operations_visibility(self):
         """Updates visibility of bulk operations controls based on selection count."""
@@ -1379,43 +1373,20 @@ class MainWindow(QMainWindow):
             logging.debug(f"Selected all {len(self.selected_tiles)} visible tiles")
 
     def _perform_bulk_delete(self):
-        """ETAP 2: Bulk delete używa teraz FileOperationsService."""
+        """ETAP 2 FINAL: Delegacja bulk delete do MainWindowController (MVC)."""
         if not self.selected_tiles:
             return
 
-        count = len(self.selected_tiles)
-        reply = QMessageBox.question(
-            self,
-            "Potwierdź usunięcie",
-            f"Czy na pewno chcesz usunąć {count} zaznaczonych plików?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
+        # DELEGACJA DO KONTROLERA - NO MORE DIRECT UI LOGIC!
+        success = self.controller.handle_bulk_delete(list(self.selected_tiles))
 
-        if reply == QMessageBox.StandardButton.Yes:
-            # ETAP 2: Używamy serwisu zamiast bezpośrednich operacji
-            self._show_progress(0, f"Usuwanie {count} plików...")
-
-            try:
-                # Deleguj do serwisu
-                deleted_pairs, errors = self.file_operations_service.bulk_delete(
-                    list(self.selected_tiles)
-                )
-
-                # Obsłuż wynik
-                self._on_bulk_delete_finished(deleted_pairs)
-
-                # Pokaż błędy jeśli były
-                if errors:
-                    error_msg = "\n".join(errors[:5])  # Max 5 błędów
-                    if len(errors) > 5:
-                        error_msg += f"\n... i {len(errors) - 5} więcej"
-                    QMessageBox.warning(self, "Błędy podczas usuwania", error_msg)
-
-            except Exception as e:
-                logging.error(f"Błąd bulk delete: {str(e)}")
-                QMessageBox.critical(self, "Błąd", f"Błąd usuwania: {str(e)}")
-                self._hide_progress()
+        if success:
+            # Wyczyść selekcję po pomyślnej operacji
+            self.selected_tiles.clear()
+            self._update_bulk_operations_visibility()
+            logging.info("Controller bulk delete SUCCESS")
+        else:
+            logging.warning("Controller bulk delete FAILED or CANCELLED")
 
     def _on_bulk_delete_finished(self, deleted_pairs):
         """
@@ -1635,3 +1606,80 @@ class MainWindow(QMainWindow):
         """
         QMessageBox.critical(self, "Błąd", error_message)
         self._hide_progress()
+
+    # ETAP 2 FINAL: Metody UI dla MainWindowController (MVC)
+    def show_error_message(self, title: str, message: str):
+        """Pokazuje błąd użytkownikowi - używane przez kontroler."""
+        QMessageBox.critical(self, title, message)
+
+    def show_warning_message(self, title: str, message: str):
+        """Pokazuje ostrzeżenie użytkownikowi - używane przez kontroler."""
+        QMessageBox.warning(self, title, message)
+
+    def show_info_message(self, title: str, message: str):
+        """Pokazuje informację użytkownikowi - używane przez kontroler."""
+        QMessageBox.information(self, title, message)
+
+    def update_scan_results(self, scan_result):
+        """Aktualizuje UI wynikami skanowania z kontrolera."""
+        self.all_file_pairs = scan_result.file_pairs
+        self.unpaired_archives = scan_result.unpaired_archives
+        self.unpaired_previews = scan_result.unpaired_previews
+
+        # Wyczyść poprzednie widgety
+        self.gallery_manager.clear_gallery()
+
+        # Utwórz nowe kafelki
+        if self.all_file_pairs:
+            self._start_data_processing_worker(self.all_file_pairs)
+        else:
+            self._on_tile_loading_finished()
+
+        # Aktualizuj listy niesparowanych
+        self._update_unpaired_files_lists()
+
+    def confirm_bulk_delete(self, count: int) -> bool:
+        """Potwierdza operację bulk delete z użytkownikiem."""
+        reply = QMessageBox.question(
+            self,
+            "Potwierdzenie usunięcia",
+            f"Czy na pewno chcesz usunąć {count} par plików?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def update_after_bulk_operation(self, processed_pairs, operation_name: str):
+        """Aktualizuje UI po operacji bulk."""
+        # Usuń z galerii
+        for pair in processed_pairs:
+            self.gallery_manager.remove_tile_for_pair(pair)
+
+        # Aktualizuj widok
+        self.refresh_all_views()
+
+        # Status bar
+        self.status_bar.showMessage(
+            f"Operacja {operation_name}: {len(processed_pairs)} plików"
+        )
+
+    def update_bulk_operations_visibility(self, selected_count: int):
+        """Aktualizuje widoczność operacji bulk."""
+        self._update_bulk_operations_visibility()
+
+    def add_new_pair(self, new_pair):
+        """Dodaje nową parę do UI."""
+        self.all_file_pairs.append(new_pair)
+        tile = self._create_tile_widget_for_pair(new_pair)
+        if tile:
+            self.gallery_manager.add_tile_widget(tile)
+
+    def update_unpaired_lists(self, archives, previews):
+        """Aktualizuje listy niesparowanych plików."""
+        self.unpaired_archives = archives
+        self.unpaired_previews = previews
+        self._update_unpaired_files_lists()
+
+    def request_metadata_save(self):
+        """Żąda zapisu metadanych."""
+        self._save_metadata()
