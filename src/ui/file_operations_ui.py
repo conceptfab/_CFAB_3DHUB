@@ -697,7 +697,34 @@ class FileOperationsUI:
         if hasattr(self.parent_window, "_hide_progress"):
             self.parent_window._hide_progress()
 
-        # Odśwież widoki
+        # 🔧 NAPRAWKA DRAG&DROP: Usuń przeniesione pary z struktur danych głównego okna
+        # i odśwież folder źródłowy żeby usunąć pliki które już nie istnieją na dysku
+        if hasattr(self.parent_window, "all_file_pairs") and moved_pairs:
+            # Usuń przeniesione pary z głównej listy
+            for file_pair in moved_pairs:
+                if file_pair in self.parent_window.all_file_pairs:
+                    self.parent_window.all_file_pairs.remove(file_pair)
+                # Usuń z zaznaczonych kafelków jeśli istnieje
+                if hasattr(self.parent_window, "selected_tiles"):
+                    self.parent_window.selected_tiles.discard(file_pair)
+
+            logger.info(
+                f"🔧 Drag&drop: Usunięto {len(moved_pairs)} par z all_file_pairs"
+            )
+
+            # Odśwież folder źródłowy używając tego samego mechanizmu co w głównym oknie
+            if hasattr(self.parent_window, "_refresh_source_folder_after_move"):
+                logger.info("🔧 Drag&drop: Wywoływanie odświeżania folderu źródłowego")
+                self.parent_window._refresh_source_folder_after_move()
+            else:
+                logger.warning(
+                    "🔧 Drag&drop: Brak metody _refresh_source_folder_after_move - używam fallback"
+                )
+                # Fallback - wymusza pełne ponowne skanowanie
+                if hasattr(self.parent_window, "force_full_refresh"):
+                    self.parent_window.force_full_refresh()
+
+        # Odśwież widoki (ale już po usunięciu przeniesionych plików ze struktury danych)
         if hasattr(self.parent_window, "refresh_all_views") and callable(
             self.parent_window.refresh_all_views
         ):

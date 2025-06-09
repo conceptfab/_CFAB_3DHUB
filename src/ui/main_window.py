@@ -1461,6 +1461,15 @@ class MainWindow(QMainWindow):
                 self.all_file_pairs.remove(file_pair)
             self.selected_tiles.discard(file_pair)
 
+        # 🔧 NAPRAWKA: Odśwież folder źródłowy po operacji drag&drop
+        # Po przeniesieniu plików musimy ponownie przeskanować folder źródłowy,
+        # żeby usunąć z widoku pliki które już nie istnieją na dysku
+        if self.current_working_directory:
+            logging.info(
+                f"Odświeżanie folderu źródłowego po drag&drop: {self.current_working_directory}"
+            )
+            self._refresh_source_folder_after_move()
+
         # Odśwież widok
         self._apply_filters_and_update_view()
         self._save_metadata()
@@ -1475,6 +1484,54 @@ class MainWindow(QMainWindow):
             "Przenoszenie zakończone",
             f"Przeniesiono {len(moved_pairs)} z {len(self.selected_tiles) + len(moved_pairs)} zaznaczonych plików do:\n{destination}",
         )
+
+    def _refresh_source_folder_after_move(self):
+        """
+        Odświeża folder źródłowy po operacji przenoszenia plików przez drag&drop.
+
+        Ta metoda ponownie skanuje current_working_directory, aby usunąć z widoku
+        pliki które zostały przeniesione i już nie istnieją na dysku.
+        """
+        if not self.current_working_directory or not os.path.exists(
+            self.current_working_directory
+        ):
+            logging.warning(
+                f"Nie można odświeżyć - folder źródłowy nie istnieje: {self.current_working_directory}"
+            )
+            return
+
+        try:
+            # Ponownie przeskanuj folder źródłowy
+            logging.info(
+                f"Rozpoczynanie ponownego skanowania folderu: {self.current_working_directory}"
+            )
+
+            # Wyczyść cache aby wymusić pełny rescan
+            from src.logic.scanner import clear_cache
+
+            clear_cache()
+
+            # Uruchom ponowne skanowanie za pomocą kontrolera
+            # To wywoła pełne ponowne skanowanie i zaktualizuje self.all_file_pairs
+            if hasattr(self, "controller") and self.controller:
+                success = self.controller.handle_folder_selection(
+                    self.current_working_directory
+                )
+                if success:
+                    logging.info(
+                        "Pomyślnie odświeżono folder źródłowy po operacji drag&drop"
+                    )
+                else:
+                    logging.warning(
+                        "Błąd podczas odświeżania folderu źródłowego przez kontroler"
+                    )
+            else:
+                logging.warning("Kontroler nie jest dostępny - używam fallback")
+                # Fallback - użyj istniejącego mechanizmu odświeżania
+                self._force_refresh()
+
+        except Exception as e:
+            logging.error(f"Błąd podczas odświeżania folderu źródłowego: {e}")
 
     def _handle_stars_changed(self, file_pair: FilePair, new_star_count: int):
         """
