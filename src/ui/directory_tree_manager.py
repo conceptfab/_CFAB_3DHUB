@@ -241,7 +241,12 @@ class DirectoryTreeManager:
         Inicjalizuje i konfiguruje model drzewa katalogów.
         """
         if not current_working_directory:
+            logging.warning("Brak current_working_directory - pomijam inicjalizację")
             return
+
+        logging.debug(f"Inicjalizacja drzewa folderów dla: {current_working_directory}")
+        logging.debug(f"Model root path przed: {self.model.rootPath()}")
+        logging.debug(f"Folder tree visible: {self.folder_tree.isVisible()}")
 
         # Sprawdź czy to pierwszy wybór folderu roboczego
         if not self._main_working_directory:

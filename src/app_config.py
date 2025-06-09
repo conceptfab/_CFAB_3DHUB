@@ -55,6 +55,7 @@ class AppConfig:
         "thumbnail_cache_max_memory_mb": 100,  # Maksymalna pamięć w MB (przybliżone)
         "thumbnail_cache_enable_disk": False,  # Czy używać cache na dysku
         "thumbnail_cache_cleanup_threshold": 0.8,  # Próg czyszczenia (80% limitu)
+        # Ochrona ustawień
     }
 
     def __init__(
@@ -388,6 +389,47 @@ class AppConfig:
         """
         colors = self._validate_dict(colors, "Słownik kolorów")
         return self.set("predefined_colors", colors)
+
+    def save(self) -> bool:
+        """
+        Ręcznie zapisuje konfigurację do pliku.
+
+        Returns:
+            True jeśli zapisano pomyślnie, False w przeciwnym razie.
+        """
+        return self._save_config()
+
+    def reload(self) -> bool:
+        """
+        Przeładowuje konfigurację z pliku.
+        UWAGA: Niezapisane zmiany zostaną utracone!
+
+        Returns:
+            True jeśli wczytanie się powiodło, False w przeciwnym razie.
+        """
+        try:
+            old_config = self._config.copy()  # Backup na wypadek błędu
+            self._config = self._load_config()
+            self._update_derived_values()
+            logger.info(f"Konfiguracja przeładowana z: {self._config_file_path}")
+            return True
+        except Exception as e:
+            self._config = old_config  # Przywróć poprzednią konfigurację
+            logger.error(f"Błąd przeładowania konfiguracji: {e}")
+            return False
+
+    def reset_to_defaults(self) -> bool:
+        """
+        Resetuje konfigurację do wartości domyślnych.
+
+        Returns:
+            True jeśli zapisano pomyślnie, False w przeciwnym razie.
+        """
+        self._config = self.DEFAULT_CONFIG.copy()
+        result = self._save_config()
+        if result:
+            self._update_derived_values()
+        return result
 
     # --- Właściwości dla często używanych wartości ---
 

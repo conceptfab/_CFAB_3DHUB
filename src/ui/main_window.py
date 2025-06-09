@@ -7,8 +7,9 @@ import os
 from typing import Optional
 
 from PyQt6.QtCore import QDir, Qt, QThread, QThreadPool, QTimer, QUrl
-from PyQt6.QtGui import QFileSystemModel, QPixmap
+from PyQt6.QtGui import QAction, QFileSystemModel, QPixmap
 from PyQt6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -34,6 +35,7 @@ from PyQt6.QtWidgets import (
 from src import app_config
 from src.logic import file_operations, metadata_manager
 from src.models.file_pair import FilePair
+from src.services.thread_coordinator import ThreadCoordinator
 from src.ui.delegates.workers import (
     BaseWorker,
     BulkDeleteWorker,
@@ -64,10 +66,17 @@ class MainWindow(QMainWindow):
         self._init_window()
         self._init_ui()
         self._init_managers()
+
+        # Automatyczne ładowanie ostatniego folderu roboczego
+        self._auto_load_last_folder()
+
         logging.info("Główne okno aplikacji zostało zainicjalizowane")
 
     def _init_data(self):
         """Inicjalizuje dane aplikacji."""
+        # KRYTYCZNE: AppConfig musi być pierwsze - inne komponenty go używają!
+        self.app_config = app_config.AppConfig()
+
         self.current_working_directory = None
         self.all_file_pairs: list[FilePair] = []
         self.unpaired_archives: list[str] = []
@@ -89,8 +98,7 @@ class MainWindow(QMainWindow):
         self.resize_timer.setSingleShot(True)
         self.resize_timer.timeout.connect(self._update_gallery_view)
 
-        # Konfiguracja rozmiaru miniatur
-        self.app_config = app_config.AppConfig()  # Użyj instancji AppConfig
+        # Konfiguracja rozmiaru miniatur (AppConfig już zainicjalizowane w _init_data)
         self.min_thumbnail_size = self.app_config.min_thumbnail_size
         self.max_thumbnail_size = self.app_config.max_thumbnail_size
 
@@ -109,7 +117,8 @@ class MainWindow(QMainWindow):
             )
 
         logging.info(
-            f"Initial slider position set to: {self.initial_slider_position}%, resulting thumbnail size: {self.current_thumbnail_size}px"
+            f"Initial slider position set to: {self.initial_slider_position}%, "
+            f"resulting thumbnail size: {self.current_thumbnail_size}px"
         )
 
         # Konfiguracja okna
@@ -152,6 +161,9 @@ class MainWindow(QMainWindow):
         """
         Inicjalizuje elementy interfejsu użytkownika.
         """
+        # Najpierw tworzymy menu bar
+        self.setup_menu_bar()
+
         # Panel górny
         self._create_top_panel()
 
@@ -174,6 +186,186 @@ class MainWindow(QMainWindow):
 
         # Zakładka niesparowanych plików
         self._create_unpaired_files_tab()
+
+    def setup_menu_bar(self):
+        """Tworzy menu bar z pełną funkcjonalnością."""
+        menubar = self.menuBar()
+
+        # Menu Plik
+        file_menu = menubar.addMenu("&Plik")
+        file_menu.addAction("&Otwórz folder...", self._select_working_directory)
+        file_menu.addSeparator()
+        file_menu.addAction("&Wyjście", self.close)
+
+        # Menu Narzędzia
+        tools_menu = menubar.addMenu("&Narzędzia")
+        tools_menu.addAction(
+            "🗑️ Usuń wszystkie foldery .app_metadata", self.remove_all_metadata_folders
+        )
+        tools_menu.addSeparator()
+        tools_menu.addAction("⚙️ Preferencje...", self.show_preferences)
+
+        # Menu Widok
+        view_menu = menubar.addMenu("&Widok")
+        view_menu.addAction("🔄 Odśwież", self.refresh_all_views)
+
+        # Menu Pomoc
+        help_menu = menubar.addMenu("&Pomoc")
+        help_menu.addAction("ℹ️ O programie...", self.show_about)
+
+    def show_preferences(self):
+        """Wyświetla okno preferencji."""
+        try:
+            # Import tylko jeśli nie jest jeszcze zaimportowany
+            if not hasattr(self, "_preferences_dialog_class"):
+                from src.ui.widgets.preferences_dialog import PreferencesDialog
+
+                self._preferences_dialog_class = PreferencesDialog
+
+            dialog = self._preferences_dialog_class(self)
+            # Połącz sygnał zmiany preferencji
+            dialog.preferences_changed.connect(self._handle_preferences_changed)
+            result = dialog.exec()
+
+            if result == QDialog.DialogCode.Accepted:
+                logging.info("Okno preferencji zamknięte - zmiany zaakceptowane")
+            else:
+                logging.info("Okno preferencji anulowane")
+
+        except ImportError:
+            QMessageBox.information(
+                self,
+                "Preferencje",
+                "Okno preferencji będzie dostępne w przyszłej wersji.",
+            )
+            logging.warning("PreferencjesDialog nie został jeszcze zaimplementowany")
+
+    def _handle_preferences_changed(self):
+        """Obsługuje zmiany w preferencjach aplikacji."""
+        try:
+            logging.info("Preferencje zostały zmienione - aplikuję nowe ustawienia")
+
+            # UWAGA: NIE tworzymy nowej instancji AppConfig!
+            # Tylko przeładowujemy istniejącą konfigurację
+            self.app_config.reload()
+
+            # Zastosuj nowe ustawienia do UI
+            if hasattr(self, "gallery_manager"):
+                # Odśwież cache miniaturek jeśli zmienił się rozmiar
+                if hasattr(self.gallery_manager, "thumbnail_cache"):
+                    max_entries = self.app_config.get(
+                        "thumbnail_cache_max_entries", 500
+                    )
+                    max_memory = self.app_config.get(
+                        "thumbnail_cache_max_memory_mb", 100
+                    )
+                    self.gallery_manager.thumbnail_cache.update_limits(
+                        max_entries, max_memory
+                    )
+
+            # Odśwież slider miniatur
+            if hasattr(self, "size_slider"):
+                saved_position = self.app_config.get_thumbnail_slider_position()
+                if saved_position != self.size_slider.value():
+                    self.size_slider.setValue(saved_position)
+                    self._update_thumbnail_size()
+
+            # Odśwież widok jeśli jest otwarty folder
+            if self.current_working_directory:
+                self.refresh_all_views()
+
+            logging.info("Nowe ustawienia preferencji zostały zastosowane")
+
+        except Exception as e:
+            logging.error(f"Błąd podczas aplikowania nowych preferencji: {e}")
+            QMessageBox.warning(
+                self,
+                "Ostrzeżenie",
+                "Niektóre nowe ustawienia mogą wymagać ponownego uruchomienia aplikacji.",
+            )
+
+    def remove_all_metadata_folders(self):
+        """Usuwa wszystkie foldery .app_metadata z folderu roboczego."""
+        if not self.current_working_directory:
+            QMessageBox.warning(self, "Uwaga", "Nie wybrano folderu roboczego.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Potwierdzenie",
+            "Czy na pewno chcesz usunąć wszystkie foldery .app_metadata?\n"
+            "Ta operacja jest nieodwracalna.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.start_metadata_cleanup_worker()
+
+    def start_metadata_cleanup_worker(self):
+        """Uruchamia worker do usuwania folderów metadanych."""
+        import shutil
+        from pathlib import Path
+
+        try:
+            self._show_progress(0, "Szukanie folderów .app_metadata...")
+
+            # Znajdź wszystkie foldery .app_metadata
+            metadata_folders = []
+            root_path = Path(self.current_working_directory)
+
+            for folder in root_path.rglob(".app_metadata"):
+                if folder.is_dir():
+                    metadata_folders.append(folder)
+
+            if not metadata_folders:
+                QMessageBox.information(
+                    self, "Informacja", "Nie znaleziono folderów .app_metadata."
+                )
+                self._hide_progress()
+                return
+
+            total_folders = len(metadata_folders)
+            self._show_progress(
+                10, f"Znaleziono {total_folders} folderów do usunięcia..."
+            )
+
+            # Usuń foldery
+            deleted_count = 0
+            for i, folder in enumerate(metadata_folders):
+                try:
+                    shutil.rmtree(folder)
+                    deleted_count += 1
+                    progress = 10 + int((i + 1) / total_folders * 80)
+                    self._show_progress(progress, f"Usuwanie {i+1}/{total_folders}...")
+                except Exception as e:
+                    logging.error(f"Błąd podczas usuwania {folder}: {e}")
+
+            self._show_progress(100, f"Usunięto {deleted_count} folderów")
+            QMessageBox.information(
+                self,
+                "Zakończono",
+                f"Usunięto {deleted_count} z {total_folders} folderów .app_metadata",
+            )
+
+        except Exception as e:
+            error_msg = f"Błąd podczas czyszczenia metadanych: {e}"
+            logging.error(error_msg)
+            QMessageBox.critical(self, "Błąd", error_msg)
+            self._hide_progress()
+
+    def show_about(self):
+        """Wyświetla informacje o programie."""
+        QMessageBox.about(
+            self,
+            "O programie",
+            "CFAB_3DHUB v1.0\n\n"
+            "Aplikacja do zarządzania parami plików archiwum-podgląd\n\n"
+            "Funkcje:\n"
+            "• Automatyczne parowanie plików\n"
+            "• Zarządzanie metadanymi\n"
+            "• Operacje masowe na plikach\n"
+            "• Zaawansowane filtrowanie",
+        )
 
     def _create_top_panel(self):
         """
@@ -339,7 +531,13 @@ class MainWindow(QMainWindow):
         # Scroll area dla kafelków
         self._create_tiles_area()
 
-        self.splitter.setSizes([300, 700])
+        # Ustaw proporcje splitter i zapewnij widoczność drzewa
+        self.splitter.setSizes([350, 650])  # Więcej miejsca dla drzewa
+        self.splitter.setCollapsible(0, False)  # Nie pozwól na zwijanie drzewa
+        self.splitter.setCollapsible(1, False)  # Nie pozwól na zwijanie galerii
+
+        logging.debug(f"Splitter ma {self.splitter.count()} widgetów")
+
         self.gallery_tab_layout.addWidget(self.splitter)
         self.tab_widget.addTab(self.gallery_tab, "Galeria")
 
@@ -349,9 +547,11 @@ class MainWindow(QMainWindow):
         """
         self.folder_tree = QTreeView()
         self.folder_tree.setHeaderHidden(True)
-        self.folder_tree.setMinimumWidth(200)
+        self.folder_tree.setMinimumWidth(250)  # Zwiększona minimalna szerokość
+        self.folder_tree.setMaximumWidth(400)  # Dodana maksymalna szerokość
         self.folder_tree.setSizePolicy(
-            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,  # Zmieniono na Preferred
         )
 
         self.file_system_model = QFileSystemModel()
@@ -363,7 +563,13 @@ class MainWindow(QMainWindow):
         for col in range(1, 4):
             self.folder_tree.setColumnHidden(col, True)
 
+        # Dodaj debug info
+        logging.debug("Dodaję drzewo folderów do splitter")
         self.splitter.addWidget(self.folder_tree)
+
+        # Zapewnij widoczność
+        self.folder_tree.setVisible(True)
+        self.folder_tree.show()
 
     def _create_tiles_area(self):
         """
@@ -448,8 +654,10 @@ class MainWindow(QMainWindow):
         """
         Inicjalizuje managerów UI.
         """
-        # Tworzenie instancji AppConfig - PRZENIESIONE NA POCZĄTEK
-        self.app_config = app_config.AppConfig()
+        # AppConfig już zainicjalizowane w _init_data()
+
+        # Problem #3: Centralne zarządzanie wątkami
+        self.thread_coordinator = ThreadCoordinator()
 
         # Inicjalizacja DirectoryTreeManager
         self.directory_tree_manager = DirectoryTreeManager(self.folder_tree, self)
@@ -463,6 +671,76 @@ class MainWindow(QMainWindow):
         # Podłącz sygnały
         self.folder_tree.clicked.connect(self._folder_tree_item_clicked)
 
+    def _auto_load_last_folder(self):
+        """
+        Automatycznie ładuje ostatni folder roboczy jeśli włączone w preferencjach.
+        """
+        # POTWIERDZENIE WCZYTANIA PREFERENCJI!
+        self._show_preferences_loaded_confirmation()
+
+        if not self.app_config.get("auto_load_last_folder", False):
+            logging.info("⚙️ Auto-load ostatniego folderu WYŁĄCZONE w preferencjach")
+            return
+
+        last_folder = self.app_config.get("default_working_directory", "")
+        if not last_folder:
+            logging.info("📁 Brak zapisanego folderu roboczego do załadowania")
+            return
+
+        import os
+
+        if not os.path.exists(last_folder) or not os.path.isdir(last_folder):
+            logging.warning(f"❌ Zapisany folder roboczy nie istnieje: {last_folder}")
+            return
+
+        try:
+            logging.info(f"🔄 Auto-loading ostatniego folderu: {last_folder}")
+            # Ustaw flagę że to jest auto-loading (NIE nadpisuj domyślnego!)
+            self._is_auto_loading = True
+            self._select_working_directory(last_folder)
+            # Usuń flagę po zakończeniu
+            delattr(self, "_is_auto_loading")
+        except Exception as e:
+            logging.error(f"Błąd podczas auto-loading folderu {last_folder}: {e}")
+            # Usuń flagę nawet przy błędzie
+            if hasattr(self, "_is_auto_loading"):
+                delattr(self, "_is_auto_loading")
+
+    def _show_preferences_loaded_confirmation(self):
+        """
+        Pokazuje potwierdzenie że preferencje zostały wczytane.
+        """
+        # Pokaż w logach szczegóły preferencji
+        logging.info("🎛️ PREFERENCJE WCZYTANE POMYŚLNIE!")
+        logging.info(
+            f"  📏 Thumbnail slider: {self.app_config.get_thumbnail_slider_position()}%"
+        )
+        logging.info(
+            f"  🗂️ Auto-load folder: {self.app_config.get('auto_load_last_folder', False)}"
+        )
+        logging.info(
+            f"  📁 Ostatni folder: {self.app_config.get('default_working_directory', 'BRAK')}"
+        )
+        logging.info(
+            f"  💾 Cache miniaturek: {self.app_config.get('thumbnail_cache_max_entries', 500)} szt."
+        )
+        logging.info(
+            f"  🧠 Pamięć cache: {self.app_config.get('thumbnail_cache_max_memory_mb', 100)}MB"
+        )
+
+        # Pokaż w status barze
+        self.progress_label.setText("✅ Preferencje wczytane")
+        self.progress_label.setStyleSheet("color: green; font-weight: bold;")
+
+        # Po 3 sekundach przywróć normalny status
+        QTimer.singleShot(3000, lambda: self.progress_label.setText("Gotowy"))
+        QTimer.singleShot(
+            3000,
+            lambda: self.progress_label.setStyleSheet(
+                "color: gray; font-style: italic;"
+            ),
+        )
+
     def closeEvent(self, event):
         """
         Obsługuje zamykanie aplikacji - kończy wszystkie wątki.
@@ -472,29 +750,37 @@ class MainWindow(QMainWindow):
 
     def _cleanup_threads(self):
         """
-        Czyści wszystkie aktywne wątki.
+        Czyści wszystkie aktywne wątki - Problem #3: używa ThreadCoordinator.
         """
-        # Zakończ wątek skanowania jeśli jest aktywny
-        if self.scan_thread and self.scan_thread.isRunning():
-            logging.info("Kończenie wątku skanowania przy zamykaniu aplikacji...")
-            self.scan_thread.quit()
-            if not self.scan_thread.wait(1000):
-                logging.warning("Wątek skanowania nie zakończył się, wymuszam...")
-                self.scan_thread.terminate()
-                self.scan_thread.wait()
+        # Użyj ThreadCoordinator zamiast ręcznego zarządzania
+        if hasattr(self, "thread_coordinator"):
+            self.thread_coordinator.cleanup_all_threads()
+        else:
+            # Fallback - stary sposób dla kompatybilności
+            if self.scan_thread and self.scan_thread.isRunning():
+                logging.info("Kończenie wątku skanowania przy zamykaniu aplikacji...")
+                self.scan_thread.quit()
+                if not self.scan_thread.wait(1000):
+                    logging.warning("Wątek skanowania nie zakończył się, wymuszam...")
+                    self.scan_thread.terminate()
+                    self.scan_thread.wait()
 
-        # Zakończ wątek przetwarzania danych jeśli jest aktywny
-        if self.data_processing_thread and self.data_processing_thread.isRunning():
-            logging.info("Kończenie wątku przetwarzania przy zamykaniu aplikacji...")
-            self.data_processing_thread.quit()
-            if not self.data_processing_thread.wait(1000):
-                logging.warning("Wątek przetwarzania nie zakończył się, wymuszam...")
-                self.data_processing_thread.terminate()
-                self.data_processing_thread.wait()
+            if self.data_processing_thread and self.data_processing_thread.isRunning():
+                logging.info(
+                    "Kończenie wątku przetwarzania przy zamykaniu aplikacji..."
+                )
+                self.data_processing_thread.quit()
+                if not self.data_processing_thread.wait(1000):
+                    logging.warning(
+                        "Wątek przetwarzania nie zakończył się, wymuszam..."
+                    )
+                    self.data_processing_thread.terminate()
+                    self.data_processing_thread.wait()
 
     def _select_working_directory(self, directory_path=None):
         """
         Otwiera dialog wyboru folderu lub używa podanej ścieżki.
+        Problem #4: Dodano walidację danych wejściowych.
         """
         # Przerwanie poprzedniego skanowania jeśli aktywne
         self._stop_current_scanning()
@@ -508,16 +794,59 @@ class MainWindow(QMainWindow):
             logging.debug("Nie wybrano folderu.")
             return
 
+        # Problem #4: Walidacja ścieżki
+        if not self._validate_directory_path(path):
+            return
+
         # Ustaw nowy folder roboczy
         self.current_working_directory = normalize_path(path)
         base_folder_name = os.path.basename(self.current_working_directory)
         self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
+
+        # NIGDY NIE NADPISUJ DOMYŚLNEGO FOLDERU AUTOMATYCZNIE!
+        # To jest NIEDOPUSZCZALNE zachowanie!
+        if not hasattr(self, "_is_auto_loading"):
+            logging.info(f"📂 Folder wybrany ręcznie ale NIE nadpisuję domyślnego!")
+        else:
+            logging.info(f"🔄 Auto-loading z domyślnego folderu")
 
         logging.info("Wybrano folder roboczy: %s", self.current_working_directory)
 
         # Wyczyść dane i rozpocznij skanowanie
         self._clear_all_data_and_views()
         self._start_folder_scanning()
+
+    def _validate_directory_path(self, path: str) -> bool:
+        """
+        Waliduje ścieżkę do folderu - Problem #4.
+
+        Args:
+            path: Ścieżka do walidacji
+
+        Returns:
+            True jeśli ścieżka jest poprawna
+        """
+        if not path or not isinstance(path, str):
+            QMessageBox.warning(self, "Błąd", "Nieprawidłowa ścieżka do folderu.")
+            return False
+
+        if not os.path.exists(path):
+            QMessageBox.warning(self, "Błąd", f"Folder nie istnieje:\n{path}")
+            return False
+
+        if not os.path.isdir(path):
+            QMessageBox.warning(
+                self, "Błąd", f"Ścieżka nie wskazuje na folder:\n{path}"
+            )
+            return False
+
+        if not os.access(path, os.R_OK):
+            QMessageBox.warning(
+                self, "Błąd", f"Brak uprawnień do odczytu folderu:\n{path}"
+            )
+            return False
+
+        return True
 
     def _stop_current_scanning(self):
         """
@@ -702,6 +1031,15 @@ class MainWindow(QMainWindow):
         """
         Tworzy pojedynczy kafelek dla pary plików.
         """
+        # Walidacja danych wejściowych - Problem #4
+        if not file_pair:
+            logging.warning("Otrzymano None zamiast FilePair")
+            return None
+
+        if not hasattr(file_pair, "archive_path") or not file_pair.archive_path:
+            logging.error(f"Nieprawidłowy FilePair - brak archive_path: {file_pair}")
+            return None
+
         tile = self.gallery_manager.create_tile_widget_for_pair(file_pair, self)
         if tile:
             # Podłącz sygnały kafelka
@@ -711,6 +1049,8 @@ class MainWindow(QMainWindow):
             tile.stars_changed.connect(self._handle_stars_changed)
             tile.color_tag_changed.connect(self._handle_color_tag_changed)
             tile.tile_context_menu_requested.connect(self._show_file_context_menu)
+
+        return tile
 
     def _on_tile_loading_finished(self):
         """
@@ -734,7 +1074,14 @@ class MainWindow(QMainWindow):
         # Zakładka parowania zawsze widoczna
 
         # Inicjalizacja drzewa katalogów
+        logging.debug("Inicjalizacja drzewa katalogów...")
         self.directory_tree_manager.init_directory_tree(self.current_working_directory)
+
+        # Upewnij się że drzewo folderów jest widoczne
+        if hasattr(self, "folder_tree"):
+            self.folder_tree.setVisible(True)
+            logging.debug(f"Drzewo folderów widoczne: {self.folder_tree.isVisible()}")
+            logging.debug(f"Splitter rozmiary: {self.splitter.sizes()}")
 
         # Przywróć przycisk
         self.select_folder_button.setText("Wybierz Folder Roboczy")
@@ -805,8 +1152,8 @@ class MainWindow(QMainWindow):
 
     def refresh_all_views(self, new_selection=None):
         """
-        Odświeża wszystkie widoki po operacjach na plikach.
-        Wywołuje ponowne skanowanie folderu i aktualizuje wszystkie komponenty UI.
+        Inteligentne odświeżanie widoków - Problem #5.
+        Unika pełnego ponownego skanowania gdy nie jest konieczne.
 
         Args:
             new_selection: FilePair do zaznaczenia po odświeżeniu (opcjonalne)
@@ -823,16 +1170,34 @@ class MainWindow(QMainWindow):
             logging.info("Skanowanie już w toku - pomijanie refresh_all_views")
             return
 
-        logging.info("Odświeżanie wszystkich widoków po operacji na plikach")
+        logging.info("Inteligentne odświeżanie widoków po operacji na plikach")
+
+        # Zapisz zaznaczenie do przywrócenia po odświeżeniu
+        if new_selection:
+            self._pending_selection = new_selection
+
+        # Zamiast pełnego skanowania, odśwież tylko UI z istniejącymi danymi
+        self._apply_filters_and_update_view()
+        self._update_unpaired_files_lists()
+
+        # Zapisz metadane bez ponownego skanowania
+        self._save_metadata()
+
+        logging.info("Odświeżanie zakończone - bez ponownego skanowania")
+
+    def force_full_refresh(self):
+        """
+        Wymusza pełne ponowne skanowanie - tylko gdy rzeczywiście potrzebne.
+        """
+        if not self.current_working_directory:
+            return
+
+        logging.info("Wymuszanie pełnego ponownego skanowania")
 
         # Wyczyść cache skanera aby wymusić ponowne skanowanie
         from src.logic.scanner import clear_cache
 
         clear_cache()
-
-        # Zapisz zaznaczenie do przywrócenia po odświeżeniu
-        if new_selection:
-            self._pending_selection = new_selection
 
         # Rozpocznij ponowne skanowanie bieżącego folderu
         self._select_working_directory(self.current_working_directory)
