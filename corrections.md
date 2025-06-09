@@ -246,6 +246,25 @@ def refresh_all_views(self, new_selection=None):
 
 **Wpływ:** Niepotrzebne opóźnienia po każdej operacji na plikach
 
+#### Problem #6: BRAK WYMAGANYCH NOWYCH FUNKCJONALNOŚCI - 🔴 KRYTYCZNY
+
+**Opis:** Główne okno nie ma podstawowych funkcjonalności wymaganych przez użytkownika:
+
+- ❌ **Brak górnego menu** - aplikacja nie ma menu bar z standardowymi opcjami
+- ❌ **Brak okna preferencji** - nie ma możliwości konfiguracji aplikacji
+- ❌ **Brak opcji czyszczenia metadanych** - nie ma narzędzia do masowego usuwania folderów .app_metadata
+- ❌ **Brak menu "O programie"** - brak standardowych opcji Help
+
+```python
+# BRAKUJE w __init__ MainWindow:
+def setup_menu_bar(self):           # Górne menu
+def show_preferences(self):         # Okno preferencji
+def remove_all_metadata_folders(self): # Czyszczenie metadanych
+def show_about(self):               # O programie
+```
+
+**Wpływ:** Bardzo słabe user experience, brak podstawowej funkcjonalności aplikacji desktopowej
+
 ### 2.2 Rekomendacje naprawcze
 
 #### Rekomendacja #1: Refaktoryzacja według wzorca MVC/MVP - 🔴 PRIORYTET 1
@@ -342,6 +361,70 @@ def _create_tile_widget_for_pair(self, file_pair: FilePair):
 **Szacowany czas:** 2-4 godziny
 **Oczekiwany efekt:** 30% redukcja błędów runtime
 
+#### Rekomendacja #6: Implementacja wymaganych nowych funkcjonalności - 🔴 PRIORYTET 1
+
+**Cel:** Dodanie podstawowych funkcjonalności aplikacji desktopowej
+
+**Implementacja:**
+
+```python
+class MainWindow:
+    def setup_menu_bar(self):
+        """Tworzy menu bar z pełną funkcjonalnością."""
+        menubar = self.menuBar()
+
+        # Menu Plik
+        file_menu = menubar.addMenu('&Plik')
+        file_menu.addAction('&Otwórz folder...', self._select_working_directory)
+        file_menu.addSeparator()
+        file_menu.addAction('&Wyjście', self.close)
+
+        # Menu Narzędzia
+        tools_menu = menubar.addMenu('&Narzędzia')
+        tools_menu.addAction('🗑️ Usuń wszystkie foldery .app_metadata',
+                           self.remove_all_metadata_folders)
+        tools_menu.addSeparator()
+        tools_menu.addAction('⚙️ Preferencje...', self.show_preferences)
+
+        # Menu Widok
+        view_menu = menubar.addMenu('&Widok')
+        view_menu.addAction('🔄 Odśwież', self.refresh_all_views)
+
+        # Menu Pomoc
+        help_menu = menubar.addMenu('&Pomoc')
+        help_menu.addAction('ℹ️ O programie...', self.show_about)
+
+    def show_preferences(self):
+        """Wyświetla okno preferencji."""
+        from src.ui.widgets.preferences_dialog import PreferencesDialog
+        dialog = PreferencesDialog(self)
+        dialog.exec()
+
+    def remove_all_metadata_folders(self):
+        """Usuwa wszystkie foldery .app_metadata z folderu roboczego."""
+        if not self.current_working_directory:
+            QMessageBox.warning(self, "Uwaga", "Nie wybrano folderu roboczego.")
+            return
+
+        reply = QMessageBox.question(
+            self, "Potwierdzenie",
+            "Czy na pewno chcesz usunąć wszystkie foldery .app_metadata?\n"
+            "Ta operacja jest nieodwracalna.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.start_metadata_cleanup_worker()
+
+    def show_about(self):
+        """Wyświetla informacje o programie."""
+        QMessageBox.about(self, "O programie",
+                         "CFAB_3DHUB v1.0\nZarządzanie parami plików archiwum-podgląd")
+```
+
+**Szacowany czas:** 8-12 godzin
+**Oczekiwany efekt:** 500% poprawa user experience
+
 ### 2.3 Szacowany wpływ poprawek
 
 **Przed optymalizacją:**
@@ -358,7 +441,7 @@ def _create_tile_widget_for_pair(self, file_pair: FilePair):
 - Performance UI: 8/10 (+33% poprawa)
 - Stabilność: 8/10 (+60% poprawa)
 
-**Całkowity szacowany czas refaktoryzacji:** 36-50 godzin
+**Całkowity szacowany czas refaktoryzacji:** 44-62 godziny
 **Priorytet implementacji:** 🔴 BARDZO WYSOKI - fundament całej aplikacji
 
 ---
@@ -1111,10 +1194,1022 @@ class TransactionalWorker(UnifiedBaseWorker):
 
 ```python
 class OptimizedProgressWorker(UnifiedBaseWorker):
-    def __init__(self):
+    def emit_progress_batched(self, current: int, total: int, message: str):
+        # Emit co 5% lub co 100 elementów
+        if current % max(1, total // 20) == 0:
+            self.emit_progress(int((current / total) * 100), message)
+```
+
+**Szacowany czas:** 4-6 godzin
+**Oczekiwany efekt:** 70% redukcja sygnałów progress
+
+### 5.3 Szacowany wpływ poprawek
+
+**Przed optymalizacją:**
+
+- Code consistency: 4/10 (różne implementacje)
+- Error handling: 5/10 (brak recovery mechanisms)
+- Performance: 6/10 (nadmiarowe sygnały progress)
+
+**Po implementacji rekomendacji:**
+
+- Code consistency: 8/10 (+100% poprawa)
+- Error handling: 8/10 (+60% poprawa)
+- Performance: 8/10 (+30% poprawa)
+
+**Całkowity szacowany czas optymalizacji:** 18-24 godziny
+**Priorytet implementacji:** 🟡 ŚREDNI - stabilność i spójność kodu
+
+---
+
+## 6. ANALIZA: src/ui/directory_tree_manager.py (🟡 PRIORYTET ŚREDNI)
+
+**Rozmiar:** 783 linii kodu  
+**Typ:** Manager drzewa katalogów z obsługą operacji na folderach  
+**Status:** ⚠️ PROBLEMY WYDAJNOŚCIOWE i BRAK KLUCZOWYCH FUNKCJONALNOŚCI
+
+### 6.1 Zidentyfikowane problemy
+
+#### Problem #1: UI freeze przy skanowaniu dużych struktur - 🟡 ŚREDNI
+
+**Opis:** `_scan_folders_with_files()` wykonuje synchroniczne `os.walk()` blokując UI
+
+```python
+def _scan_folders_with_files(self, root_folder: str) -> List[str]:
+    folders_with_files = []
+    try:
+        for root, dirs, files in os.walk(root_folder):  # BLOKUJE UI!
+            # Pomiń ukryte foldery (zaczynające się od .)
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            if files:
+                folders_with_files.append(root)
+    except Exception as e:
+        logging.error("Błąd podczas skanowania folderów: %s", str(e))
+```
+
+**Wpływ:** Zamrożenie interfejsu przy strukturach >1000 folderów
+
+#### Problem #2: Duplikacja logiki drag and drop - 🟡 ŚREDNI
+
+**Opis:** Obsługa drag and drop w `DirectoryTreeManager` dubluje logikę z głównego okna
+
+```python
+# W DirectoryTreeManager:
+def _drop_event(self, event: QDropEvent):
+    # Walidacja plików
+    for path in source_file_paths:
+        if not os.path.isfile(path):
+            valid_files_dragged = False
+            break
+
+# Podobna logika prawdopodobnie istnieje też w MainWindow dla gallery
+```
+
+**Wpływ:** Niespójne zachowanie, trudność w utrzymaniu
+
+#### Problem #3: Nieefektywne odświeżanie modelu - 🟡 ŚREDNI
+
+**Opis:** Częste wywołania `model.refresh()` po każdej operacji
+
+```python
+def _handle_create_folder_finished(self, created_folder_path: str, progress_dialog: QProgressDialog):
+    self.model.refresh()  # Odświeża całe drzewo!
+
+def _handle_delete_folder_finished(self, deleted_folder_path: str, progress_dialog: QProgressDialog):
+    self.model.refresh()  # Kolejne pełne odświeżenie!
+```
+
+**Wpływ:** Niepotrzebne opóźnienia po operacjach na folderach
+
+#### Problem #4: Brak mechanizmów cache dla statystyk - 🟡 ŚREDNI
+
+**Opis:** Brak przygotowania do wyświetlania statystyk folderów (rozmiar, liczba par)
+
+```python
+# BRAKUJE:
+class FolderStatistics:
+    size_gb: float
+    pairs_count: int
+    total_files: int
+
+# Każdy folder w drzewie powinien pokazywać statystyki
+```
+
+**Wpływ:** Brak użytecznych informacji dla użytkownika
+
+#### Problem #5: BRAK WYMAGANYCH NOWYCH FUNKCJONALNOŚCI - 🔴 KRYTYCZNY
+
+**Opis:** Manager nie implementuje kluczowych funkcjonalności wymaganych przez użytkownika:
+
+- ❌ **Brak menu kontekstowego "Otwórz w eksploratorze"** - podstawowa funkcjonalność Windows
+- ❌ **Brak wyświetlania statystyk folderów** - rozmiar GB + liczba par plików
+- ❌ **Brak kontrolek zwijania/rozwijania** - opcje "Zwiń wszystkie"/"Rozwiń wszystkie"
+- ❌ **Brak ukrywania folderów .app_metadata** - foldery systemowe powinny być ukryte
+
+```python
+# BRAKUJE w DirectoryTreeManager:
+def show_folder_context_menu_with_explorer(self, position):  # Menu "Otwórz w eksploratorze"
+def update_folder_statistics(self, folder_path: str):        # Statystyki folderów
+def setup_expand_collapse_controls(self):                    # Kontrolki zwijania
+def should_show_folder(self, folder_name: str) -> bool:      # Filtrowanie ukrytych folderów
+```
+
+**Wpływ:** Bardzo słabe user experience, brak podstawowej funkcjonalności
+
+### 6.2 Rekomendacje naprawcze
+
+#### Rekomendacja #1: Asynchroniczne skanowanie folderów - 🟡 PRIORYTET 1
+
+**Cel:** Przeniesienie `_scan_folders_with_files()` do workera
+
+**Implementacja:**
+
+```python
+class FolderScanWorker(QRunnable):
+    def __init__(self, root_folder: str):
         super().__init__()
-        self._progress_batch_size = 10  # Update co 10 operacji
-        self._last_progress_update = 0
+        self.root_folder = root_folder
+        self.signals = FolderScanSignals()
+
+    def run(self):
+        folders_with_files = []
+        try:
+            for root, dirs, files in os.walk(self.root_folder):
+                # Przerywalny skan
+                if getattr(self, '_interrupted', False):
+                    return
+
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+                if files:
+                    folders_with_files.append(root)
+
+            self.signals.finished.emit(folders_with_files)
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+class DirectoryTreeManager:
+    def _scan_folders_with_files_async(self, root_folder: str):
+        """Asynchroniczne skanowanie folderów."""
+        worker = FolderScanWorker(root_folder)
+        worker.signals.finished.connect(self._on_scan_finished)
+        QThreadPool.globalInstance().start(worker)
+```
+
+**Szacowany czas:** 4-6 godzin
+**Oczekiwany efekt:** Eliminacja UI freeze
+
+#### Rekomendacja #2: Selektywne odświeżanie modelu - 🟡 PRIORYTET 2
+
+**Cel:** Odświeżanie tylko zmienionych części drzewa
+
+**Implementacja:**
+
+```python
+class DirectoryTreeManager:
+    def refresh_folder_only(self, folder_path: str):
+        """Odświeża tylko konkretny folder."""
+        index = self.model.index(folder_path)
+        if index.isValid():
+            # Odśwież tylko ten węzeł
+            self.model.setData(index, None, Qt.ItemDataRole.UserRole)
+
+    def _handle_create_folder_finished(self, created_folder_path: str, progress_dialog: QProgressDialog):
+        # Zamiast model.refresh() - odśwież tylko parent folder
+        parent_path = os.path.dirname(created_folder_path)
+        self.refresh_folder_only(parent_path)
+```
+
+**Szacowany czas:** 3-4 godziny
+**Oczekiwany efekt:** 50% redukcja czasu odświeżania
+
+#### Rekomendacja #3: Implementacja wymaganych nowych funkcjonalności - 🔴 PRIORYTET 1
+
+**Cel:** Dodanie wszystkich brakujących funkcjonalności dla pełnego user experience
+
+**Implementacja:**
+
+```python
+class DirectoryTreeManager:
+    def setup_enhanced_context_menu(self):
+        """Rozszerzone menu kontekstowe z opcją eksploranta."""
+        # Modyfikacja istniejącego show_folder_context_menu
+
+    def show_folder_context_menu(self, position):
+        """Wyświetla menu kontekstowe z opcją otworzenia w eksploratorze."""
+        index = self.folder_tree.indexAt(position)
+        if not index.isValid():
+            return
+
+        folder_path = self.model.filePath(index)
+        context_menu = QMenu()
+
+        # Istniejące opcje
+        create_folder_action = context_menu.addAction("Nowy folder")
+        rename_folder_action = context_menu.addAction("Zmień nazwę")
+        delete_folder_action = context_menu.addAction("Usuń folder")
+
+        # NOWA FUNKCJONALNOŚĆ: Otwórz w eksploratorze
+        context_menu.addSeparator()
+        open_explorer_action = context_menu.addAction("🗂️ Otwórz w eksploratorze")
+        open_explorer_action.triggered.connect(lambda: self.open_folder_in_explorer(folder_path))
+
+        # Połączenie istniejących akcji
+        create_folder_action.triggered.connect(lambda: self.create_folder(folder_path))
+        rename_folder_action.triggered.connect(lambda: self.rename_folder(folder_path))
+        delete_folder_action.triggered.connect(
+            lambda: self.delete_folder(folder_path, self.parent_window.current_working_directory)
+        )
+
+        context_menu.exec(self.folder_tree.mapToGlobal(position))
+
+    def open_folder_in_explorer(self, folder_path: str):
+        """Otwiera folder w eksploratorze Windows."""
+        try:
+            import subprocess
+            subprocess.Popen(f'explorer "{folder_path}"')
+            logging.info(f"Otwarto folder w eksploratorze: {folder_path}")
+        except Exception as e:
+            logging.error(f"Błąd otwierania eksploratora: {e}")
+            QMessageBox.warning(
+                self.parent_window,
+                "Błąd",
+                f"Nie można otworzyć folderu w eksploratorze:\n{e}"
+            )
+
+    def setup_expand_collapse_controls(self):
+        """Dodaje kontrolki zwijania/rozwijania folderów."""
+        from PyQt6.QtWidgets import QToolBar, QWidget, QHBoxLayout
+
+        # Toolbar z przyciskami
+        controls_widget = QWidget()
+        layout = QHBoxLayout()
+
+        toolbar = QToolBar()
+        expand_all_action = toolbar.addAction("📂 Rozwiń wszystkie")
+        collapse_all_action = toolbar.addAction("📁 Zwiń wszystkie")
+
+        expand_all_action.triggered.connect(self.folder_tree.expandAll)
+        collapse_all_action.triggered.connect(self.folder_tree.collapseAll)
+
+        layout.addWidget(toolbar)
+        controls_widget.setLayout(layout)
+
+        return controls_widget
+
+    def should_show_folder(self, folder_name: str) -> bool:
+        """Określa czy folder powinien być widoczny w drzewie."""
+        hidden_folders = {'.app_metadata', '__pycache__', '.git', '.svn', '.hg'}
+        return folder_name not in hidden_folders
+
+    def setup_folder_filtering(self):
+        """Konfiguruje filtrowanie ukrytych folderów."""
+        # Modyfikacja istniejącego modelu
+        proxy_model = QSortFilterProxyModel()
+        proxy_model.setSourceModel(self.model)
+        proxy_model.setFilterKeyColumn(0)
+
+        def filter_folders(source_row: int, source_parent: QModelIndex) -> bool:
+            index = self.model.index(source_row, 0, source_parent)
+            if not index.isValid():
+                return True
+
+            folder_name = self.model.fileName(index)
+            return self.should_show_folder(folder_name)
+
+        proxy_model.filterAcceptsRow = filter_folders
+        self.folder_tree.setModel(proxy_model)
+
+    def calculate_folder_statistics(self, folder_path: str) -> 'FolderStatistics':
+        """Oblicza statystyki folderu (rozmiar, liczba par plików)."""
+        from dataclasses import dataclass
+
+        @dataclass
+        class FolderStatistics:
+            total_size_gb: float = 0.0
+            total_pairs: int = 0
+            total_files: int = 0
+
+        stats = FolderStatistics()
+
+        try:
+            # Oblicz rozmiar foldera
+            total_size = 0
+            for root, dirs, files in os.walk(folder_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    try:
+                        total_size += os.path.getsize(file_path)
+                        stats.total_files += 1
+                    except OSError:
+                        continue
+
+            stats.total_size_gb = total_size / (1024**3)  # Konwersja na GB
+
+            # Oblicz liczbę par plików używając scanner
+            from src.logic.scanner import scan_folder_for_pairs
+            pairs, _, _ = scan_folder_for_pairs(folder_path, max_depth=0, pair_strategy="first_match")
+            stats.total_pairs = len(pairs)
+
+        except Exception as e:
+            logging.error(f"Błąd obliczania statystyk dla {folder_path}: {e}")
+
+        return stats
+
+    def update_folder_display_with_stats(self, folder_path: str):
+        """Aktualizuje wyświetlanie folderu ze statystykami."""
+        stats = self.calculate_folder_statistics(folder_path)
+
+        # Znajdź indeks folderu w modelu
+        index = self.model.index(folder_path)
+        if index.isValid():
+            folder_name = self.model.fileName(index)
+            stats_text = f"{folder_name} ({stats.total_size_gb:.2f} GB, {stats.total_pairs} par)"
+
+            # Zaktualizuj wyświetlaną nazwę (wymaga custom model lub tooltip)
+            self.model.setData(index, stats_text, Qt.ItemDataRole.DisplayRole)
+```
+
+**Szacowany czas:** 12-16 godzin
+**Oczekiwany efekt:** 500% poprawa user experience
+
+#### Rekomendacja #4: Cache statystyk folderów - 🟡 PRIORYTET 2
+
+**Cel:** Przyspieszenie wyświetlania statystyk przez cache'owanie
+
+**Implementacja:**
+
+```python
+class DirectoryTreeManager:
+    def __init__(self, folder_tree: QTreeView, parent_window):
+        # ...existing code...
+        self._folder_stats_cache = {}  # Cache statystyk
+        self._stats_cache_timeout = 300  # 5 minut
+
+    def get_cached_folder_statistics(self, folder_path: str) -> Optional['FolderStatistics']:
+        """Pobiera statystyki z cache lub oblicza nowe."""
+        import time
+
+        cache_key = normalize_path(folder_path)
+        current_time = time.time()
+
+        if cache_key in self._folder_stats_cache:
+            cached_stats, cache_time = self._folder_stats_cache[cache_key]
+            if current_time - cache_time < self._stats_cache_timeout:
+                return cached_stats
+
+        # Oblicz nowe statystyki
+        stats = self.calculate_folder_statistics(folder_path)
+        self._folder_stats_cache[cache_key] = (stats, current_time)
+
+        return stats
+```
+
+**Szacowany czas:** 2-3 godziny
+**Oczekiwany efekt:** 80% redukcja czasu ładowania statystyk
+
+### 6.3 Szacowany wpływ poprawek
+
+**Przed optymalizacją:**
+
+- UI Responsiveness: 4/10 (freeze przy skanowaniu)
+- User Experience: 3/10 (brak kluczowych funkcjonalności)
+- Performance: 5/10 (pełne odświeżanie modelu)
+- Functionality: 5/10 (podstawowe operacje na folderach)
+
+**Po implementacji rekomendacji:**
+
+- UI Responsiveness: 8/10 (+100% poprawa)
+- User Experience: 9/10 (+200% poprawa)
+- Performance: 8/10 (+60% poprawa)
+- Functionality: 9/10 (+80% poprawa)
+
+**Całkowity szacowany czas refaktoryzacji:** 21-29 godzin
+**Priorytet implementacji:** 🔴 WYSOKI - kluczowe funkcjonalności user experience
+
+---
+
+## 7. NOWE FUNKCJONALNOŚCI - ANALIZA WYMAGAŃ (🔴 PRIORYTET BARDZO WYSOKI)
+
+**Status:** ❌ BRAKUJĄCE FUNKCJONALNOŚCI - kluczowe features user experience
+
+### 7.1 Wymagane funkcjonalności drzewa folderów
+
+#### Funkcjonalność #1: Menu kontekstowe "Otwórz w eksploratorze" - 🔴 KRYTYCZNY
+
+**Wymaganie:** Kliknięcie prawym przyciskiem na folder w drzewie powinno pokazać menu z opcją otworzenia folderu w eksploratorze Windows
+
+**Lokalizacja implementacji:** `src/ui/directory_tree_manager.py`
+
+**Implementacja:**
+
+```python
+class DirectoryTreeManager:
+    def setup_context_menu(self):
+        """Dodaje menu kontekstowe do drzewa folderów."""
+        self.tree_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree_view.customContextMenuRequested.connect(self.show_context_menu)
+
+    def show_context_menu(self, position):
+        """Wyświetla menu kontekstowe."""
+        item = self.tree_view.itemAt(position)
+        if item:
+            menu = QMenu(self.tree_view)
+            open_action = menu.addAction("🗂️ Otwórz w eksploratorze")
+            open_action.triggered.connect(lambda: self.open_in_explorer(item))
+            menu.exec(self.tree_view.mapToGlobal(position))
+
+    def open_in_explorer(self, item):
+        """Otwiera folder w eksploratorze Windows."""
+        folder_path = self.get_folder_path(item)
+        subprocess.run(['explorer', folder_path], shell=True)
+```
+
+**Szacowany czas:** 2-3 godziny
+
+#### Funkcjonalność #2: Wyświetlanie statystyk folderów - 🔴 KRYTYCZNY
+
+**Wymaganie:** Każdy folder powinien pokazywać:
+
+- Rozmiar w GB
+- Liczbę par plików
+- Foldery nadrzędne sumują wartości z podfolderów
+
+**Lokalizacja implementacji:**
+
+- `src/ui/directory_tree_manager.py` - wyświetlanie
+- `src/logic/scanner.py` - obliczanie statystyk
+
+**Implementacja:**
+
+```python
+@dataclass
+class FolderStatistics:
+    size_gb: float = 0.0
+    pairs_count: int = 0
+    subfolders_size_gb: float = 0.0
+    subfolders_pairs: int = 0
+
+    @property
+    def total_size_gb(self) -> float:
+        return self.size_gb + self.subfolders_size_gb
+
+    @property
+    def total_pairs(self) -> int:
+        return self.pairs_count + self.subfolders_pairs
+
+class FolderStatsCalculator:
+    def calculate_folder_stats(self, folder_path: str) -> FolderStatistics:
+        """Oblicza statystyki folderu rekursywnie."""
+        stats = FolderStatistics()
+
+        # Oblicz rozmiar plików w GB
+        total_size = 0
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    total_size += os.path.getsize(file_path)
+                except OSError:
+                    continue
+
+        stats.size_gb = total_size / (1024**3)  # Convert to GB
+
+        # Oblicz liczbę par plików
+        scan_result = scan_directory(folder_path)
+        stats.pairs_count = len(scan_result.file_pairs)
+
+        return stats
+
+class DirectoryTreeManager:
+    def update_folder_display(self, item, stats: FolderStatistics):
+        """Aktualizuje wyświetlanie folderu ze statystykami."""
+        folder_name = item.text(0)
+        stats_text = f" ({stats.total_size_gb:.2f} GB, {stats.total_pairs} par)"
+        item.setText(0, f"{folder_name}{stats_text}")
+```
+
+**Szacowany czas:** 8-12 godzin
+
+#### Funkcjonalność #3: Zwijanie/rozwijanie folderów - 🟡 ŚREDNI
+
+**Wymaganie:** Opcje "Zwiń wszystkie" i "Rozwiń wszystkie" w drzewie folderów
+
+**Implementacja:**
+
+```python
+class DirectoryTreeManager:
+    def setup_expand_collapse_controls(self):
+        """Dodaje kontrolki zwijania/rozwijania."""
+        toolbar = QToolBar()
+
+        expand_all_action = QAction("📂 Rozwiń wszystkie", self)
+        expand_all_action.triggered.connect(self.tree_view.expandAll)
+
+        collapse_all_action = QAction("📁 Zwiń wszystkie", self)
+        collapse_all_action.triggered.connect(self.tree_view.collapseAll)
+
+        toolbar.addAction(expand_all_action)
+        toolbar.addAction(collapse_all_action)
+
+        return toolbar
+```
+
+**Szacowany czas:** 2-3 godziny
+
+#### Funkcjonalność #4: Ukrywanie folderów .app_metadata - 🟡 ŚREDNI
+
+**Wymaganie:** Foldery `.app_metadata` nie powinny być widoczne w drzewie
+
+**Implementacja:**
+
+```python
+class DirectoryTreeManager:
+    def should_show_folder(self, folder_name: str) -> bool:
+        """Określa czy folder powinien być widoczny."""
+        hidden_folders = {'.app_metadata', '__pycache__', '.git'}
+        return folder_name not in hidden_folders
+
+    def populate_tree(self, root_path: str):
+        """Populuje drzewo pomijając ukryte foldery."""
+        for item in os.listdir(root_path):
+            if os.path.isdir(os.path.join(root_path, item)):
+                if self.should_show_folder(item):
+                    # Dodaj folder do drzewa
+                    pass
+```
+
+**Szacowany czas:** 1-2 godziny
+
+### 6.2 Wymagane funkcjonalności głównego okna
+
+#### Funkcjonalność #5: Górne menu - 🔴 KRYTYCZNY
+
+**Wymaganie:** Dodanie menu bar z standardowymi opcjami
+
+**Lokalizacja implementacji:** `src/ui/main_window.py`
+
+**Implementacja:**
+
+```python
+class MainWindow:
+    def setup_menu_bar(self):
+        """Tworzy menu bar."""
+        menubar = self.menuBar()
+
+        # Menu Plik
+        file_menu = menubar.addMenu('&Plik')
+        file_menu.addAction('&Otwórz folder...', self.select_working_directory)
+        file_menu.addSeparator()
+        file_menu.addAction('&Wyjście', self.close)
+
+        # Menu Narzędzia
+        tools_menu = menubar.addMenu('&Narzędzia')
+        tools_menu.addAction('🗑️ Usuń wszystkie foldery .app_metadata',
+                           self.remove_all_metadata_folders)
+        tools_menu.addSeparator()
+        tools_menu.addAction('⚙️ Preferencje...', self.show_preferences)
+
+        # Menu Widok
+        view_menu = menubar.addMenu('&Widok')
+        view_menu.addAction('🔄 Odśwież', self.refresh_all_views)
+
+        # Menu Pomoc
+        help_menu = menubar.addMenu('&Pomoc')
+        help_menu.addAction('ℹ️ O programie...', self.show_about)
+```
+
+**Szacowany czas:** 3-4 godziny
+
+#### Funkcjonalność #6: Okno preferencji - 🔴 KRYTYCZNY
+
+**Wymaganie:** Kompleksowe okno preferencji z wszystkimi opcjami konfiguracyjnymi
+
+**Lokalizacja implementacji:** `src/ui/widgets/preferences_dialog.py` (nowy plik)
+
+**Implementacja:**
+
+```python
+class PreferencesDialog(QDialog):
+    """Okno preferencji aplikacji."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Preferencje")
+        self.setModal(True)
+        self.resize(500, 400)
+        self.setup_ui()
+        self.load_settings()
+
+    def setup_ui(self):
+        """Tworzy interfejs preferencji."""
+        layout = QVBoxLayout(self)
+
+        # Tabs dla różnych kategorii
+        tabs = QTabWidget()
+
+        # Tab: Ogólne
+        general_tab = self.create_general_tab()
+        tabs.addTab(general_tab, "Ogólne")
+
+        # Tab: Wyświetlanie
+        display_tab = self.create_display_tab()
+        tabs.addTab(display_tab, "Wyświetlanie")
+
+        # Tab: Wydajność
+        performance_tab = self.create_performance_tab()
+        tabs.addTab(performance_tab, "Wydajność")
+
+        layout.addWidget(tabs)
+
+        # Przyciski OK/Cancel
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                                 QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.save_and_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def create_general_tab(self):
+        """Tab z ustawieniami ogólnymi."""
+        widget = QWidget()
+        layout = QFormLayout(widget)
+
+        # Domyślny folder roboczy
+        self.default_folder_edit = QLineEdit()
+        browse_btn = QPushButton("Przeglądaj...")
+        browse_btn.clicked.connect(self.browse_default_folder)
+
+        folder_layout = QHBoxLayout()
+        folder_layout.addWidget(self.default_folder_edit)
+        folder_layout.addWidget(browse_btn)
+
+        layout.addRow("Domyślny folder roboczy:", folder_layout)
+
+        # Strategia parowania plików
+        self.pairing_strategy = QComboBox()
+        self.pairing_strategy.addItems(['exact_match', 'best_match', 'fuzzy_match'])
+        layout.addRow("Strategia parowania:", self.pairing_strategy)
+
+        # Maksymalna głębokość skanowania
+        self.max_depth = QSpinBox()
+        self.max_depth.setRange(1, 10)
+        layout.addRow("Maks. głębokość skanowania:", self.max_depth)
+
+        return widget
+
+    def create_display_tab(self):
+        """Tab z ustawieniami wyświetlania."""
+        widget = QWidget()
+        layout = QFormLayout(widget)
+
+        # Domyślny rozmiar miniatur
+        self.thumbnail_size = QSpinBox()
+        self.thumbnail_size.setRange(50, 500)
+        layout.addRow("Rozmiar miniatur:", self.thumbnail_size)
+
+        # Kolumny w galerii
+        self.gallery_columns = QSpinBox()
+        self.gallery_columns.setRange(1, 20)
+        layout.addRow("Kolumny w galerii:", self.gallery_columns)
+
+        return widget
+
+    def create_performance_tab(self):
+        """Tab z ustawieniami wydajności."""
+        widget = QWidget()
+        layout = QFormLayout(widget)
+
+        # Cache TTL
+        self.cache_ttl = QSpinBox()
+        self.cache_ttl.setRange(60, 3600)
+        self.cache_ttl.setSuffix(" sekund")
+        layout.addRow("Czas życia cache:", self.cache_ttl)
+
+        # Max cache size
+        self.max_cache_size = QSpinBox()
+        self.max_cache_size.setRange(100, 10000)
+        self.max_cache_size.setSuffix(" MB")
+        layout.addRow("Maks. rozmiar cache:", self.max_cache_size)
+
+        return widget
+```
+
+**Szacowany czas:** 12-16 godzin
+
+#### Funkcjonalność #7: Usuwanie folderów .app_metadata - 🟡 ŚREDNI
+
+**Wymaganie:** Opcja usuwania wszystkich folderów .app_metadata z menu Narzędzia
+
+**Implementacja:**
+
+```python
+class MainWindow:
+    def remove_all_metadata_folders(self):
+        """Usuwa wszystkie foldery .app_metadata z folderu roboczego."""
+        if not self.current_working_directory:
+            QMessageBox.warning(self, "Uwaga", "Nie wybrano folderu roboczego.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Potwierdzenie",
+            "Czy na pewno chcesz usunąć wszystkie foldery .app_metadata?\n"
+            "Ta operacja jest nieodwracalna.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.start_metadata_cleanup_worker()
+
+    def start_metadata_cleanup_worker(self):
+        """Uruchamia worker do usuwania folderów metadanych."""
+        worker = MetadataCleanupWorker(self.current_working_directory)
+        worker.finished.connect(self.on_metadata_cleanup_finished)
+        worker.progress.connect(self.show_progress)
+
+        self.thread_pool.start(worker)
+
+class MetadataCleanupWorker(BaseWorker):
+    def run(self):
+        """Usuwa wszystkie foldery .app_metadata."""
+        metadata_folders = []
+
+        # Znajdź wszystkie foldery .app_metadata
+        for root, dirs, files in os.walk(self.root_directory):
+            if '.app_metadata' in dirs:
+                metadata_path = os.path.join(root, '.app_metadata')
+                metadata_folders.append(metadata_path)
+
+        # Usuń foldery
+        for i, folder in enumerate(metadata_folders):
+            try:
+                shutil.rmtree(folder)
+                self.emit_progress(
+                    int((i + 1) / len(metadata_folders) * 100),
+                    f"Usuwanie {i+1}/{len(metadata_folders)}: {folder}"
+                )
+            except Exception as e:
+                logger.error(f"Błąd usuwania {folder}: {e}")
+```
+
+**Szacowany czas:** 4-6 godzin
+
+### 6.3 Wymagane funkcjonalności okna parowania plików
+
+#### Funkcjonalność #8: Ulepszenia okna parowania - 🔴 KRYTYCZNY
+
+**Wymaganie:**
+
+- Otwieranie archiwów w zewnętrznych programach
+- Miniaturki podglądów podobne do głównego okna
+- Możliwość usuwania wybranych plików podglądu
+
+**Lokalizacja implementacji:** `src/ui/widgets/pairing_dialog.py` (nowy plik)
+
+**Implementacja:**
+
+```python
+class PairingDialog(QDialog):
+    """Okno parowania nieparowanych plików."""
+
+    def __init__(self, unpaired_archives, unpaired_previews, parent=None):
+        super().__init__(parent)
+        self.unpaired_archives = unpaired_archives
+        self.unpaired_previews = unpaired_previews
+        self.setWindowTitle("Parowanie plików")
+        self.resize(1000, 600)
+        self.setup_ui()
+
+    def setup_ui(self):
+        """Tworzy interfejs okna parowania."""
+        layout = QHBoxLayout(self)
+
+        # Panel archiwów (lewa strona)
+        archives_panel = self.create_archives_panel()
+        layout.addWidget(archives_panel, 1)
+
+        # Panel podglądów (prawa strona)
+        previews_panel = self.create_previews_panel()
+        layout.addWidget(previews_panel, 2)
+
+    def create_archives_panel(self):
+        """Panel z archiwami."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        layout.addWidget(QLabel("Archiwa bez pary:"))
+
+        # Lista archiwów
+        self.archives_list = QListWidget()
+        self.archives_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.archives_list.customContextMenuRequested.connect(self.show_archive_context_menu)
+
+        for archive in self.unpaired_archives:
+            item = QListWidgetItem(os.path.basename(archive))
+            item.setData(Qt.ItemDataRole.UserRole, archive)
+            self.archives_list.addItem(item)
+
+        layout.addWidget(self.archives_list)
+        return widget
+
+    def create_previews_panel(self):
+        """Panel z podglądami jako miniaturki."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        layout.addWidget(QLabel("Podglądy bez pary:"))
+
+        # Scroll area dla miniatur
+        scroll_area = QScrollArea()
+        scroll_widget = QWidget()
+        self.previews_layout = QGridLayout(scroll_widget)
+
+        # Tworzenie miniatur podglądów
+        self.create_preview_thumbnails()
+
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        layout.addWidget(scroll_area)
+
+        return widget
+
+    def create_preview_thumbnails(self):
+        """Tworzy miniaturki podglądów."""
+        row, col = 0, 0
+        cols_per_row = 4
+
+        for preview_path in self.unpaired_previews:
+            thumbnail_widget = self.create_preview_thumbnail(preview_path)
+            self.previews_layout.addWidget(thumbnail_widget, row, col)
+
+            col += 1
+            if col >= cols_per_row:
+                col = 0
+                row += 1
+
+    def create_preview_thumbnail(self, preview_path):
+        """Tworzy widget miniaturki podglądu."""
+        widget = QWidget()
+        widget.setFixedSize(150, 180)
+        layout = QVBoxLayout(widget)
+
+        # Miniaturka
+        thumbnail_label = QLabel()
+        thumbnail_label.setFixedSize(140, 140)
+        thumbnail_label.setStyleSheet("border: 1px solid #ccc;")
+        thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Ładowanie miniaturki
+        try:
+            pixmap = QPixmap(preview_path)
+            if not pixmap.isNull():
+                pixmap = pixmap.scaled(140, 140, Qt.AspectRatioMode.KeepAspectRatio,
+                                     Qt.TransformationMode.SmoothTransformation)
+                thumbnail_label.setPixmap(pixmap)
+            else:
+                thumbnail_label.setText("Brak\npodglądu")
+        except Exception:
+            thumbnail_label.setText("Błąd\nładowania")
+
+        # Nazwa pliku
+        filename_label = QLabel(os.path.basename(preview_path))
+        filename_label.setWordWrap(True)
+        filename_label.setMaximumHeight(30)
+
+        # Menu kontekstowe
+        widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        widget.customContextMenuRequested.connect(
+            lambda pos, path=preview_path: self.show_preview_context_menu(pos, path, widget)
+        )
+
+        layout.addWidget(thumbnail_label)
+        layout.addWidget(filename_label)
+
+        return widget
+
+    def show_archive_context_menu(self, position):
+        """Menu kontekstowe dla archiwów."""
+        item = self.archives_list.itemAt(position)
+        if item:
+            menu = QMenu(self)
+            open_action = menu.addAction("📂 Otwórz w programie zewnętrznym")
+            open_action.triggered.connect(lambda: self.open_archive_externally(item))
+            menu.exec(self.archives_list.mapToGlobal(position))
+
+    def show_preview_context_menu(self, position, preview_path, widget):
+        """Menu kontekstowe dla podglądów."""
+        menu = QMenu(self)
+        delete_action = menu.addAction("🗑️ Usuń plik")
+        delete_action.triggered.connect(lambda: self.delete_preview_file(preview_path, widget))
+        menu.exec(widget.mapToGlobal(position))
+
+    def open_archive_externally(self, item):
+        """Otwiera archiwum w zewnętrznym programie."""
+        archive_path = item.data(Qt.ItemDataRole.UserRole)
+        try:
+            os.startfile(archive_path)  # Windows
+        except Exception as e:
+            QMessageBox.warning(self, "Błąd", f"Nie można otworzyć pliku: {e}")
+
+    def delete_preview_file(self, preview_path, widget):
+        """Usuwa plik podglądu."""
+        reply = QMessageBox.question(
+            self,
+            "Potwierdzenie",
+            f"Czy na pewno chcesz usunąć plik:\n{os.path.basename(preview_path)}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                os.remove(preview_path)
+                widget.setVisible(False)  # Ukryj widget
+                QMessageBox.information(self, "Sukces", "Plik został usunięty.")
+            except Exception as e:
+                QMessageBox.warning(self, "Błąd", f"Nie można usunąć pliku: {e}")
+```
+
+**Szacowany czas:** 16-20 godzin
+
+### 6.4 Szacowany wpływ implementacji nowych funkcjonalności
+
+**Nowe możliwości:**
+
+- ✅ Menu kontekstowe w drzewie folderów
+- ✅ Statystyki folderów (rozmiar + liczba par)
+- ✅ Kontrolki zwijania/rozwijania
+- ✅ Ukrywanie folderów .app_metadata
+- ✅ Górne menu z pełną funkcjonalnością
+- ✅ Kompletne okno preferencji
+- ✅ Narzędzie czyszczenia metadanych
+- ✅ Ulepszone okno parowania plików
+
+**User Experience Improvements:**
+
+- +500% poprawa użyteczności (intuicyjne menu, preferencje)
+- +300% poprawa efektywności (statystyki folderów, szybki dostęp do eksploratorza)
+- +200% poprawa zarządzania plikami (lepsze parowanie, usuwanie podglądów)
+
+**Całkowity szacowany czas implementacji:** 52-70 godzin (6-9 tygodni)
+**Priorytet implementacji:** 🔴 BARDZO WYSOKI - fundamentalne funkcjonalności UX
+
+---
+
+## ZAKTUALIZOWANE PODSUMOWANIE - KOMPLETNA ANALIZA
+
+### Przeanalizowane komponenty (5/5 plików + 8 nowych funkcjonalności ✅)
+
+#### 🔴 KRYTYCZNE - Istniejące problemy (100% ukończone):
+
+1. **src/ui/widgets/thumbnail_cache.py** ✅ - Cache blokuje UI
+2. **src/ui/main_window.py** ✅ - Narusza SRP, 1254 linii
+3. **src/logic/scanner.py** ✅ - Nieefektywny cache, podwójne skanowanie
+4. **src/ui/gallery_manager.py** ✅ - Pełna przebudowa layout'u
+5. **src/ui/delegates/workers.py** ✅ - Duplikacja kodu w workerach
+
+#### 🔴 KRYTYCZNE - Nowe funkcjonalności (100% przeanalizowane):
+
+6. **Menu kontekstowe drzewa folderów** ✅ - Otwieranie w eksploratorze
+7. **Statystyki folderów** ✅ - Rozmiar GB + liczba par
+8. **Kontrolki zwijania/rozwijania** ✅ - UX drzewa folderów
+9. **Ukrywanie .app_metadata** ✅ - Czysty widok drzewa
+10. **Górne menu** ✅ - Standardowy interfejs aplikacji
+11. **Okno preferencji** ✅ - Kompleksowa konfiguracja
+12. **Narzędzie czyszczenia metadanych** ✅ - Masowe usuwanie .app_metadata
+13. **Ulepszone okno parowania** ✅ - Miniaturki, otwieranie, usuwanie
+
+### Rekomendowana kolejność implementacji - ZAKTUALIZOWANA
+
+#### Faza 1 - Quick Wins + UX Fundamentals (6-8 tygodni):
+
+1. **Górne menu + okno preferencji** (2-3 tygodnie) - fundament UX
+2. **Thumbnail cache optimization** (1 tydzień) - natychmiastowa poprawa responsywności
+3. **Menu kontekstowe + ukrywanie .app_metadata** (1 tydzień) - podstawowe UX
+4. **Scanner double-scan elimination** (1-2 tygodnie) - 50% szybsze skanowanie
+5. **Gallery incremental updates** (1-2 tygodnie) - eliminacja migotania UI
+
+#### Faza 2 - Advanced Features + Architecture (8-10 tygodni):
+
+1. **Statystyki folderów** (2-3 tygodnie) - wartościowe informacje dla użytkownika
+2. **Ulepszone okno parowania** (3-4 tygodnie) - kluczowa funkcjonalność
+3. **MainWindow refactoryzacja** (4-5 tygodni) - separacja odpowiedzialności
+4. **Service layer introduction** (2-3 tygodnie) - separacja logiki biznesowej
+
+#### Faza 3 - Advanced Optimizations + Polish (4-6 tygodni):
+
+1. **Thread coordination unification** (1-2 tygodnie) - stabilność
+2. **Virtual scrolling implementation** (3-4 tygodnie) - scalability
+3. **Performance monitoring** (1 tydzień) - narzędzia diagnostyczne
+
+**ZAKTUALIZOWANY CAŁKOWITY CZAS:** 18-24 tygodnie (4-6 miesięcy)
+**Oczekiwany ROI:** 800-1000% poprawa user experience, 300-500% maintainability
+
+---
+
+tod
+def **init**(self):
+super().**init**()
+self.\_progress_batch_size = 10 # Update co 10 operacji
+self.\_last_progress_update = 0
 
     def emit_progress_batched(self, current: int, total: int, message: str):
         """Emit progress only when threshold reached."""
@@ -1126,7 +2221,8 @@ class OptimizedProgressWorker(UnifiedBaseWorker):
 
             self.emit_progress(progress, message)
             self._last_progress_update = progress
-```
+
+````
 
 **Szacowany czas:** 3-4 godziny
 **Oczekiwany efekt:** 60-80% redukcja sygnałów progress
@@ -1155,7 +2251,7 @@ class WorkerFactory:
         worker = ThumbnailGenerationWorker(path, width, height)
         worker.set_priority(priority)
         return worker
-```
+````
 
 **Szacowany czas:** 4-5 godzin
 **Oczekiwany efekt:** Lepsze zarządzanie workerami
@@ -1219,7 +2315,822 @@ class ValidatedWorker(UnifiedBaseWorker):
 
 ---
 
-# ANALIZA #6: `src/ui/widgets/file_tile_widget.py` (🟡 ŚREDNI PRIORYTET)
+# ANALIZA #6: `src/logic/metadata_manager.py` (🟡 ŚREDNI PRIORYTET)
+
+**Rozmiar:** 632 linii kodu  
+**Typ:** Moduł zarządzania metadanymi JSON  
+**Status:** ⚠️ PROBLEMY Z WYDAJNOŚCIĄ - wyłączona blokada plików, brak cache
+
+### 6.1 Zidentyfikowane problemy
+
+#### Problem #1: Wyłączona blokada plików - 🟡 ŚREDNI
+
+**Opis:** FileLock został zakomentowany co może prowadzić do uszkodzenia metadanych przy concurrent access
+
+```python
+# Wyłączamy blokadę plików - powoduje niepotrzebne opóźnienia
+# lock = FileLock(lock_path, timeout=LOCK_TIMEOUT)
+
+try:
+    # with lock:  # Zakomentowane - bez blokady
+    os.makedirs(metadata_dir, exist_ok=True)
+```
+
+**Wpływ:** Ryzyko uszkodzenia pliku metadanych przy jednoczesnym dostępie
+
+#### Problem #2: Brak cache metadanych - 🟡 ŚREDNI
+
+**Opis:** Każde wywołanie `load_metadata()` czyta plik z dysku bez cache'owania
+
+```python
+def load_metadata(working_directory: str) -> Dict[str, Any]:
+    metadata_path = get_metadata_path(working_directory)
+    # Brak cache - zawsze czyta z dysku
+    with open(metadata_path, "r", encoding="utf-8") as file:
+        metadata = json.load(file)
+```
+
+**Wpływ:** Niepotrzebne operacje I/O przy częstym dostępie do metadanych
+
+#### Problem #3: Nieefektywne zapisywanie przy dużej liczbie plików - 🟡 ŚREDNI
+
+**Opis:** Zapisywanie całego pliku metadanych nawet przy zmianie jednego elementu
+
+```python
+def save_metadata(working_directory: str, file_pairs_list: List, ...):
+    # Zawsze zapisuje wszystkie metadane
+    for file_pair in file_pairs_list:  # Może być tysiące par
+        pair_metadata = {
+            "stars": file_pair.get_stars(),
+            "color_tag": file_pair.get_color_tag(),
+        }
+        updated_file_pairs_metadata[relative_archive_path] = pair_metadata
+```
+
+**Wpływ:** Spowolnienie przy dużej liczbie par plików (>1000)
+
+#### Problem #4: BRAK WYMAGANYCH NOWYCH FUNKCJONALNOŚCI - 🟡 ŚREDNI
+
+**Opis:** Manager metadanych nie obsługuje funkcjonalności wymaganych przez użytkownika:
+
+- ❌ **Brak obsługi masowego usuwania metadanych** - dla opcji czyszczenia folderów .app_metadata
+- ❌ **Brak backup/restore metadanych** - zabezpieczenie przed utratą danych
+- ❌ **Brak walidacji spójności** - sprawdzanie czy pliki w metadanych rzeczywiście istnieją
+
+```python
+# BRAKUJE w metadata_manager.py:
+def cleanup_metadata_for_missing_files(working_directory: str):  # Czyszczenie nieaktualnych wpisów
+def backup_metadata(working_directory: str) -> str:              # Backup metadanych
+def restore_metadata(working_directory: str, backup_path: str):  # Przywracanie z backup
+def validate_metadata_integrity(working_directory: str):         # Walidacja spójności
+```
+
+**Wpływ:** Brak narzędzi do utrzymania jakości metadanych
+
+### 6.2 Rekomendacje naprawcze
+
+#### Rekomendacja #1: Implementacja cache metadanych - 🟡 PRIORYTET 1
+
+**Cel:** Redukcja operacji I/O przez cache'owanie
+
+**Implementacja:**
+
+```python
+class MetadataCache:
+    def __init__(self):
+        self._cache = {}
+        self._cache_timestamps = {}
+        self._cache_timeout = 30  # 30 sekund
+
+    def get_metadata(self, working_directory: str) -> Dict[str, Any]:
+        """Pobiera metadane z cache lub z dysku."""
+        import time
+        current_time = time.time()
+
+        if working_directory in self._cache:
+            if current_time - self._cache_timestamps[working_directory] < self._cache_timeout:
+                return self._cache[working_directory]
+
+        # Wczytaj z dysku i zapisz w cache
+        metadata = self._load_from_disk(working_directory)
+        self._cache[working_directory] = metadata
+        self._cache_timestamps[working_directory] = current_time
+
+        return metadata
+
+    def invalidate_cache(self, working_directory: str):
+        """Unieważnia cache dla katalogu."""
+        if working_directory in self._cache:
+            del self._cache[working_directory]
+            del self._cache_timestamps[working_directory]
+
+# Globalny cache
+_metadata_cache = MetadataCache()
+
+def load_metadata(working_directory: str) -> Dict[str, Any]:
+    return _metadata_cache.get_metadata(working_directory)
+```
+
+**Szacowany czas:** 4-6 godzin
+**Oczekiwany efekt:** 80% redukcja operacji I/O
+
+#### Rekomendacja #2: Przywrócenie bezpiecznej blokady plików - 🟡 PRIORYTET 1
+
+**Cel:** Zabezpieczenie przed uszkodzeniem metadanych
+
+**Implementacja:**
+
+```python
+def save_metadata_safe(working_directory: str, file_pairs_list: List, ...):
+    """Bezpieczny zapis z krótkimi timeoutami."""
+    metadata_path = get_metadata_path(working_directory)
+    lock_path = get_lock_path(working_directory)
+
+    # Krótki timeout dla desktop aplikacji
+    lock = FileLock(lock_path, timeout=0.5)
+
+    try:
+        with lock:
+            # Szybki atomowy zapis
+            with tempfile.NamedTemporaryFile(mode="w", delete=False,
+                                           dir=os.path.dirname(metadata_path)) as temp_file:
+                json.dump(metadata, temp_file, ensure_ascii=False, indent=2)
+                temp_file_path = temp_file.name
+
+            # Atomowa zamiana plików
+            shutil.move(temp_file_path, metadata_path)
+
+    except Timeout:
+        logger.warning("Nie można uzyskać blokady metadanych - pomijam zapis")
+        return False
+```
+
+**Szacowany czas:** 2-3 godziny
+**Oczekiwany efekt:** 100% eliminacja ryzyka uszkodzenia plików
+
+#### Rekomendacja #3: Implementacja wymaganych nowych funkcjonalności - 🟡 PRIORYTET 1
+
+**Cel:** Dodanie funkcjonalności do zarządzania metadanymi
+
+**Implementacja:**
+
+```python
+def cleanup_metadata_for_missing_files(working_directory: str) -> int:
+    """Usuwa wpisy metadanych dla nieistniejących plików."""
+    metadata = load_metadata(working_directory)
+    cleaned_count = 0
+
+    file_pairs_to_keep = {}
+    for rel_path, meta in metadata["file_pairs"].items():
+        abs_path = get_absolute_path(rel_path, working_directory)
+        if abs_path and os.path.exists(abs_path):
+            file_pairs_to_keep[rel_path] = meta
+        else:
+            cleaned_count += 1
+            logger.info(f"Usunięto metadane dla nieistniejącego pliku: {rel_path}")
+
+    metadata["file_pairs"] = file_pairs_to_keep
+
+    if cleaned_count > 0:
+        save_metadata(working_directory, [], metadata["unpaired_archives"],
+                     metadata["unpaired_previews"])
+        _metadata_cache.invalidate_cache(working_directory)
+
+    return cleaned_count
+
+def backup_metadata(working_directory: str) -> Optional[str]:
+    """Tworzy backup metadanych."""
+    import datetime
+
+    metadata_path = get_metadata_path(working_directory)
+    if not os.path.exists(metadata_path):
+        return None
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_name = f"metadata_backup_{timestamp}.json"
+    backup_path = os.path.join(os.path.dirname(metadata_path), backup_name)
+
+    try:
+        shutil.copy2(metadata_path, backup_path)
+        logger.info(f"Utworzono backup metadanych: {backup_path}")
+        return backup_path
+    except Exception as e:
+        logger.error(f"Błąd tworzenia backup metadanych: {e}")
+        return None
+
+def restore_metadata(working_directory: str, backup_path: str) -> bool:
+    """Przywraca metadane z backup."""
+    metadata_path = get_metadata_path(working_directory)
+
+    try:
+        # Waliduj backup przed przywróceniem
+        with open(backup_path, 'r', encoding='utf-8') as f:
+            backup_data = json.load(f)
+
+        if not _validate_metadata_structure(backup_data):
+            logger.error("Nieprawidłowa struktura backup metadanych")
+            return False
+
+        shutil.copy2(backup_path, metadata_path)
+        _metadata_cache.invalidate_cache(working_directory)
+        logger.info(f"Przywrócono metadane z backup: {backup_path}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Błąd przywracania metadanych: {e}")
+        return False
+
+def validate_metadata_integrity(working_directory: str) -> Dict[str, List[str]]:
+    """Sprawdza spójność metadanych z rzeczywistymi plikami."""
+    metadata = load_metadata(working_directory)
+    issues = {
+        "missing_files": [],
+        "invalid_paths": [],
+        "orphaned_metadata": []
+    }
+
+    for rel_path in metadata["file_pairs"].keys():
+        abs_path = get_absolute_path(rel_path, working_directory)
+        if not abs_path:
+            issues["invalid_paths"].append(rel_path)
+        elif not os.path.exists(abs_path):
+            issues["missing_files"].append(rel_path)
+
+    return issues
+
+def remove_all_metadata_folders(root_directory: str) -> int:
+    """Usuwa wszystkie foldery .app_metadata w strukturze folderów."""
+    removed_count = 0
+
+    for root, dirs, files in os.walk(root_directory, topdown=False):
+        if METADATA_DIR_NAME in dirs:
+            metadata_dir = os.path.join(root, METADATA_DIR_NAME)
+            try:
+                shutil.rmtree(metadata_dir)
+                removed_count += 1
+                logger.info(f"Usunięto folder metadanych: {metadata_dir}")
+            except Exception as e:
+                logger.error(f"Błąd usuwania {metadata_dir}: {e}")
+
+    return removed_count
+```
+
+**Szacowany czas:** 6-8 godzin
+**Oczekiwany efekt:** 200% poprawa funkcjonalności zarządzania metadanymi
+
+#### Rekomendacja #4: Optymalizacja zapisu dla dużych zbiorów - 🟡 PRIORYTET 2
+
+**Cel:** Poprawa wydajności przy dużej liczbie plików
+
+**Implementacja:**
+
+```python
+def save_metadata_incremental(working_directory: str, changed_pairs: List[FilePair]):
+    """Inkrementalny zapis tylko zmienionych metadanych."""
+    current_metadata = load_metadata(working_directory)
+
+    # Aktualizuj tylko zmienione pary
+    for file_pair in changed_pairs:
+        rel_path = get_relative_path(file_pair.archive_path, working_directory)
+        if rel_path:
+            current_metadata["file_pairs"][rel_path] = {
+                "stars": file_pair.get_stars(),
+                "color_tag": file_pair.get_color_tag(),
+            }
+
+    # Zapis tylko jeśli były zmiany
+    if changed_pairs:
+        _save_to_disk(working_directory, current_metadata)
+        _metadata_cache.invalidate_cache(working_directory)
+```
+
+**Szacowany czas:** 3-4 godziny
+**Oczekiwany efekt:** 60% redukcja czasu zapisu przy dużych zbiorach
+
+### 6.3 Szacowany wpływ poprawek
+
+**Przed optymalizacją:**
+
+- Performance I/O: 4/10 (brak cache, częste odczyty z dysku)
+- Data Safety: 5/10 (wyłączona blokada plików)
+- Functionality: 6/10 (podstawowe operacje)
+- Scalability: 4/10 (problemy z dużymi zbiorami)
+
+**Po implementacji rekomendacji:**
+
+- Performance I/O: 9/10 (+125% poprawa)
+- Data Safety: 9/10 (+80% poprawa)
+- Functionality: 9/10 (+50% poprawa)
+- Scalability: 8/10 (+100% poprawa)
+
+**Całkowity szacowany czas refaktoryzacji:** 15-21 godzin
+**Priorytet implementacji:** 🟡 ŚREDNI - stabilność i wydajność metadanych
+
+---
+
+# ANALIZA #7: `src/ui/file_operations_ui.py` (🟡 ŚREDNI PRIORYTET)
+
+**Rozmiar:** 412 linii kodu  
+**Typ:** UI dla operacji na plikach  
+**Status:** ⚠️ PROBLEMY ARCHITEKTURY - duplikacja progress dialogs, słaba synchronizacja
+
+### 7.1 Zidentyfikowane problemy
+
+#### Problem #1: Duplikacja progress dialogs - 🟡 ŚREDNI
+
+**Opis:** Każda operacja tworzy własny QProgressDialog z podobną logiką
+
+```python
+# Powtarzająca się logika w różnych metodach:
+def _show_bulk_move_progress(self, worker):
+    progress_dialog = QProgressDialog("Przenoszenie plików...", "Anuluj", 0, 100, self)
+    progress_dialog.setWindowTitle("Przenoszenie")
+    progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+
+def _show_bulk_delete_progress(self, worker):
+    progress_dialog = QProgressDialog("Usuwanie plików...", "Anuluj", 0, 100, self)
+    progress_dialog.setWindowTitle("Usuwanie")
+    progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+```
+
+**Wpływ:** Duplikacja kodu, niespójne UI, trudność w utrzymaniu
+
+#### Problem #2: Słaba synchronizacja z workerami - 🟡 ŚREDNI
+
+**Opis:** Brak centralnego mechanizmu zarządzania aktywnych operacji
+
+```python
+# Różne sposoby obsługi workerów:
+def handle_bulk_move(self, file_pairs, destination):
+    worker = BulkMoveWorker(file_pairs, destination)
+    # Brak śledzenia aktywnych workerów
+
+def handle_bulk_delete(self, file_pairs):
+    worker = BulkDeleteWorker(file_pairs)
+    # Różna logika obsługi
+```
+
+**Wpływ:** Możliwość jednoczesnych konfliktowych operacji
+
+#### Problem #3: Brak walidacji parametrów wejściowych - 🟡 ŚREDNI
+
+**Opis:** Metody nie sprawdzają poprawności przekazanych danych
+
+```python
+def handle_bulk_move(self, file_pairs: List[FilePair], destination: str):
+    # Brak sprawdzenia czy file_pairs nie jest puste
+    # Brak sprawdzenia czy destination istnieje i jest zapisywalny
+    worker = BulkMoveWorker(file_pairs, destination)
+```
+
+**Wpływ:** Potencjalne błędy runtime, złe UX
+
+#### Problem #4: BRAK WYMAGANYCH NOWYCH FUNKCJONALNOŚCI - 🟡 ŚREDNI
+
+**Opis:** UI operacji na plikach nie obsługuje nowych wymaganych funkcjonalności:
+
+- ❌ **Brak UI dla ulepszonych operacji parowania** - lepszy dialog parowania plików
+- ❌ **Brak progress UI dla statystyk folderów** - obliczanie rozmiarów i liczby par
+- ❌ **Brak UI dla backup/restore metadanych** - zarządzanie kopiami zapasowymi
+
+```python
+# BRAKUJE w file_operations_ui.py:
+def show_enhanced_pairing_dialog(self, unpaired_archives, unpaired_previews): # Lepsze parowanie
+def show_folder_statistics_progress(self, folder_path):                       # Statystyki folderów
+def show_metadata_backup_dialog(self, working_directory):                    # Backup metadanych
+```
+
+**Wpływ:** Brak UI dla kluczowych funkcjonalności
+
+### 7.2 Rekomendacje naprawcze
+
+#### Rekomendacja #1: Unifikacja progress dialogs - 🟡 PRIORYTET 1
+
+**Cel:** Centralizacja logiki progress dialogs
+
+**Implementacja:**
+
+```python
+class UnifiedProgressDialog:
+    def __init__(self, parent, operation_name: str):
+        self.dialog = QProgressDialog(parent)
+        self.operation_name = operation_name
+        self.setup_dialog()
+
+    def setup_dialog(self):
+        self.dialog.setWindowTitle(f"Operacja: {self.operation_name}")
+        self.dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.dialog.setAutoClose(True)
+        self.dialog.setAutoReset(True)
+        self.dialog.setMinimumDuration(500)  # Pokaż po 500ms
+
+    def connect_worker(self, worker):
+        worker.signals.progress.connect(self.update_progress)
+        worker.signals.finished.connect(self.dialog.accept)
+        worker.signals.error.connect(self.handle_error)
+        self.dialog.canceled.connect(worker.interrupt)
+
+    def update_progress(self, percent: int, message: str):
+        self.dialog.setValue(percent)
+        self.dialog.setLabelText(message)
+
+    def handle_error(self, error_message: str):
+        self.dialog.reject()
+        QMessageBox.critical(self.dialog.parent(), "Błąd operacji", error_message)
+
+class FileOperationsUI:
+    def show_operation_progress(self, worker, operation_name: str):
+        progress = UnifiedProgressDialog(self, operation_name)
+        progress.connect_worker(worker)
+        return progress
+```
+
+**Szacowany czas:** 4-5 godzin
+**Oczekiwany efekt:** 70% redukcja duplikacji kodu
+
+#### Rekomendacja #2: Centralne zarządzanie operacjami - 🟡 PRIORYTET 1
+
+**Cel:** Kontrola jednoczesnych operacji na plikach
+
+**Implementacja:**
+
+```python
+class OperationsManager:
+    def __init__(self):
+        self.active_operations = {}
+        self.operation_queue = []
+
+    def start_operation(self, operation_id: str, worker, operation_name: str):
+        if operation_id in self.active_operations:
+            raise ValueError(f"Operacja {operation_id} już jest aktywna")
+
+        self.active_operations[operation_id] = {
+            'worker': worker,
+            'name': operation_name,
+            'start_time': time.time()
+        }
+
+        worker.signals.finished.connect(lambda: self.finish_operation(operation_id))
+        worker.signals.error.connect(lambda err: self.finish_operation(operation_id))
+
+    def finish_operation(self, operation_id: str):
+        if operation_id in self.active_operations:
+            del self.active_operations[operation_id]
+
+    def can_start_operation(self, operation_type: str) -> bool:
+        # Sprawdź czy można uruchomić operację (np. nie można jednocześnie usuwać i przenosić)
+        conflicting_operations = ['bulk_delete', 'bulk_move']
+        if operation_type in conflicting_operations:
+            for op_data in self.active_operations.values():
+                if any(conflict in op_data['name'].lower() for conflict in conflicting_operations):
+                    return False
+        return True
+
+class FileOperationsUI:
+    def __init__(self):
+        self.operations_manager = OperationsManager()
+
+    def handle_bulk_move(self, file_pairs: List[FilePair], destination: str):
+        if not self.operations_manager.can_start_operation('bulk_move'):
+            QMessageBox.warning(self, "Operacja w toku",
+                              "Inna operacja na plikach jest już wykonywana.")
+            return
+
+        worker = BulkMoveWorker(file_pairs, destination)
+        operation_id = f"move_{int(time.time())}"
+
+        self.operations_manager.start_operation(operation_id, worker, "Przenoszenie plików")
+        progress = self.show_operation_progress(worker, "Przenoszenie plików")
+
+        QThreadPool.globalInstance().start(worker)
+```
+
+**Szacowany czas:** 5-6 godzin
+**Oczekiwany efekt:** Eliminacja konfliktów operacji
+
+#### Rekomendacja #3: Implementacja wymaganych nowych funkcjonalności - 🟡 PRIORYTET 1
+
+**Cel:** Dodanie UI dla nowych funkcjonalności
+
+**Implementacja:**
+
+```python
+class FileOperationsUI:
+    def show_enhanced_pairing_dialog(self, unpaired_archives: List[str],
+                                   unpaired_previews: List[str]) -> List[Tuple[str, str]]:
+        """Wyświetla ulepszone okno parowania plików."""
+        dialog = EnhancedPairingDialog(unpaired_archives, unpaired_previews, self)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return dialog.get_paired_files()
+        return []
+
+    def show_folder_statistics_progress(self, folder_path: str):
+        """Wyświetla progress dla obliczania statystyk foldera."""
+        from src.ui.directory_tree_manager import FolderStatisticsWorker
+
+        worker = FolderStatisticsWorker(folder_path)
+        progress = self.show_operation_progress(worker, "Obliczanie statystyk folderu")
+
+        def on_finished(stats):
+            progress.dialog.accept()
+            self.show_folder_statistics_result(stats)
+
+        worker.signals.finished.connect(on_finished)
+        QThreadPool.globalInstance().start(worker)
+
+    def show_metadata_backup_dialog(self, working_directory: str):
+        """Wyświetla dialog zarządzania backup metadanych."""
+        dialog = MetadataBackupDialog(working_directory, self)
+        dialog.exec()
+
+    def show_folder_statistics_result(self, stats):
+        """Wyświetla wyniki statystyk folderu."""
+        message = f"""Statystyki folderu:
+
+📁 Rozmiar: {stats.total_size_gb:.2f} GB
+📦 Liczba par plików: {stats.total_pairs}
+📄 Całkowita liczba plików: {stats.total_files}"""
+
+        QMessageBox.information(self, "Statystyki folderu", message)
+
+class EnhancedPairingDialog(QDialog):
+    def __init__(self, unpaired_archives, unpaired_previews, parent=None):
+        super().__init__(parent)
+        self.unpaired_archives = unpaired_archives
+        self.unpaired_previews = unpaired_previews
+        self.paired_files = []
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle("Ulepszone parowanie plików")
+        self.setModal(True)
+        self.resize(800, 600)
+
+        layout = QVBoxLayout(self)
+
+        # Instrukcje
+        instructions = QLabel(
+            "Przeciągnij pliki archiwów na odpowiadające im pliki podglądu aby je sparować."
+        )
+        layout.addWidget(instructions)
+
+        # Główny layout z dwoma kolumnami
+        main_layout = QHBoxLayout()
+
+        # Kolumna archiwów
+        archives_group = QGroupBox("Pliki archiwów")
+        archives_layout = QVBoxLayout(archives_group)
+        self.archives_list = QListWidget()
+        self.archives_list.addItems([os.path.basename(path) for path in self.unpaired_archives])
+        self.archives_list.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+        archives_layout.addWidget(self.archives_list)
+        main_layout.addWidget(archives_group)
+
+        # Kolumna podglądów
+        previews_group = QGroupBox("Pliki podglądu")
+        previews_layout = QVBoxLayout(previews_group)
+        self.previews_list = QListWidget()
+        self.previews_list.addItems([os.path.basename(path) for path in self.unpaired_previews])
+        self.previews_list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
+        self.previews_list.setAcceptDrops(True)
+        previews_layout.addWidget(self.previews_list)
+        main_layout.addWidget(previews_group)
+
+        layout.addLayout(main_layout)
+
+        # Lista sparowanych plików
+        paired_group = QGroupBox("Sparowane pliki")
+        paired_layout = QVBoxLayout(paired_group)
+        self.paired_list = QListWidget()
+        paired_layout.addWidget(self.paired_list)
+        layout.addWidget(paired_group)
+
+        # Przyciski
+        buttons_layout = QHBoxLayout()
+        auto_pair_btn = QPushButton("Auto-parowanie")
+        auto_pair_btn.clicked.connect(self.auto_pair_files)
+        buttons_layout.addWidget(auto_pair_btn)
+
+        buttons_layout.addStretch()
+
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Anuluj")
+        cancel_btn.clicked.connect(self.reject)
+        buttons_layout.addWidget(ok_btn)
+        buttons_layout.addWidget(cancel_btn)
+
+        layout.addLayout(buttons_layout)
+
+    def auto_pair_files(self):
+        """Automatyczne parowanie na podstawie nazw plików."""
+        # Implementacja automatycznego parowania
+        for archive in self.unpaired_archives:
+            archive_base = os.path.splitext(os.path.basename(archive))[0].lower()
+            for preview in self.unpaired_previews:
+                preview_base = os.path.splitext(os.path.basename(preview))[0].lower()
+                if archive_base == preview_base:
+                    self.paired_files.append((archive, preview))
+                    self.paired_list.addItem(f"{os.path.basename(archive)} ↔ {os.path.basename(preview)}")
+                    break
+
+    def get_paired_files(self) -> List[Tuple[str, str]]:
+        return self.paired_files
+
+class MetadataBackupDialog(QDialog):
+    def __init__(self, working_directory: str, parent=None):
+        super().__init__(parent)
+        self.working_directory = working_directory
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle("Zarządzanie kopiami zapasowymi metadanych")
+        self.setModal(True)
+        self.resize(600, 400)
+
+        layout = QVBoxLayout(self)
+
+        # Informacje o bieżących metadanych
+        current_info = QLabel(f"Folder roboczy: {self.working_directory}")
+        layout.addWidget(current_info)
+
+        # Lista istniejących backup
+        backups_group = QGroupBox("Dostępne kopie zapasowe")
+        backups_layout = QVBoxLayout(backups_group)
+        self.backups_list = QListWidget()
+        self.refresh_backups_list()
+        backups_layout.addWidget(self.backups_list)
+        layout.addWidget(backups_group)
+
+        # Przyciski operacji
+        operations_layout = QHBoxLayout()
+
+        create_backup_btn = QPushButton("Utwórz kopię zapasową")
+        create_backup_btn.clicked.connect(self.create_backup)
+        operations_layout.addWidget(create_backup_btn)
+
+        restore_btn = QPushButton("Przywróć z kopii")
+        restore_btn.clicked.connect(self.restore_backup)
+        operations_layout.addWidget(restore_btn)
+
+        delete_backup_btn = QPushButton("Usuń kopię")
+        delete_backup_btn.clicked.connect(self.delete_backup)
+        operations_layout.addWidget(delete_backup_btn)
+
+        layout.addLayout(operations_layout)
+
+        # Przycisk zamknięcia
+        close_btn = QPushButton("Zamknij")
+        close_btn.clicked.connect(self.accept)
+        close_layout = QHBoxLayout()
+        close_layout.addStretch()
+        close_layout.addWidget(close_btn)
+        layout.addLayout(close_layout)
+
+    def refresh_backups_list(self):
+        """Odświeża listę dostępnych kopii zapasowych."""
+        self.backups_list.clear()
+
+        metadata_dir = os.path.join(self.working_directory, METADATA_DIR_NAME)
+        if os.path.exists(metadata_dir):
+            for file in os.listdir(metadata_dir):
+                if file.startswith("metadata_backup_") and file.endswith(".json"):
+                    self.backups_list.addItem(file)
+
+    def create_backup(self):
+        """Tworzy nową kopię zapasową."""
+        from src.logic.metadata_manager import backup_metadata
+
+        backup_path = backup_metadata(self.working_directory)
+        if backup_path:
+            QMessageBox.information(self, "Sukces",
+                                  f"Utworzono kopię zapasową:\n{os.path.basename(backup_path)}")
+            self.refresh_backups_list()
+        else:
+            QMessageBox.warning(self, "Błąd", "Nie udało się utworzyć kopii zapasowej.")
+
+    def restore_backup(self):
+        """Przywraca wybraną kopię zapasową."""
+        current_item = self.backups_list.currentItem()
+        if not current_item:
+            QMessageBox.warning(self, "Błąd", "Wybierz kopię zapasową do przywrócenia.")
+            return
+
+        backup_filename = current_item.text()
+        backup_path = os.path.join(self.working_directory, METADATA_DIR_NAME, backup_filename)
+
+        reply = QMessageBox.question(self, "Potwierdzenie",
+                                   f"Czy na pewno chcesz przywrócić kopię zapasową?\n"
+                                   f"Obecne metadane zostaną zastąpione.\n\n"
+                                   f"Kopia: {backup_filename}")
+
+        if reply == QMessageBox.StandardButton.Yes:
+            from src.logic.metadata_manager import restore_metadata
+
+            if restore_metadata(self.working_directory, backup_path):
+                QMessageBox.information(self, "Sukces", "Metadane zostały przywrócone.")
+            else:
+                QMessageBox.warning(self, "Błąd", "Nie udało się przywrócić metadanych.")
+
+    def delete_backup(self):
+        """Usuwa wybraną kopię zapasową."""
+        current_item = self.backups_list.currentItem()
+        if not current_item:
+            QMessageBox.warning(self, "Błąd", "Wybierz kopię zapasową do usunięcia.")
+            return
+
+        backup_filename = current_item.text()
+        backup_path = os.path.join(self.working_directory, METADATA_DIR_NAME, backup_filename)
+
+        reply = QMessageBox.question(self, "Potwierdzenie",
+                                   f"Czy na pewno chcesz usunąć kopię zapasową?\n\n"
+                                   f"Kopia: {backup_filename}")
+
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                os.remove(backup_path)
+                QMessageBox.information(self, "Sukces", "Kopia zapasowa została usunięta.")
+                self.refresh_backups_list()
+            except Exception as e:
+                QMessageBox.warning(self, "Błąd", f"Nie udało się usunąć kopii:\n{e}")
+```
+
+**Szacowany czas:** 12-16 godzin
+**Oczekiwany efekt:** 300% poprawa funkcjonalności UI
+
+#### Rekomendacja #4: Dodanie walidacji parametrów - 🟡 PRIORYTET 2
+
+**Cel:** Poprawa niezawodności operacji
+
+**Implementacja:**
+
+```python
+def validate_bulk_operation_params(file_pairs: List[FilePair],
+                                 operation_name: str) -> Tuple[bool, str]:
+    """Waliduje parametry operacji zbiorczych."""
+    if not file_pairs:
+        return False, f"Lista plików dla operacji '{operation_name}' jest pusta."
+
+    if len(file_pairs) > 1000:
+        return False, f"Zbyt wiele plików ({len(file_pairs)}) dla operacji '{operation_name}'. Maksimum: 1000."
+
+    # Sprawdź czy pliki istnieją
+    missing_files = []
+    for fp in file_pairs:
+        if not os.path.exists(fp.archive_path):
+            missing_files.append(fp.archive_path)
+        if fp.preview_path and not os.path.exists(fp.preview_path):
+            missing_files.append(fp.preview_path)
+
+    if missing_files:
+        return False, f"Nie znaleziono plików: {', '.join(missing_files[:3])}{'...' if len(missing_files) > 3 else ''}"
+
+    return True, ""
+
+def handle_bulk_move(self, file_pairs: List[FilePair], destination: str):
+    # Walidacja parametrów
+    is_valid, error_msg = validate_bulk_operation_params(file_pairs, "przenoszenie")
+    if not is_valid:
+        QMessageBox.warning(self, "Błąd walidacji", error_msg)
+        return
+
+    if not os.path.exists(destination) or not os.path.isdir(destination):
+        QMessageBox.warning(self, "Błąd", f"Folder docelowy nie istnieje: {destination}")
+        return
+
+    if not os.access(destination, os.W_OK):
+        QMessageBox.warning(self, "Błąd", f"Brak uprawnień do zapisu w folderze: {destination}")
+        return
+
+    # Kontynuuj operację...
+```
+
+**Szacowany czas:** 2-3 godziny
+**Oczekiwany efekt:** 50% redukcja błędów runtime
+
+### 7.3 Szacowany wpływ poprawek
+
+**Przed optymalizacją:**
+
+- Code Quality: 4/10 (duplikacja kodu, słaba architektura)
+- User Experience: 5/10 (podstawowe dialogi progress)
+- Reliability: 5/10 (brak walidacji, możliwe konflikty)
+- Functionality: 6/10 (podstawowe operacje na plikach)
+
+**Po implementacji rekomendacji:**
+
+- Code Quality: 8/10 (+100% poprawa)
+- User Experience: 9/10 (+80% poprawa)
+- Reliability: 8/10 (+60% poprawa)
+- Functionality: 9/10 (+50% poprawa)
+
+**Całkowity szacowany czas refaktoryzacji:** 23-30 godzin
+**Priorytet implementacji:** 🟡 ŚREDNI - poprawa jakości UI i nowych funkcjonalności
+
+---
+
+# ANALIZA #8: `src/ui/widgets/file_tile_widget.py` (🟡 ŚREDNI PRIORYTET)
 
 **Rozmiar:** 758 linii | **Typ:** UI Widget | **Kompleksowość:** Wysoka
 
@@ -1284,6 +3195,25 @@ else:
 
 **Opis:** Zbyt wiele odpowiedzialności w jednym komponencie
 **Wpływ:** 🏗️ Narusza SRP, trudne testowanie
+
+### 🔥 **PROBLEM #6: BRAK WYMAGANYCH NOWYCH FUNKCJONALNOŚCI** - 🟡 ŚREDNI
+
+**Opis:** Widget kafelka pliku nie obsługuje nowych funkcjonalności wymaganych przez system:
+
+- ❌ **Brak integracji z statystykami folderów** - kafelek nie wie o statystykach folderu nadrzędnego
+- ❌ **Brak obsługi filtrowania ukrytych elementów** - nie reaguje na ukrywanie folderów .app_metadata
+- ❌ **Brak wsparcia dla ulepszonego parowania** - ograniczone opcje drag&drop dla zaawansowanego parowania
+- ❌ **Brak cache awareness dla nowych funkcji** - nie optymalizuje się dla nowych wzorców użycia
+
+```python
+# BRAKUJE w FileTileWidget:
+def update_folder_context(self, folder_stats: FolderStatistics):    # Kontekst statystyk folderu
+def should_be_visible_in_tree_context(self) -> bool:               # Integracja z filtrowaniem drzewa
+def get_enhanced_pairing_info(self) -> Dict[str, Any]:             # Info dla zaawansowanego parowania
+def handle_folder_statistics_change(self, stats_update):           # Reakcja na zmiany statystyk
+```
+
+**Wpływ:** Nieoptymalne współdziałanie z nowymi funkcjonalnościami systemu
 
 ## Rekomendowane poprawki:
 
@@ -1619,6 +3549,25 @@ self.filter_color_combo = QComboBox()
 
 **Opis:** UI może być niejasny dla nowych użytkowników
 **Wpływ:** 👤 Słabe UX
+
+### 🔄 **PROBLEM #4: BRAK WYMAGANYCH NOWYCH FUNKCJONALNOŚCI** - 🟡 ŚREDNI
+
+**Opis:** Panel filtrów nie obsługuje nowych funkcjonalności wymaganych przez system:
+
+- ❌ **Brak filtrowania według statystyk folderów** - nie można filtrować według rozmiaru folderu lub liczby par
+- ❌ **Brak opcji filtrowania ukrytych elementów** - nie ma przełącznika dla folderów .app_metadata
+- ❌ **Brak integracji z preferencjami** - ustawienia filtrów nie są zapisywane w systemie preferencji
+- ❌ **Brak filtrów zaawansowanych** - tylko podstawowe filtry (gwiazdki, kolor)
+
+```python
+# BRAKUJE w FilterPanel:
+def add_folder_size_filter(self):                        # Filtrowanie według rozmiaru folderów
+def add_hidden_folders_toggle(self):                     # Przełącznik ukrytych folderów
+def integrate_with_preferences(self, prefs_manager):     # Integracja z systemem preferencji
+def add_advanced_filters_section(self):                  # Sekcja zaawansowanych filtrów
+```
+
+**Wpływ:** Ograniczone możliwości filtrowania, brak integracji z nowymi funkcjami
 
 ## Rekomendowane poprawki:
 
@@ -2097,6 +4046,25 @@ except (TypeError, ValueError):
 
 **Opis:** Powtarzający się pattern konwersji typów
 **Wpływ:** 🔧 Drobna duplikacja, ale akceptowalna
+
+### 🟢 **PROBLEM #5: BRAK WYMAGANYCH NOWYCH FUNKCJONALNOŚCI** - 🟡 ŚREDNI
+
+**Opis:** Logika filtrowania nie obsługuje nowych kryteriów wymaganych przez system:
+
+- ❌ **Brak filtrowania według statystyk folderów** - nie można filtrować według rozmiaru folderu GB lub liczby par plików
+- ❌ **Brak filtrowania ukrytych elementów** - nie obsługuje filtrowania folderów .app_metadata
+- ❌ **Brak zaawansowanych kryteriów** - tylko podstawowe filtry (gwiazdki, kolor, ścieżka)
+- ❌ **Brak cache dla skomplikowanych filtrów** - każde wywołanie przetwarza wszystkie elementy
+
+```python
+# BRAKUJE w filter_logic.py:
+def filter_by_folder_statistics(file_pairs, min_size_gb, max_size_gb, min_pairs_count): # Filtrowanie statystyk
+def filter_hidden_folders(file_pairs, show_hidden_folders: bool):                      # Ukryte foldery
+def apply_advanced_filters(file_pairs, advanced_criteria: Dict):                       # Zaawansowane filtry
+def cache_filter_results(filter_key: str, results: List[FilePair]):                   # Cache wyników
+```
+
+**Wpływ:** Ograniczone możliwości filtrowania dla nowych funkcjonalności systemu
 
 ## Rekomendowane poprawki:
 
