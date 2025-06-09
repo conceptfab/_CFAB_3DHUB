@@ -1,5 +1,6 @@
 import os
 import sys
+import traceback
 
 # --- Modyfikacja sys.path ---
 # Ta sekcja musi być wykonana przed próbą importu modułów z pakietu 'src'.
@@ -10,53 +11,72 @@ if _PROJECT_ROOT not in sys.path:
 
 # Import głównej funkcji aplikacji teraz, gdy sys.path jest ustawione.
 from src.main import main  # noqa: E402
+from src.utils.arg_parser import (
+    get_app_version,
+    parse_args,  # noqa: E402
+    setup_logging_from_args,
+)
+from src.utils.style_loader import get_style_path, load_styles  # noqa: E402
 
 
 def run():
-    """Uruchamia aplikację z dodatkowymi informacjami diagnostycznymi."""
-    # Jeszcze krótszy komunikat
-    print(f"Root in path: {_PROJECT_ROOT}")
+    """
+    Uruchamia aplikację z obsługą argumentów linii poleceń i obsługą błędów.
 
-    # Wczytaj plik styles.qss i przekaż go do funkcji main
-    style_sheet = ""
-    style_path = os.path.join(_PROJECT_ROOT, "src", "resources", "styles.qss")
-    if os.path.exists(style_path):
-        print(f"Wczytywanie stylów z: {style_path}")
-        try:
-            # Próbuj najpierw z UTF-8 (najbardziej powszechne kodowanie)
-            with open(style_path, "r", encoding="utf-8") as style_file:
-                style_sheet = style_file.read()
-                print(f"Załadowano {len(style_sheet)} bajtów stylów (UTF-8)")
-        except UnicodeDecodeError:
-            # Jeśli UTF-8 nie zadziała, spróbuj z UTF-16
+    Returns:
+        int: Kod wyjścia (0 - sukces, >0 - błąd)
+    """
+    try:
+        # Komunikat diagnostyczny
+        print(f"Root in path: {_PROJECT_ROOT}")
+
+        # Parsowanie argumentów linii poleceń
+        args = parse_args()
+
+        # Obsługa opcji --version
+        if args.version:
+            version = get_app_version()
+            print(f"CFAB_3DHUB wersja {version}")
+            return 0
+
+        # Konfiguracja systemu logowania na podstawie argumentów
+        setup_logging_from_args(args)
+
+        # Ładowanie stylów
+        style_sheet = ""
+        if not args.no_style:
             try:
-                with open(style_path, "r", encoding="utf-16") as style_file:
-                    style_sheet = style_file.read()
-                    print(f"Załadowano {len(style_sheet)} bajtów stylów (UTF-16)")
-            except UnicodeDecodeError:
-                # Jako ostateczność, spróbuj z Latin-1 (ignoruje błędy kodowania)
-                with open(style_path, "r", encoding="latin-1") as style_file:
-                    style_sheet = style_file.read()
-                    print(f"Załadowano {len(style_sheet)} bajtów stylów (Latin-1)")
-                print(
-                    "UWAGA: Używanie awaryjnego kodowania Latin-1, mogą wystąpić problemy ze znakami specjalnymi."
-                )
-    else:
-        print(f"UWAGA: Nie znaleziono pliku stylów: {style_path}")
+                # Ustalenie ścieżki do pliku stylów
+                style_path = get_style_path(_PROJECT_ROOT, args.style)
+                if args.style:
+                    print(f"Używanie niestandardowego pliku stylów: {args.style}")
 
-    # Sprawdź, czy użytkownik chce włączyć tryb debugowania
-    import sys
+                # Ładowanie stylów
+                print(f"Wczytywanie stylów z: {style_path}")
+                style_sheet = load_styles(style_path, verbose=True)
+            except Exception as e:
+                print(f"OSTRZEŻENIE: Błąd podczas ładowania stylów: {str(e)}")
+                print("Aplikacja zostanie uruchomiona bez stylów.")
 
-    if "--debug" in sys.argv:
-        print("TRYB DEBUGOWANIA WŁĄCZONY - szczegółowe logi skanowania")
-        # Ustawienie poziomu logowania na DEBUG dla modułu skanowania
-        import logging
+        # Uruchomienie głównej funkcji aplikacji
+        try:
+            # Przekazujemy style do funkcji main
+            return main(style_sheet=style_sheet)
+        except Exception as e:
+            print(
+                f"BŁĄD KRYTYCZNY: Wystąpił błąd podczas uruchamiania aplikacji: {str(e)}"
+            )
+            traceback.print_exc()
+            return 1
 
-        logging.getLogger("src.logic.scanner").setLevel(logging.DEBUG)
-
-    # Przekazujemy style do funkcji main
-    main(style_sheet=style_sheet)
+    except KeyboardInterrupt:
+        print("\nPrzerwano uruchamianie aplikacji.")
+        return 130  # Standardowy kod wyjścia dla SIGINT
+    except Exception as e:
+        print(f"BŁĄD KRYTYCZNY: Nieoczekiwany błąd podczas inicjalizacji: {str(e)}")
+        traceback.print_exc()
+        return 2
 
 
 if __name__ == "__main__":
-    run()
+    sys.exit(run())

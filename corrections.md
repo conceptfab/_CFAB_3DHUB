@@ -822,16 +822,50 @@ Realizacja Etapu 8 znacząco zwiększyła odporność aplikacji na błędy i pop
 
 ### 📊 Status tracking
 
-- [ ] Kod zaimplementowany (obsługa błędów, zoptymalizowane ładowanie stylów)
-- [ ] Testy podstawowe przeprowadzone
-- [ ] Testy integracji przeprowadzone
-- [ ] Testy obsługi błędów przeprowadzone
-- [ ] Dokumentacja zaktualizowana
-- [ ] Gotowe do wdrożenia
+- [x] Kod zaimplementowany (obsługa błędów, zoptymalizowane ładowanie stylów, argparse)
+- [x] Testy podstawowe przeprowadzone
+- [x] Testy integracji przeprowadzone
+- [x] Testy obsługi błędów przeprowadzone
+- [x] Dokumentacja zaktualizowana
+- [x] Gotowe do wdrożenia
 
 ---
 
 _Analiza pliku `run_app.py` zakończona._
+
+**🎯 ETAP 9 UKOŃCZONY** - Optymalizacja obsługi błędów i refaktoryzacja modułu uruchomieniowego:
+
+✅ **Modularyzacja kodu i eliminacja duplikacji:**
+
+- Utworzono nowy moduł `src/utils/style_loader.py` do ładowania stylów QSS
+- Utworzono nowy moduł `src/utils/arg_parser.py` do obsługi argumentów linii poleceń
+- Usunięto duplikację kodu ładowania stylów między `run_app.py` i `src/main.py`
+
+✅ **Ulepszona obsługa błędów:**
+
+- Dodano bloki try-except dla obsługi różnych scenariuszy błędów
+- Dodano obsługę przerwania aplikacji (KeyboardInterrupt)
+- Poprawne przekazywanie kodów wyjścia w przypadku błędów
+
+✅ **Rozszerzona funkcjonalność linii poleceń:**
+
+- Zaimplementowano obsługę argumentów poprzez `argparse`
+- Dodano przełączniki dla poziomu logowania, stylu, wyświetlania wersji
+- Dodano szczegółową pomoc dostępną przez `--help`
+
+✅ **Poprawiona obsługa stylów:**
+
+- Bardziej niezawodne ładowanie z różnymi kodowaniami (UTF-8, UTF-16, Latin-1)
+- Obsługa niestandardowych ścieżek do plików stylów
+- Wykrywanie dostępnych plików stylów w różnych lokalizacjach
+
+✅ **Testy jednostkowe:**
+
+- Utworzono kompletne testy dla obu nowych modułów
+- Przetestowano wszystkie funkcje i przypadki brzegowe
+- Wszystkie testy przechodzą pomyślnie
+
+Realizacja Etapu 9 znacząco poprawiła jakość kodu modułu startowego aplikacji, eliminując duplikacje, zwiększając modularność i dodając bardziej zaawansowaną obsługę błędów. Wprowadzenie obsługi większej liczby argumentów linii poleceń poprawiło również doświadczenie użytkownika przy korzystaniu z aplikacji.
 
 ### 10. `src/app_config.py`
 

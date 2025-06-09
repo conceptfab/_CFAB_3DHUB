@@ -74,29 +74,12 @@ def main(style_sheet=""):
         # Blok globalnej obsługi wyjątków - ochrona głównego cyklu aplikacji
         try:
             # Tworzenie instancji aplikacji QT
-            app = QApplication(sys.argv)
-
-            # Zastosowanie przekazanego arkusza stylów QSS (jeśli istnieje)
+            app = QApplication(
+                sys.argv
+            )  # Zastosowanie przekazanego arkusza stylów QSS (jeśli istnieje)
             if style_sheet:
                 logging.info(f"Stosowanie arkusza stylów ({len(style_sheet)} bajtów)")
                 app.setStyleSheet(style_sheet)
-            try:
-                # Ścieżka do pliku styles.qss (w katalogu głównym projektu)
-                project_root = os.path.dirname(
-                    os.path.dirname(os.path.abspath(__file__))
-                )
-                style_path = os.path.join(project_root, "styles.qss")
-
-                # Załadowanie i zastosowanie stylów
-                if os.path.exists(style_path):
-                    with open(style_path, "r") as style_file:
-                        style_sheet = style_file.read()
-                        app.setStyleSheet(style_sheet)
-                        logging.info(f"Załadowano style z: {style_path}")
-                else:
-                    logging.warning(f"Brak pliku stylów: {style_path}")
-            except Exception as e:
-                logging.error(f"Błąd podczas ładowania stylów: {e}")
 
             try:
                 # Tworzenie i wyświetlanie głównego okna
