@@ -37,7 +37,7 @@ class FilePair:
             archive_path: Absolutna ścieżka do pliku archiwum.
             preview_path: Absolutna ścieżka do pliku podglądu lub None.
             working_directory: Absolutna ścieżka do katalogu roboczego.
-            
+
         Raises:
             ValueError: Gdy którakolwiek ze ścieżek nie jest absolutna.
         """
@@ -68,7 +68,7 @@ class FilePair:
     def __repr__(self) -> str:
         """
         Zwraca tekstową reprezentację obiektu FilePair.
-        
+
         Returns:
             Tekstowa reprezentacja obiektu.
         """
@@ -81,7 +81,7 @@ class FilePair:
     def get_archive_path(self) -> str:
         """
         Zwraca absolutną, znormalizowaną ścieżkę do pliku archiwum.
-        
+
         Returns:
             Absolutna ścieżka do archiwum.
         """
@@ -90,7 +90,7 @@ class FilePair:
     def get_preview_path(self) -> Optional[str]:
         """
         Zwraca absolutną, znormalizowaną ścieżkę do pliku podglądu lub None.
-        
+
         Returns:
             Absolutna ścieżka do podglądu lub None.
         """
@@ -99,7 +99,7 @@ class FilePair:
     def get_relative_archive_path(self) -> str:
         """
         Zwraca względną, znormalizowaną ścieżkę do pliku archiwum.
-        
+
         Returns:
             Względna ścieżka do archiwum.
         """
@@ -110,7 +110,7 @@ class FilePair:
     def get_relative_preview_path(self) -> Optional[str]:
         """
         Zwraca względną, znormalizowaną ścieżkę do pliku podglądu lub None.
-        
+
         Returns:
             Względna ścieżka do podglądu lub None.
         """
@@ -123,19 +123,21 @@ class FilePair:
     def get_base_name(self) -> str:
         """
         Zwraca nazwę bazową pary plików.
-        
+
         Returns:
             Nazwa bazowa bez rozszerzenia.
         """
         return self.base_name
 
     def load_preview_thumbnail(
-        self, size: int, transformation_mode: Qt.TransformationMode = TRANSFORMATION_SMOOTH
+        self,
+        size: int,
+        transformation_mode: Qt.TransformationMode = TRANSFORMATION_SMOOTH,
     ) -> None:
         """
         Ładuje miniaturę pliku podglądu.
         Jeśli plik podglądu nie istnieje, tworzy placeholder.
-        
+
         Args:
             size: Rozmiar miniatury (szerokość i wysokość).
             transformation_mode: Tryb transformacji przy skalowaniu obrazu.
@@ -171,7 +173,7 @@ class FilePair:
     def get_preview_thumbnail(self) -> Optional[QPixmap]:
         """
         Zwraca załadowaną miniaturę.
-        
+
         Returns:
             Miniatura jako QPixmap lub None, jeśli nie została załadowana.
         """
@@ -180,7 +182,7 @@ class FilePair:
     def get_archive_size(self) -> Optional[int]:
         """
         Pobiera i zwraca rozmiar pliku archiwum w bajtach.
-        
+
         Returns:
             Rozmiar pliku w bajtach, FILE_SIZE_ERROR w przypadku błędu,
             lub None, jeśli rozmiar nie został jeszcze pobrany.
@@ -194,7 +196,9 @@ class FilePair:
                         f"Plik archiwum nie istnieje, nie można pobrać rozmiaru: "
                         f"{self.archive_path}"
                     )
-                    self.archive_size_bytes = FILE_SIZE_ERROR  # Wyraźne oznaczenie błędu
+                    self.archive_size_bytes = (
+                        FILE_SIZE_ERROR  # Wyraźne oznaczenie błędu
+                    )
             except OSError as e:
                 logger.error(f"Błąd odczytu rozmiaru pliku {self.archive_path}: {e}")
                 self.archive_size_bytes = FILE_SIZE_ERROR
@@ -203,7 +207,7 @@ class FilePair:
     def get_formatted_archive_size(self) -> str:
         """
         Zwraca sformatowany rozmiar pliku archiwum (np. KB, MB).
-        
+
         Returns:
             Sformatowany rozmiar pliku jako string lub "N/A" w przypadku błędu.
         """

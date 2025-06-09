@@ -49,7 +49,33 @@ Na podstawie mapy przygotuj:
 
 ### Cel drugiego etapu:
 
-Szczegółowa analiza każdego pliku zgodnie z **mapą kodu (`code_map.md`)** i planem z etapu 1, z progressywnym zapisywaniem wyników. W tej aplikacji kluczowa jest wydajność - ma pracować z tysiącami plików oraz stabilność. Przeanalizuj kod szczególnie pod tym kątem i zaproponuj adekwatne poprawki. Do aplikacji należy dodać funkcję pokazującą postęp danego procesu - w tym momencie aplikacja jest zamrożona na jakiś czas i nie wiadomo co się dzieje. Na dole okna powinien być pasek postępu z informacją co aktulanie jest realizowane. Przeanalizuj które funkcję powinny w ten sposób powinny komunikować procesy do UI. Zastosuj także styl styles.qss do UI.
+Szczegółowa analiza każdego pliku zgodnie z **mapą kodu (`code_map.md`)** i planem z etapu 1, z progressywnym zapisywaniem wyników. W tej aplikacji kluczowa jest wydajność - ma pracować z tysiącami plików oraz stabilność. Przeanalizuj kod szczególnie pod tym kątem i zaproponuj adekwatne poprawki. Do aplikacji należy dodać następującą funkcjonalność:
+0. Odświezenie folderu źródłowego po wykonanej operacji na plikach trwa bardzo długo. Oto przykładowy log: 
+2025-06-09 19:12:30,013 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:30,221 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:30,440 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:30,682 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:30,968 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:31,281 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:31,664 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:32,069 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:32,535 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:33,052 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:33,649 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+2025-06-09 19:12:34,401 - src.ui.widgets.thumbnail_cache - INFO - Cache cleanup: usunięto 51 miniaturek. Rozmiar: 401→350 elementów, Pamięć: 37→32MB
+Wygląda niepokojąca, szczególnie jeśli przeniesiony został jeden plik. Czy odczyt z cache nie może tego pliku ignorować, czy trzeba odbudować cały folder?
+
+1. Brakuje opcji by wybrany folder wybrany z drzewa folderów mozna było otworzyć w eksplorerze w menu pod prawym przyciskiem
+2. W drzewie folderów powinna być przy kazdym folderze informacja ile zajmuje GB i ile par plików zawiera. Foldery nadrzędne powinny sumować wartości z pod folderów
+3. W UI drzewa folderów powinna być opcja Zwin/rozwin foldery
+4. Foldery .app_metadata nie powinny być widoczne w widoku drzewa folderów
+5. W oknie głównym należy dodać górne menu
+6. W górnym menu powinno być dostępne okno preferencji
+7. W oknie preferencji powinny być dostepne wszystkie opcje do ustawienia plus wybranie domyślnego folderu roboczego
+8. Powinna być opcja usuwania wszystkich folderów .app_metadata w folderze roboczym dostępna w górnym menu/narzędzia
+9. W oknie parowania plików pliki archiwum powinny umożliwiać otwarcie ich w zewnętrznym programie, pliki podglądów powinny być wyświetlane jako miniaturki podobnie jak w głównym oknie. Powinna być możliwość usuwania wybranych plików podglądu
+
+
 
 ### Wymagania etapu 2:
 

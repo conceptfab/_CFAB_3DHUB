@@ -79,14 +79,14 @@ class TestFilePair(unittest.TestCase):
     def test_get_relative_paths(self):
         """Test metod get_relative_*_path."""
         pair = FilePair(self.archive_path, self.preview_path, self.working_dir)
-        
+
         # Oczekiwane względne ścieżki
         expected_rel_archive = "test_archive.zip"
         expected_rel_preview = "test_preview.jpg"
-        
+
         self.assertEqual(pair.get_relative_archive_path(), expected_rel_archive)
         self.assertEqual(pair.get_relative_preview_path(), expected_rel_preview)
-        
+
         # Dla None jako preview_path
         pair = FilePair(self.archive_path, None, self.working_dir)
         self.assertIsNone(pair.get_relative_preview_path())
@@ -137,10 +137,10 @@ class TestFilePair(unittest.TestCase):
     def test_load_preview_thumbnail_file_not_exists(self, mock_qpixmap, mock_exists):
         """Test ładowania miniatury gdy plik nie istnieje."""
         mock_exists.return_value = False
-        
+
         pair = FilePair(self.archive_path, self.preview_path, self.working_dir)
         pair.load_preview_thumbnail(100)
-        
+
         # Sprawdzamy, czy utworzono placeholder
         mock_qpixmap.assert_called_with(100, 100)
         mock_qpixmap.return_value.fill.assert_called_once_with(Qt.GlobalColor.gray)
@@ -151,10 +151,10 @@ class TestFilePair(unittest.TestCase):
         """Test pobierania rozmiaru archiwum - przypadek sukcesu."""
         mock_exists.return_value = True
         mock_getsize.return_value = 1024  # 1 KB
-        
+
         pair = FilePair(self.archive_path, self.preview_path, self.working_dir)
         size = pair.get_archive_size()
-        
+
         self.assertEqual(size, 1024)
         mock_getsize.assert_called_once_with(self.archive_path.replace("\\", "/"))
 
@@ -162,10 +162,10 @@ class TestFilePair(unittest.TestCase):
     def test_get_archive_size_file_not_exists(self, mock_exists):
         """Test pobierania rozmiaru gdy plik nie istnieje."""
         mock_exists.return_value = False
-        
+
         pair = FilePair(self.archive_path, self.preview_path, self.working_dir)
         size = pair.get_archive_size()
-        
+
         self.assertEqual(size, FILE_SIZE_ERROR)
 
     @patch("os.path.exists")
@@ -174,16 +174,16 @@ class TestFilePair(unittest.TestCase):
         """Test pobierania rozmiaru gdy wystąpił błąd."""
         mock_exists.return_value = True
         mock_getsize.side_effect = OSError("Test error")
-        
+
         pair = FilePair(self.archive_path, self.preview_path, self.working_dir)
         size = pair.get_archive_size()
-        
+
         self.assertEqual(size, FILE_SIZE_ERROR)
 
     def test_get_formatted_archive_size(self):
         """Test formatowania rozmiaru pliku."""
         pair = FilePair(self.archive_path, self.preview_path, self.working_dir)
-        
+
         # Testowanie różnych wielkości
         test_cases = [
             (None, "N/A"),
@@ -194,7 +194,7 @@ class TestFilePair(unittest.TestCase):
             (1500000, "1.4 MB"),
             (1500000000, "1.4 GB"),
         ]
-        
+
         for size, expected in test_cases:
             pair.archive_size_bytes = size
             self.assertEqual(pair.get_formatted_archive_size(), expected)
@@ -202,13 +202,13 @@ class TestFilePair(unittest.TestCase):
     def test_set_get_stars(self):
         """Test ustawiania i pobierania liczby gwiazdek."""
         pair = FilePair(self.archive_path, self.preview_path, self.working_dir)
-        
+
         # Testowanie poprawnych wartości
         for stars in range(6):  # 0-5
             result = pair.set_stars(stars)
             self.assertEqual(result, stars)
             self.assertEqual(pair.get_stars(), stars)
-        
+
         # Testowanie niepoprawnych wartości
         invalid_values = [-1, 6, 10, "3"]
         for value in invalid_values:
@@ -219,15 +219,15 @@ class TestFilePair(unittest.TestCase):
     def test_set_get_color_tag(self):
         """Test ustawiania i pobierania tagu koloru."""
         pair = FilePair(self.archive_path, self.preview_path, self.working_dir)
-        
+
         # Testowanie różnych wartości
         test_values = [
             "#FF0000",  # czerwony
             "#00FF00",  # zielony
-            "",         # pusty string
-            None,       # None
+            "",  # pusty string
+            None,  # None
         ]
-        
+
         for value in test_values:
             result = pair.set_color_tag(value)
             self.assertEqual(result, value)
@@ -237,7 +237,7 @@ class TestFilePair(unittest.TestCase):
         """Test metody __repr__."""
         pair = FilePair(self.archive_path, self.preview_path, self.working_dir)
         repr_str = repr(pair)
-        
+
         # Sprawdzamy, czy __repr__ zawiera oczekiwane informacje
         self.assertIn("FilePair", repr_str)
         self.assertIn("test_archive", repr_str)
