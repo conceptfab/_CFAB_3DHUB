@@ -5,7 +5,7 @@ from collections import OrderedDict
 from typing import Optional
 
 from PIL import Image
-from PyQt6.QtCore import QDir, QSize, Qt
+from PyQt6.QtCore import QDir, QSize, Qt, QTimer
 from PyQt6.QtGui import QIcon, QImage, QPixmap
 
 from src.app_config import config
@@ -29,11 +29,18 @@ class ThumbnailCache:
         )  # key: (normalized_path, width, height) -> (QPixmap, timestamp, size_bytes)
         self._error_icon = None  # Cache for a generic error icon
         self._total_memory_bytes = 0  # Przybliżony rozmiar cache w bajtach
+        self._cleanup_pending = False  # Flaga zapobiegająca zbyt częstym cleanupom
 
         # Parametry z konfiguracji
         self._max_entries = config.thumbnail_cache_max_entries
         self._max_memory_mb = config.thumbnail_cache_max_memory_mb
         self._cleanup_threshold = config.thumbnail_cache_cleanup_threshold
+        
+        # Inicjalizacja timera dla asynchronicznego czyszczenia cache
+        self._cleanup_timer = QTimer()
+        self._cleanup_timer.setSingleShot(True)
+        self._cleanup_timer.timeout.connect(self._perform_cleanup)
+        self._cleanup_interval_ms = 5000  # 5 sekund między cleanupami
 
         logger.info(
             f"ThumbnailCache zainicjalizowany: max_entries={self._max_entries}, max_memory={self._max_memory_mb}MB"
@@ -168,13 +175,17 @@ class ThumbnailCache:
             f"Dodano do cache: {path} ({width}x{height}), rozmiar: {size_bytes//1024}KB"
         )
 
-        # Wyczyść cache jeśli potrzeba
-        self._cleanup_cache()
+        # Zaplanuj czyszczenie cache tylko jeśli jest potrzebne i nie jest już zaplanowane
+        self._schedule_cleanup()
 
     def clear_cache(self):
         """Czyści całą pamięć podręczną miniatur."""
         self._cache.clear()
         self._total_memory_bytes = 0
+        self._cleanup_pending = False
+        # Zatrzymaj timer cleanup jeśli jest aktywny
+        if self._cleanup_timer.isActive():
+            self._cleanup_timer.stop()
         logger.info("Pamięć podręczna miniatur została wyczyszczona.")
 
     def remove_thumbnail(self, path: str, width: int, height: int):
@@ -206,14 +217,65 @@ class ThumbnailCache:
         return (normalized_path, width, height)
 
     def _estimate_pixmap_size(self, pixmap: QPixmap) -> int:
-        """Szacuje rozmiar QPixmap w bajtach."""
+        """
+        Szacuje rozmiar QPixmap w bajtach.
+        Używa bardziej realistycznego współczynnika dla formatu pixmapy.
+        """
         if not pixmap or pixmap.isNull():
             return 0
-        # Przybliżenie: szerokość * wysokość * 4 bajty (RGBA)
-        return pixmap.width() * pixmap.height() * 4
+            
+        # Próbuj użyć metody sizeInBytes jeśli jest dostępna w nowszych wersjach Qt
+        try:
+            # To nie jest standardowa metoda w Qt5/Qt6, ale może się pojawić w przyszłości
+            if hasattr(pixmap, "sizeInBytes"):
+                return pixmap.sizeInBytes()
+        except Exception:
+            pass
+            
+        # Lepsze przybliżenie: uwzględniamy format i kompresję
+        # Stosujemy współczynnik korekcji 0.5 dla lepszego przybliżenia
+        # (większość QPixmap używa kompresji formatów)
+        compression_factor = 0.5
+        return int(pixmap.width() * pixmap.height() * 4 * compression_factor)
 
-    def _cleanup_cache(self):
-        """Czyści cache według strategii LRU gdy przekracza limity."""
+    def _schedule_cleanup(self):
+        """Planuje asynchroniczne czyszczenie cache jeśli potrzebne."""
+        max_memory_bytes = self._max_memory_mb * 1024 * 1024
+        cleanup_entries_threshold = int(self._max_entries * self._cleanup_threshold)
+        cleanup_memory_threshold = int(max_memory_bytes * self._cleanup_threshold)
+
+        # Używamy wyższego progu (95%) dla wyzwalania cleanup
+        high_threshold = 0.95
+        cleanup_entries_high = int(self._max_entries * high_threshold)
+        cleanup_memory_high = int(max_memory_bytes * high_threshold)
+
+        # Sprawdź czy cache wymaga natychmiastowego czyszczenia (krytyczny poziom)
+        critical_cleanup = (
+            len(self._cache) > cleanup_entries_high
+            or self._total_memory_bytes > cleanup_memory_high
+        )
+        
+        # Sprawdź czy cache wymaga planowanego czyszczenia
+        needs_cleanup = (
+            len(self._cache) > cleanup_entries_threshold
+            or self._total_memory_bytes > cleanup_memory_threshold
+        )
+
+        # Jeśli przekroczony krytyczny poziom, wykonaj czyszczenie natychmiast
+        if critical_cleanup:
+            if self._cleanup_timer.isActive():
+                self._cleanup_timer.stop()
+            self._perform_cleanup()
+        # W przeciwnym razie zaplanuj czyszczenie, tylko jeśli jest potrzebne i nie jest już zaplanowane
+        elif needs_cleanup and not self._cleanup_pending and not self._cleanup_timer.isActive():
+            logger.debug(f"Zaplanowano cleanup cache za {self._cleanup_interval_ms/1000}s")
+            self._cleanup_pending = True
+            self._cleanup_timer.start(self._cleanup_interval_ms)
+
+    def _perform_cleanup(self):
+        """Wykonuje faktyczne czyszczenie cache według strategii LRU."""
+        self._cleanup_pending = False
+        
         max_memory_bytes = self._max_memory_mb * 1024 * 1024
         cleanup_entries_threshold = int(self._max_entries * self._cleanup_threshold)
         cleanup_memory_threshold = int(max_memory_bytes * self._cleanup_threshold)
