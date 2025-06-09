@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Tuple, Any, Optional, Union
 
 from src.utils.path_utils import normalize_path
 
@@ -57,9 +57,7 @@ class AppConfig:
         "thumbnail_cache_cleanup_threshold": 0.8,  # Próg czyszczenia (80% limitu)
     }
 
-    def __init__(
-        self, config_dir: Optional[str] = None, config_file: Optional[str] = None
-    ) -> None:
+    def __init__(self, config_dir: Optional[str] = None, config_file: Optional[str] = None) -> None:
         """
         Inicjalizuje obiekt konfiguracji.
 
@@ -69,7 +67,7 @@ class AppConfig:
         """
         # Flaga informująca czy konfiguracja została wczytana z domyślnych wartości z powodu błędu
         self._config_loaded_from_defaults = False
-
+        
         # Konfiguracja ścieżek
         self._config_file_name = config_file or "config.json"
         self._app_data_dir = config_dir or os.path.join(
@@ -135,7 +133,7 @@ class AppConfig:
             )
             self._config_loaded_from_defaults = True
             return self.DEFAULT_CONFIG.copy()
-
+            
     def _save_config(self) -> bool:
         """
         Zapisuje konfigurację do pliku JSON.
@@ -150,21 +148,17 @@ class AppConfig:
             except (PermissionError, OSError) as e:
                 logger.error(f"Nie można utworzyć katalogu konfiguracyjnego: {e}")
                 return False
-
+                
             # Jeśli ostatnio załadowano domyślną konfigurację z powodu błędu, a plik istnieje,
             # utwórz kopię zapasową pliku przed zapisem
-            if self._config_loaded_from_defaults and os.path.exists(
-                self._config_file_path
-            ):
+            if self._config_loaded_from_defaults and os.path.exists(self._config_file_path):
                 backup_path = f"{self._config_file_path}.bak"
                 try:
                     shutil.copy2(self._config_file_path, backup_path)
                     logger.info(f"Utworzono kopię zapasową konfiguracji: {backup_path}")
                 except (IOError, PermissionError) as e:
-                    logger.warning(
-                        f"Nie udało się utworzyć kopii zapasowej konfiguracji: {e}"
-                    )
-
+                    logger.warning(f"Nie udało się utworzyć kopii zapasowej konfiguracji: {e}")
+            
             # Zapisywanie pliku konfiguracyjnego
             with open(self._config_file_path, "w", encoding="utf-8") as f:
                 json.dump(self._config, f, indent=4)
@@ -181,12 +175,8 @@ class AppConfig:
     # --- Walidatory dla różnych typów danych ---
 
     @staticmethod
-    def _validate_int(
-        value: Any,
-        min_val: Optional[int] = None,
-        max_val: Optional[int] = None,
-        param_name: str = "Parametr",
-    ) -> int:
+    def _validate_int(value: Any, min_val: Optional[int] = None, 
+                      max_val: Optional[int] = None, param_name: str = "Parametr") -> int:
         """Waliduje wartość całkowitą."""
         if not isinstance(value, int):
             raise ValueError(
@@ -213,9 +203,8 @@ class AppConfig:
         return value
 
     @staticmethod
-    def _validate_list(
-        value: Any, item_type: Optional[type] = None, param_name: str = "Parametr"
-    ) -> List:
+    def _validate_list(value: Any, item_type: Optional[type] = None, 
+                       param_name: str = "Parametr") -> List:
         """Waliduje listę wartości."""
         if not isinstance(value, list):
             raise ValueError(f"{param_name} musi być listą, otrzymano: {type(value)}")
@@ -311,7 +300,7 @@ class AppConfig:
         # Ustawienie obu wartości przed zapisem
         self._config["min_thumbnail_size"] = min_size
         self._config["max_thumbnail_size"] = max_size
-
+        
         # Jeden zapis
         result = self._save_config()
         if result:
@@ -337,9 +326,7 @@ class AppConfig:
             logger.warning(f"Nieznany typ rozszerzeń: {extension_type}")
             return []
 
-    def set_supported_extensions(
-        self, extension_type: str, extensions: List[str]
-    ) -> bool:
+    def set_supported_extensions(self, extension_type: str, extensions: List[str]) -> bool:
         """
         Ustawia listę obsługiwanych rozszerzeń.
 
@@ -541,7 +528,7 @@ def set_thumbnail_slider_position(position: int) -> bool:
 
     Args:
         position: Pozycja suwaka (0-100).
-
+        
     Returns:
         True jeśli zapisano pomyślnie, False w przeciwnym razie.
     """
