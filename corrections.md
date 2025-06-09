@@ -720,18 +720,58 @@ _Analiza pliku `src/ui/main_window.py` zakończona._
 
 ### 📊 Status tracking
 
-- [ ] Kod zaimplementowany (np. globalny try-except)
-- [ ] Testy podstawowe przeprowadzone
-- [ ] Testy integracji (z `run_app.py` i `MainWindow`) przeprowadzone
-- [ ] Testy obsługi błędów przeprowadzone
-- [ ] Dokumentacja zaktualizowana (jeśli dotyczy)
-- [ ] Gotowe do wdrożenia
+- [x] Kod zaimplementowany (globalny try-except, sys.excepthook, lepsze ostrzeżenia)
+- [x] Testy podstawowe przeprowadzone
+- [x] Testy integracji (z `run_app.py` i `MainWindow`) przeprowadzone
+- [x] Testy obsługi błędów przeprowadzone
+- [x] Dokumentacja zaktualizowana (docstrings i komentarze)
+- [x] Gotowe do wdrożenia
+
+---
+
+_Analiza pliku `src/main.py` zakończona._
+
+**🎯 ETAP 8 UKOŃCZONY** - Wdrożenie wielopoziomowej obsługi błędów globalnych w aplikacji:
+
+✅ **Zaimplementowany globalny handler wyjątków niezłapanych:**
+
+- Dodana nowa funkcja `global_exception_handler` powiązana z `sys.excepthook`
+- Mechanizm logowania pełnego stack trace niezłapanych wyjątków
+- Automatyczne wyświetlanie okna dialogowego dla użytkownika (gdy QApplication jest dostępne)
+- Fallback na komunikaty konsolowe, gdy interfejs Qt nie jest dostępny
+
+✅ **Wielopoziomowa architektura przechwytywania wyjątków w `main()`:**
+
+- Pierwszy poziom: obsługa błędów inicjalizacji systemu logowania
+- Drugi poziom: obsługa błędów inicjalizacji QApplication
+- Trzeci poziom: obsługa błędów tworzenia i wyświetlania MainWindow
+- Czwarty poziom: obsługa błędów ładowania stylów (już istniejący)
+
+✅ **Ulepszone komunikaty dla użytkownika:**
+
+- Więcej kontekstowych informacji w komunikatach błędów
+- QMessageBox do wyświetlania błędów w interfejsie graficznym
+- Szczegółowe informacje o typie błędu i stack trace w logach
+
+✅ **Poprawione bezpieczeństwo uruchamiania:**
+
+- Bardziej precyzyjne komunikaty przy próbie bezpośredniego uruchomienia `src/main.py`
+- Interaktywny mechanizm potwierdzania kontynuacji mimo ostrzeżeń
+- Właściwe kody wyjścia odzwierciedlające rodzaj błędu (1-3)
+
+✅ **Przeprowadzono testy:**
+
+- Test standardowego uruchomienia przez `run_app.py` - sukces
+- Test bezpośredniego uruchomienia z potwierdzeniem i bez - sukces
+- Test obsługi błędów na różnych poziomach - sukces
+
+Realizacja Etapu 8 znacząco zwiększyła odporność aplikacji na błędy i poprawiła doświadczenie użytkownika w przypadku wystąpienia nieoczekiwanych problemów. Aplikacja nie będzie już kończyć działania bez wyraźnego komunikatu, co ułatwi diagnozowanie i rozwiązywanie problemów.
 
 ---
 
 ## 🟡 ŚREDNI PRIORYTET
 
-### 9. `run_app.py`
+### 9. `run_app.py` - Optymalizacja obsługi błędów
 
 ### 📋 Identyfikacja
 
@@ -742,7 +782,54 @@ _Analiza pliku `src/ui/main_window.py` zakończona._
 
 ### 🔍 Analiza problemów
 
-Plik `run_app.py` jest prostym skryptem uruchomieniowym, który importuje i wywołuje funkcję `main()` z modułu `src.main`. Jest to zalecany sposób uruchamiania aplikacji.
+1. **Błędy krytyczne/Potencjalne problemy:**
+
+   - **Minimalna obsługa błędów:** Funkcja `run()` nie posiada mechanizmu obsługi wyjątków, które mogłyby wystąpić podczas ładowania stylów lub wywołania `main()`. Chociaż teraz `main()` ma już zaawansowaną obsługę błędów, warto rozważyć również obsługę błędów na poziomie `run_app.py`.
+   - **Dublowanie kodu do ładowania stylów:** Istnieje powielenie logiki ładowania stylów między `run_app.py` a `src/main.py`, co może prowadzić do niespójności lub trudności w utrzymaniu.
+
+2. **Optymalizacje:**
+
+   - **Rozszerzone opcje linii poleceń:** Obecnie obsługiwana jest tylko opcja `--debug`. Można dodać więcej opcji, np. `--version`, `--help`, itp.
+   - **Wydzielenie logiki parsowania argumentów:** Dla większej czytelności można wydzielić logikę obsługi argumentów linii poleceń do oddzielnej funkcji.
+
+3. **Refaktoryzacja:**
+   - **Ujednolicenie ładowania stylów:** Rozważyć przeniesienie całej logiki ładowania stylów do jednego miejsca, najlepiej do dedykowanej funkcji w module `src.utils`.
+   - **Dodanie prostego parsera argumentów:** Użycie `argparse` z biblioteki standardowej do bardziej złożonej obsługi argumentów linii poleceń.
+
+### 🧪 Plan testów
+
+**Test funkcjonalności podstawowej:**
+
+1. **Standardowe uruchomienie:**
+
+   - Uruchom `python run_app.py`
+   - Upewnij się, że aplikacja działa poprawnie i style są prawidłowo załadowane
+
+2. **Uruchomienie z flagą debugowania:**
+   - Uruchom `python run_app.py --debug`
+   - Sprawdź, czy poziom logowania dla modułu skanowania jest ustawiony na DEBUG
+
+**Test obsługi błędów (po implementacji właściwej obsługi błędów):**
+
+1. **Błąd podczas ładowania pliku stylów:**
+
+   - Zmodyfikuj tymczasowo ścieżkę do pliku stylów, aby wskazywała na nieistniejący plik
+   - Sprawdź, czy błąd jest odpowiednio obsługiwany i aplikacja kontynuuje działanie
+
+2. **Błąd podczas wywoływania main():**
+   - Zmodyfikuj tymczasowo kod, aby symulować wyjątek w `main()`
+   - Sprawdź, czy błąd jest odpowiednio obsługiwany i wyświetlany użytkownikowi
+
+### 📊 Status tracking
+
+- [ ] Kod zaimplementowany (obsługa błędów, zoptymalizowane ładowanie stylów)
+- [ ] Testy podstawowe przeprowadzone
+- [ ] Testy integracji przeprowadzone
+- [ ] Testy obsługi błędów przeprowadzone
+- [ ] Dokumentacja zaktualizowana
+- [ ] Gotowe do wdrożenia
+
+---
 
 _Analiza pliku `run_app.py` zakończona._
 
