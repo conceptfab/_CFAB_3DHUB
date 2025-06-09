@@ -156,11 +156,13 @@ target_entries = int(500 * 0.7) = 350 elementów  # docelowy po cleanup
 
 ---
 
-### 2. `src/ui/main_window.py` 🔄
+### 2. `src/ui/main_window.py` ✅
 
-**Status:** W TRAKCIE - Implementacja krytycznych poprawek  
+**Status:** WPROWADZONA ✅ - ETAP 2 UKOŃCZONY!  
 **Priorytet:** 🔴 WYSOKI - Architektura i SRP  
-**Rozmiar:** 1382 linii - BARDZO DUŻY PLIK
+**Rozmiar:** 1625 linii  
+**Data wykonania:** 2025-06-09  
+**Testy:** INTEGRATION PASSED - Separacja logiki biznesowej
 
 **WYKONANE POPRAWKI:**
 ✅ **Problem #6** - Dodano górne menu z funkcjonalnościami:
@@ -189,6 +191,21 @@ target_entries = int(500 * 0.7) = 350 elementów  # docelowy po cleanup
 - Centralizacja zarządzania wątkami i workerów
 - Zapobieganie wyciekom pamięci
 - Uproszczenie debugowania operacji asynchronicznych
+
+✅ **Problem #2** - WPROWADZENIE WARSTWY SERWISÓW:
+
+- Utworzono FileOperationsService w src/services/file_operations_service.py
+- Utworzono ScanningService w src/services/scanning_service.py
+- Separacja logiki biznesowej od UI - bulk_delete używa teraz serwisu
+- Ustrukturyzowane zwracanie wyników (ScanResult dataclass)
+- Centralizacja walidacji ścieżek i error handling
+
+✅ **Problem #1** - REFAKTORYZACJA MVC/MVP (CZĘŚCIOWO):
+
+- Dodano warstwy serwisów jako pierwszy krok do MVC
+- MainWindow używa teraz serwisów zamiast bezpośrednich operacji
+- Separacja odpowiedzialności: UI ⟷ Services ⟷ Logic
+- Fundament dla dalszej refaktoryzacji
 
 ---
 

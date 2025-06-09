@@ -35,6 +35,8 @@ from PyQt6.QtWidgets import (
 from src import app_config
 from src.logic import file_operations, metadata_manager
 from src.models.file_pair import FilePair
+from src.services.file_operations_service import FileOperationsService
+from src.services.scanning_service import ScanningService
 from src.services.thread_coordinator import ThreadCoordinator
 from src.ui.delegates.workers import (
     BaseWorker,
@@ -76,6 +78,10 @@ class MainWindow(QMainWindow):
         """Inicjalizuje dane aplikacji."""
         # KRYTYCZNE: AppConfig musi być pierwsze - inne komponenty go używają!
         self.app_config = app_config.AppConfig()
+
+        # ETAP 2: Serwisy biznesowe - separacja logiki od UI
+        self.file_operations_service = FileOperationsService()
+        self.scanning_service = ScanningService()
 
         self.current_working_directory = None
         self.all_file_pairs: list[FilePair] = []
@@ -1373,7 +1379,7 @@ class MainWindow(QMainWindow):
             logging.debug(f"Selected all {len(self.selected_tiles)} visible tiles")
 
     def _perform_bulk_delete(self):
-        """Performs bulk delete operation on selected tiles using a worker thread."""
+        """ETAP 2: Bulk delete używa teraz FileOperationsService."""
         if not self.selected_tiles:
             return
 
@@ -1387,16 +1393,29 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            # Utwórz workera do masowego usuwania
-            worker = BulkDeleteWorker(list(self.selected_tiles))
-
-            # Podłącz sygnały
-            self._setup_worker_connections(worker)
-            worker.signals.finished.connect(self._on_bulk_delete_finished)
-
-            # Uruchom workera
+            # ETAP 2: Używamy serwisu zamiast bezpośrednich operacji
             self._show_progress(0, f"Usuwanie {count} plików...")
-            self.thread_pool.start(worker)
+
+            try:
+                # Deleguj do serwisu
+                deleted_pairs, errors = self.file_operations_service.bulk_delete(
+                    list(self.selected_tiles)
+                )
+
+                # Obsłuż wynik
+                self._on_bulk_delete_finished(deleted_pairs)
+
+                # Pokaż błędy jeśli były
+                if errors:
+                    error_msg = "\n".join(errors[:5])  # Max 5 błędów
+                    if len(errors) > 5:
+                        error_msg += f"\n... i {len(errors) - 5} więcej"
+                    QMessageBox.warning(self, "Błędy podczas usuwania", error_msg)
+
+            except Exception as e:
+                logging.error(f"Błąd bulk delete: {str(e)}")
+                QMessageBox.critical(self, "Błąd", f"Błąd usuwania: {str(e)}")
+                self._hide_progress()
 
     def _on_bulk_delete_finished(self, deleted_pairs):
         """
