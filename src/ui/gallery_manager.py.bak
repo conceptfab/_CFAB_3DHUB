@@ -28,10 +28,7 @@ class GalleryManager:
         # Inicjalizuj current_thumbnail_size jako int, zgodnie z app_config
         self.current_thumbnail_size = app_config.DEFAULT_THUMBNAIL_SIZE
         # Zapisz krotkę rozmiaru dla spójności interfejsu
-        self._current_size_tuple = (
-            self.current_thumbnail_size,
-            self.current_thumbnail_size,
-        )
+        self._current_size_tuple = (self.current_thumbnail_size, self.current_thumbnail_size)
 
     def clear_gallery(self):
         """
@@ -59,16 +56,14 @@ class GalleryManager:
             self.gallery_tile_widgets.clear()  # Upewnij się, że słownik jest pusty
         finally:
             self.tiles_container.setUpdatesEnabled(True)
-            self.tiles_container.update()
-
-    def create_tile_widget_for_pair(self, file_pair: FilePair, parent_widget):
+            self.tiles_container.update()    def create_tile_widget_for_pair(self, file_pair: FilePair, parent_widget):
         """
         Tworzy pojedynczy kafelek dla pary plików.
         """
         try:
             # Przekaż _current_size_tuple jako krotkę (width, height)
             tile = FileTileWidget(file_pair, self._current_size_tuple, parent_widget)
-            # Ukryj na starcie, update_gallery_view zdecyduje o widoczności
+            # Ukryj na starcie, update_gallery_view zdecydzie o widoczności
             tile.setVisible(False)
             self.gallery_tile_widgets[file_pair.get_archive_path()] = tile
             return tile
@@ -77,7 +72,7 @@ class GalleryManager:
                 f"Błąd tworzenia kafelka dla {file_pair.get_base_name()}: {e}"
             )
             return None
-
+            
     def update_gallery_view(self):
         """
         Aktualizuje widok galerii, pokazując/ukrywając istniejące kafelki
@@ -90,50 +85,46 @@ class GalleryManager:
         try:
             # Jeśli lista par plików jest pusta, ukryj wszystkie kafelki i zakończ
             if not self.file_pairs_list:
-                logging.debug(
-                    "Lista par (po filtracji) pusta, ukrywanie wszystkich kafelków."
-                )
+                logging.debug("Lista par (po filtracji) pusta, ukrywanie wszystkich kafelków.")
                 for tile_widget in self.gallery_tile_widgets.values():
                     if tile_widget.isVisible():
                         tile_widget.setVisible(False)
                 return
 
-            # Utwórz zbiór ścieżek dla szybkiego sprawdzania
+            # Utwórz zbiór ścieżek dla szybkiego sprawdzania 
             visible_paths = {fp.get_archive_path() for fp in self.file_pairs_list}
-
+            
             # Ukryj kafelki, których nie ma w obecnie wyświetlanej liście
             for archive_path, tile_widget in self.gallery_tile_widgets.items():
                 if archive_path not in visible_paths and tile_widget.isVisible():
                     tile_widget.setVisible(False)
-
+            
             # Obliczanie układu - liczby kolumn
             container_width = self.tiles_container.width()
             tile_width_with_spacing = (
                 self.current_thumbnail_size + self.tiles_layout.spacing() + 10
             )
             cols = max(1, math.floor(container_width / tile_width_with_spacing))
-
+            
             # Wyczyść layout, ale tylko jeśli to konieczne
-            layout_needs_rebuild = (
-                True  # Do rozważenia: wykrywanie czy układ się zmienił
-            )
-
+            layout_needs_rebuild = True  # Do rozważenia: wykrywanie czy układ się zmienił
+            
             if layout_needs_rebuild:
                 # Usuń widgety z layoutu, ale nie z pamięci
                 while self.tiles_layout.count():
                     item = self.tiles_layout.takeAt(0)
-
+                
                 # Dodaj widoczne kafelki do layoutu
                 row, col = 0, 0
                 for file_pair in self.file_pairs_list:
                     archive_path = file_pair.get_archive_path()
                     tile = self.gallery_tile_widgets.get(archive_path)
-
+                    
                     if tile:
                         # Aktualizuj widoczność istniejącego kafelka
                         if not tile.isVisible():
                             tile.setVisible(True)
-
+                            
                         # Dodaj do layoutu
                         self.tiles_layout.addWidget(tile, row, col)
                         col += 1
@@ -142,9 +133,7 @@ class GalleryManager:
                             row += 1
                     else:
                         # Utwórz nowy kafelek na żądanie
-                        tile = self.create_tile_widget_for_pair(
-                            file_pair, self.tiles_container
-                        )
+                        tile = self.create_tile_widget_for_pair(file_pair, self.tiles_container)
                         if tile:
                             tile.setVisible(True)
                             self.tiles_layout.addWidget(tile, row, col)
@@ -174,25 +163,25 @@ class GalleryManager:
             return
 
         self.file_pairs_list = filter_file_pairs(all_file_pairs, filter_criteria)
-        self.update_gallery_view()
-
-    def update_thumbnail_size(self, new_size: tuple):
+        self.update_gallery_view()    def update_thumbnail_size(self, new_size: tuple):
         """
         Aktualizuje rozmiar miniatur i przerenderowuje galerię.
         new_size to krotka (width, height) z main_window.
-
+        
         Zoptymalizowana wersja - aktualizuje tylko widoczne kafelki.
         """
         # current_thumbnail_size w GalleryManager powinien być int (szerokość)
         # Zakładamy, że new_size[0] to nowa szerokość
         self.current_thumbnail_size = new_size[0]
-        self._current_size_tuple = new_size
 
         # Zaktualizuj rozmiar w kafelkach - tylko dla widocznych kafelków
         for tile in self.gallery_tile_widgets.values():
             if tile.isVisible():
                 # FileTileWidget.set_thumbnail_size oczekuje krotki (width, height)
                 tile.set_thumbnail_size(new_size)
+                
+        # Zapisz nowy rozmiar dla niewidocznych kafelków
+        self._current_size_tuple = new_size
 
         # Przerenderuj galerię z nowymi rozmiarami
         self.update_gallery_view()
@@ -206,26 +195,3 @@ class GalleryManager:
             List[FileTileWidget]: Lista wszystkich widgetów kafelków
         """
         return list(self.gallery_tile_widgets.values())
-
-    def get_visible_tile_widgets(self) -> List[FileTileWidget]:
-        """
-        Zwraca listę tylko widocznych widgetów kafelków.
-        Optymalizacja dla operacji na widocznych kafelkach.
-
-        Returns:
-            List[FileTileWidget]: Lista widocznych widgetów kafelków
-        """
-        return [tile for tile in self.gallery_tile_widgets.values() if tile.isVisible()]
-
-    def get_tile_for_path(self, archive_path: str) -> FileTileWidget:
-        """
-        Pobiera kafelek dla określonej ścieżki archiwum.
-        Zwraca None, jeśli kafelek nie istnieje.
-
-        Args:
-            archive_path: Ścieżka do pliku archiwum
-
-        Returns:
-            FileTileWidget: Znaleziony widget kafelka lub None
-        """
-        return self.gallery_tile_widgets.get(archive_path)
