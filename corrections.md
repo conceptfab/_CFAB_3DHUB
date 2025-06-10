@@ -877,7 +877,7 @@ class MetadataCleanupWorker(BaseWorker):
 
 ### 6.3 Wymagane funkcjonalności okna parowania plików
 
-#### Funkcjonalność #8: Ulepszenia okna parowania - 🔴 KRYTYCZNY
+#### Funkcjonalność #8: Ulepszenia zakładki parowania - 🔴 KRYTYCZNY
 
 **Wymaganie:**
 
