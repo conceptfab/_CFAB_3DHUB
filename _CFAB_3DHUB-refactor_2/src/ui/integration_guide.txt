@@ -1,0 +1,113 @@
+"""
+Instrukcja implementacji obsługi drzewa katalogów i operacji drag & drop dla plików.
+
+Ten plik zawiera instrukcje, jak zintegrować nowe funkcje z klasą MainWindow.
+"""
+
+# 1. W pliku main_window.py dodaj import QAction:
+# from PyQt6.QtGui import QPixmap, QStandardItemModel, QStandardItem, QAction, QFileSystemModel
+
+# 2. W metodzie _init_ui(), dodaj następujący kod do konfiguracji drzewa katalogów:
+"""
+# Dodanie splittera do podziału na drzewo katalogów i kafelki
+self.splitter = QSplitter(Qt.Orientation.Horizontal)
+
+# Drzewo katalogów po lewej stronie
+self.folder_tree = QTreeView()
+self.folder_tree.setHeaderHidden(True)
+self.folder_tree.setMinimumWidth(200)
+self.folder_tree.setSizePolicy(
+    QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
+)
+# Ustawienie kontekstowego menu dla drzewa
+self.folder_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+self.folder_tree.customContextMenuRequested.connect(self._show_folder_context_menu)
+# Model systemu plików zostanie ustawiony po wyborze folderu roboczego
+self.file_system_model = QFileSystemModel()
+self.file_system_model.setFilter(QDir.Filter.Dirs | QDir.Filter.NoDotAndDotDot)
+self.folder_tree.setModel(self.file_system_model)
+self.folder_tree.clicked.connect(self._folder_tree_item_clicked)
+
+# Chowamy kolumny, które nie są potrzebne (rozmiar, typ, data)
+for col in range(1, 4):
+    self.folder_tree.setColumnHidden(col, True)
+    
+self.splitter.addWidget(self.folder_tree)
+
+# Panel przewijany dla kafelków po prawej stronie
+self.scroll_area = QScrollArea()
+self.scroll_area.setWidgetResizable(True)
+self.scroll_area.setHorizontalScrollBarPolicy(
+    Qt.ScrollBarPolicy.ScrollBarAsNeeded
+)
+self.scroll_area.setVerticalScrollBarPolicy(
+    Qt.ScrollBarPolicy.ScrollBarAsNeeded
+)
+
+# Kontener dla kafelków
+self.tiles_container = QWidget()
+self.tiles_layout = QGridLayout(self.tiles_container)
+self.tiles_layout.setContentsMargins(10, 10, 10, 10)
+self.tiles_layout.setSpacing(15)
+self.tiles_layout.setAlignment(
+    Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+)
+
+# Dodanie kontenera do obszaru przewijanego
+self.scroll_area.setWidget(self.tiles_container)
+
+self.splitter.addWidget(self.scroll_area)
+
+# Ustaw początkowe proporcje splittera (30% drzewo, 70% kafelki)
+self.splitter.setSizes([300, 700])
+
+# Dodanie splittera do głównego layoutu
+self.main_layout.addWidget(self.splitter)
+"""
+
+# 3. W metodzie _update_gallery_view(), dodaj połączenie sygnału tile_context_menu_requested:
+"""
+# Podłączenie nowych sygnałów
+tile.stars_changed.connect(self._handle_stars_changed)
+tile.color_tag_changed.connect(self._handle_color_tag_changed)
+tile.tile_context_menu_requested.connect(self._show_file_context_menu)
+"""
+
+# 4. W metodzie _select_working_directory(), po ustawieniu nazwy okna dodaj:
+"""
+# Inicjalizacja drzewa katalogów
+self._init_directory_tree()
+"""
+
+# 5. Dodaj do klasy MainWindow wszystkie metody z pliku main_window_tree_ops.py:
+# _init_directory_tree
+# _show_folder_context_menu
+# _create_folder
+# _rename_folder
+# _delete_folder
+# _refresh_file_pairs_after_folder_operation
+# _folder_tree_item_clicked
+# _show_file_context_menu
+# _rename_file_pair
+# _delete_file_pair
+
+# 6. W pliku file_tile_widget.py, dodaj metodę contextMenuEvent:
+"""
+def contextMenuEvent(self, event):
+    """Obsługa menu kontekstowego dla kafelka."""
+    self.tile_context_menu_requested.emit(self.file_pair, self, event)
+    event.accept()
+"""
+
+# 7. W konstruktorze klasy FileTileWidget, po inicjalizacji zmiennych dodaj:
+"""
+self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+self.customContextMenuRequested.connect(self._show_context_menu)
+"""
+
+# 8. W klasie FileTileWidget dodaj metodę _show_context_menu:
+"""
+def _show_context_menu(self, position):
+    """Wyświetla menu kontekstowe dla kafelka pliku."""
+    self.tile_context_menu_requested.emit(self.file_pair, self, position)
+"""

@@ -256,14 +256,6 @@ class StatsProxyModel(QSortFilterProxyModel):
         self._filter_function = None
         logger.info("StatsProxyModel zainicjalizowany!")
 
-    def setSourceModel(self, sourceModel):
-        """Override setSourceModel aby zalogować co się dzieje."""
-        logger.info(f"StatsProxyModel.setSourceModel wywoływane z: {type(sourceModel)}")
-        super().setSourceModel(sourceModel)
-        logger.info(
-            f"StatsProxyModel.setSourceModel ukończone, sourceModel: {self.sourceModel()}"
-        )
-
     def set_filter_function(self, filter_func):
         """Ustawia funkcję filtrującą."""
         self._filter_function = filter_func
@@ -277,28 +269,17 @@ class StatsProxyModel(QSortFilterProxyModel):
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         """Zwraca dane z dodanymi statystykami."""
-        logger.debug(
-            f"StatsProxyModel.data() wywoływane - role: {role}, index: {index.isValid()}"
-        )
-
         if role == Qt.ItemDataRole.DisplayRole:
-            logger.debug("StatsProxyModel.data() - przetwarzam DisplayRole")
             # Pobierz source index
             source_index = self.mapToSource(index)
             if not source_index.isValid():
-                logger.debug("StatsProxyModel.data() - source_index nieważny")
                 return super().data(index, role)
 
             # Pobierz ścieżkę i nazwę folderu
             folder_path = self.sourceModel().filePath(source_index)
             folder_name = self.sourceModel().fileName(source_index)
 
-            logger.debug(
-                f"StatsProxyModel.data() - folder: {folder_name} ({folder_path})"
-            )
-
             if not folder_path or not os.path.isdir(folder_path):
-                logger.debug("StatsProxyModel.data() - nie jest katalogiem")
                 return super().data(index, role)
 
             # Sprawdź cache statystyk
@@ -310,12 +291,12 @@ class StatsProxyModel(QSortFilterProxyModel):
                 display_text = (
                     f"{folder_name} ({stats.size_gb:.1f} GB, {stats.pairs_count} par)"
                 )
-                logger.info(f"StatsProxyModel: Zwracam ze statystykami: {display_text}")
+                logger.debug(f"Proxy model: Zwracam ze statystykami: {display_text}")
                 return display_text
             else:
                 # Zwróć nazwę z placeholder
                 display_text = f"{folder_name} (... GB, ... par)"
-                logger.info(f"StatsProxyModel: Zwracam placeholder dla: {folder_name}")
+                logger.debug(f"Proxy model: Zwracam placeholder dla: {folder_name}")
                 return display_text
 
         # Dla innych ról zwróć standardowe dane
@@ -323,9 +304,7 @@ class StatsProxyModel(QSortFilterProxyModel):
 
 
 # Definicja delegata do podświetlania celu upuszczenia
-class DropHighlightDelegate(QStyledItemDelegate):
-    """Delegate do podświetlania celu upuszczenia plików."""
-    
+class DropHighlightDelegate(QStyledItemDelegate):  # Definicja klasy
     def __init__(self, directory_tree_manager, parent=None):
         super().__init__(parent)
         self.directory_tree_manager = directory_tree_manager
@@ -339,22 +318,12 @@ class DropHighlightDelegate(QStyledItemDelegate):
             self.directory_tree_manager.highlighted_drop_index.isValid()
             and index == self.directory_tree_manager.highlighted_drop_index
         ):
-            # Użyj wyraźnego koloru do podświetlenia
-            painter.save()
-            
-            # Podświetlenie z ramką
-            highlight_color = QColor(255, 165, 0, 100)  # Pomarańczowy z przezroczystością
-            border_color = QColor(255, 140, 0, 200)      # Ciemniejszy pomarańczowy
-            
-            # Wypełnienie
+            # Użyj półprzezroczystego koloru do podświetlenia
+            # Nie przesłaniaj całkowicie podświetlenia zaznaczenia, jeśli element jest również zaznaczony
+            highlight_color = QColor(
+                0, 120, 215, 70
+            )  # Półprzezroczysty niebieski (np. styl VS Code)
             painter.fillRect(option.rect, highlight_color)
-            
-            # Ramka
-            painter.setPen(border_color)
-            painter.drawRect(option.rect.adjusted(0, 0, -1, -1))
-            
-            painter.restore()
-            logger.debug(f"Podświetlono folder dla drop: {index.data()}")
 
 
 class DirectoryTreeManager:
@@ -369,6 +338,28 @@ class DirectoryTreeManager:
         self.model.setRootPath(QDir.rootPath())
         # Filtrowanie, aby pokazywać tylko katalogi
         self.model.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot)
+
+        self.folder_tree.setModel(self.model)
+        self.folder_tree.setRootIndex(self.model.index(QDir.currentPath()))
+        self.folder_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.folder_tree.customContextMenuRequested.connect(
+            self.show_folder_context_menu
+        )
+
+        # Ustawienia Drag and Drop
+        self.folder_tree.setDragEnabled(False)  # Drzewo samo nie inicjuje przeciągania
+        self.folder_tree.setAcceptDrops(True)
+        self.folder_tree.setDropIndicatorShown(True)  # Standardowy wskaźnik linii
+
+        # Inicjalizacja dla podświetlania celu upuszczania
+        self.highlighted_drop_index = QModelIndex()
+
+        # Nie potrzebujemy delegate - używamy proxy model do wyświetlania statystyk
+        # self.stats_delegate = FolderStatsDelegate(self, self.folder_tree)
+        # self.folder_tree.setItemDelegate(self.stats_delegate)
+
+        self.current_scan_path: str | None = None
+        self._main_working_directory = None
 
         # ==================== NOWE FUNKCJONALNOŚCI ====================
         # Cache statystyk folderów
@@ -387,30 +378,6 @@ class DirectoryTreeManager:
         self.folder_tree.setRootIndex(
             self.proxy_model.mapFromSource(self.model.index(QDir.currentPath()))
         )
-
-        self.folder_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.folder_tree.customContextMenuRequested.connect(
-            self.show_folder_context_menu
-        )
-
-        # Ustawienia Drag and Drop
-        self.folder_tree.setDragEnabled(False)  # Drzewo samo nie inicjuje przeciągania
-        self.folder_tree.setAcceptDrops(True)
-        self.folder_tree.setDropIndicatorShown(True)  # Standardowy wskaźnik linii
-
-        # Inicjalizacja dla podświetlania celu upuszczania
-        self.highlighted_drop_index = QModelIndex()
-
-        # WŁĄCZ DropHighlightDelegate dla podświetlania podczas drag and drop
-        self.drop_highlight_delegate = DropHighlightDelegate(self, self.folder_tree)
-        self.folder_tree.setItemDelegate(self.drop_highlight_delegate)
-
-        self.current_scan_path: str | None = None
-        self._main_working_directory = None
-
-        # ==================== DRAG AND DROP METHODS ====================
-
-        self.setup_drag_and_drop_handlers()
 
     # ==================== NOWE METODY - FILTORY I FUNKCJONALNOŚCI ====================
 
@@ -1398,163 +1365,3 @@ class DirectoryTreeManager:
         if not source_index.isValid():
             return QModelIndex()
         return self.proxy_model.mapFromSource(source_index)
-
-    # ==================== DRAG AND DROP METHODS ====================
-
-    def setup_drag_and_drop_handlers(self):
-        """Konfiguruje event handlery dla drag and drop."""
-        # Przypisz metody obsługi zdarzeń do drzewa folderów
-        self.folder_tree.dragEnterEvent = self._drag_enter_event
-        self.folder_tree.dragMoveEvent = self._drag_move_event
-        self.folder_tree.dragLeaveEvent = self._drag_leave_event
-        self.folder_tree.dropEvent = self._drop_event
-        logger.info("Drag and drop handlers skonfigurowane")
-
-    def _drag_enter_event(self, event: QDragEnterEvent):
-        """Obsługuje wejście przeciąganego elementu nad drzewem."""
-        if event.mimeData().hasUrls():
-            # Sprawdź czy to są pliki (nie foldery)
-            urls = event.mimeData().urls()
-            has_files = any(
-                os.path.isfile(url.toLocalFile()) for url in urls if url.isLocalFile()
-            )
-
-            if has_files:
-                event.acceptProposedAction()
-                logger.debug(f"Drag enter: Zaakceptowano {len(urls)} elementów")
-            else:
-                event.ignore()
-                logger.debug("Drag enter: Odrzucono - brak plików")
-        else:
-            event.ignore()
-            logger.debug("Drag enter: Odrzucono - brak URLs")
-
-    def _drag_move_event(self, event: QDragMoveEvent):
-        """Obsługuje ruch przeciąganego elementu nad drzewem."""
-        if event.mimeData().hasUrls():
-            # Pobierz indeks folderu pod kursorem
-            index = self.folder_tree.indexAt(event.position().toPoint())
-
-            if index.isValid():
-                # Konwertuj z proxy na source index
-                source_index = self.get_source_index_from_proxy(index)
-                if source_index.isValid():
-                    folder_path = self.model.filePath(source_index)
-                    if folder_path and os.path.isdir(folder_path):
-                        # Podświetl folder jako cel upuszczenia
-                        if self.highlighted_drop_index != index:
-                            # Usuń stare podświetlenie
-                            if self.highlighted_drop_index.isValid():
-                                old_index = self.highlighted_drop_index
-                                self.folder_tree.update(old_index)
-                            
-                            # Ustaw nowe podświetlenie
-                            self.highlighted_drop_index = index
-                            self.folder_tree.update(index)
-                            logger.debug(f"Podświetlono folder: {folder_path}")
-                        
-                        event.acceptProposedAction()
-                        return
-
-            # Usuń podświetlenie jeśli nie ma prawidłowego celu
-            if self.highlighted_drop_index.isValid():
-                old_index = self.highlighted_drop_index
-                self.highlighted_drop_index = QModelIndex()
-                self.folder_tree.update(old_index)
-                logger.debug("Usunięto podświetlenie - brak prawidłowego celu")
-
-            event.ignore()
-        else:
-            event.ignore()
-
-    def _drag_leave_event(self, event: QDragLeaveEvent):
-        """Obsługuje opuszczenie obszaru drzewa przez przeciągany element."""
-        # Usuń podświetlenie celu upuszczania
-        if self.highlighted_drop_index.isValid():
-            old_index = self.highlighted_drop_index
-            self.highlighted_drop_index = QModelIndex()
-            self.folder_tree.update(old_index)
-        event.accept()
-        logger.debug("Drag leave: Wyczyszczono podświetlenie")
-
-    def _drop_event(self, event: QDropEvent):
-        """Obsługuje upuszczenie plików na folder w drzewie."""
-        logger.info("=== DROP EVENT START ===")
-        
-        if not event.mimeData().hasUrls():
-            event.ignore()
-            logger.warning("Drop event: Brak URLs w mimeData")
-            return
-
-        # Pobierz indeks folderu docelowego
-        drop_index = self.folder_tree.indexAt(event.position().toPoint())
-        if not drop_index.isValid():
-            event.ignore()
-            logger.warning("Drop event: Nieprawidłowy indeks folderu docelowego")
-            return
-
-        # Konwertuj z proxy na source index
-        source_index = self.get_source_index_from_proxy(drop_index)
-        if not source_index.isValid():
-            event.ignore()
-            logger.warning("Drop event: Nie można skonwertować proxy index")
-            return
-
-        target_folder_path = self.model.filePath(source_index)
-        if not target_folder_path or not os.path.isdir(target_folder_path):
-            event.ignore()
-            logger.warning(
-                f"Drop event: Nieprawidłowy folder docelowy: {target_folder_path}"
-            )
-            return
-
-        # Pobierz listę plików do przeniesienia
-        urls = event.mimeData().urls()
-        file_urls = [
-            url
-            for url in urls
-            if url.isLocalFile() and os.path.isfile(url.toLocalFile())
-        ]
-
-        if not file_urls:
-            event.ignore()
-            logger.warning("Drop event: Brak plików do przeniesienia")
-            return
-
-        # Usuń podświetlenie
-        if self.highlighted_drop_index.isValid():
-            old_index = self.highlighted_drop_index
-            self.highlighted_drop_index = QModelIndex()
-            self.folder_tree.update(old_index)
-
-        # Zaloguj informację o upuszczeniu
-        file_paths = [url.toLocalFile() for url in file_urls]
-        logger.info(f"Drop event: Upuszczono {len(file_paths)} plików na folder: {target_folder_path}")
-        logger.info(f"Drop event: Pliki: {file_paths}")
-
-        # Przekaż obsługę do file_operations_ui jeśli jest dostępne
-        if hasattr(self.parent_window, "file_operations_ui"):
-            try:
-                logger.info("Drop event: Przekazuję do file_operations_ui.handle_drop_on_folder")
-                result = self.parent_window.file_operations_ui.handle_drop_on_folder(
-                    file_urls, target_folder_path
-                )
-                if result:
-                    event.acceptProposedAction()
-                    logger.info("Drop event: Sukces - akceptuję action")
-                else:
-                    event.ignore()
-                    logger.warning("Drop event: file_operations_ui zwrócił False")
-            except Exception as e:
-                logger.error(
-                    f"Drop event: Błąd podczas przekazywania do file_operations_ui: {e}"
-                )
-                import traceback
-                traceback.print_exc()
-                event.ignore()
-        else:
-            # Fallback - bezpośrednie przeniesienie plików
-            logger.warning("Drop event: Brak file_operations_ui, używam fallback")
-            event.acceptProposedAction()
-        
-        logger.info("=== DROP EVENT END ===")

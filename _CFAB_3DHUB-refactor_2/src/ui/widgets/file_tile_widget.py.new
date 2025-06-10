@@ -1,0 +1,698 @@
+"""
+Kafelek wyświetlający miniaturę podglądu, nazwę i rozmiar pliku archiwum.
+"""
+
+# Standard library imports
+import logging
+import os
+import uuid  # Dla unikalnych ID workera
+from collections import OrderedDict  # Dodaj OrderedDict
+from typing import Optional  # Dodaj Optional do adnotacji typów
+
+# Third-party imports
+from PyQt6.QtCore import (
+    QEvent,
+    QMimeData,
+    QObject,
+    QSize,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
+from PyQt6.QtGui import QAction, QColor, QDesktopServices, QDrag, QPixmap
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+# Local imports
+from src.models.file_pair import FilePair
+from src.ui.delegates.workers import ThumbnailGenerationWorker
+from src.ui.widgets.metadata_controls_widget import MetadataControlsWidget
+from src.ui.widgets.thumbnail_cache import ThumbnailCache
+from src.ui.widgets.tile_styles import TileColorScheme, TileStylesheet, TileSizeConstants
+from src.utils.image_utils import (
+    create_placeholder_pixmap,
+    pillow_image_to_qpixmap,
+)
+
+
+class FileTileWidget(QWidget):
+    """
+    Widget reprezentujący kafelek z miniaturą podglądu, nazwą pliku i metadanymi.
+
+    Kafelek wyświetla miniaturę podglądu, nazwę pliku i metadane pliku.
+    Wielkość miniatury może być modyfikowana.
+    """
+
+    # Zdefiniowanie sygnałów
+    archive_open_requested = pyqtSignal(FilePair)
+    preview_image_requested = pyqtSignal(FilePair)
+    tile_selected = pyqtSignal(FilePair, bool)  # file_pair, selected_state
+    stars_changed = pyqtSignal(FilePair, int)  # file_pair, new_star_count
+    color_tag_changed = pyqtSignal(FilePair, str)  # file_pair, new_color_tag_hex
+    tile_context_menu_requested = pyqtSignal(FilePair, QWidget, object)  # file_pair, widget, event
+    file_pair_updated = pyqtSignal(FilePair)  # sygnał do aktualizacji danych file_pair
+
+    # Predefiniowane kolory przeniesione do TileColorScheme
+    PREDEFINED_COLORS = TileColorScheme.PREDEFINED_COLOR_TAGS
+
+    def __init__(
+        self, 
+        file_pair: Optional[FilePair], 
+        default_thumbnail_size: tuple[int, int] = TileSizeConstants.DEFAULT_THUMBNAIL_SIZE, 
+        parent: Optional[QWidget] = None
+    ):
+        """
+        Inicjalizuje widget kafelka dla pary plików.
+
+        Args:
+            file_pair: Obiekt pary plików lub None.
+            default_thumbnail_size: Rozmiar całego kafelka (szer., wys.) w px.
+            parent: Widget nadrzędny lub None.
+        """
+        super().__init__(parent)
+        self.file_pair = file_pair  # Tylko jedna referencja do file_pair
+        self.thumbnail_size = default_thumbnail_size
+        self.original_thumbnail: Optional[QPixmap] = None
+
+        # Worker do ładowania miniatur
+        self._current_worker_id = 0
+        self._current_thumbnail_worker = None
+
+        # Zmienne do obsługi kliknięć i przeciągania
+        self.press_pos = None
+        self.maybe_drag = False
+        self.drag_active = False
+
+        # Ustawienie podstawowych właściwości widgetu
+        self.setObjectName("FileTileWidget")
+        
+        # Zastosowanie centralnych stylów
+        self.setStyleSheet(TileStylesheet.get_file_tile_stylesheet())
+        
+        # Ustawienie tła i dodatkowych właściwości
+        self.setAutoFillBackground(True)
+        palette = self.palette()
+        palette.setColor(self.backgroundRole(), QColor(TileColorScheme.BACKGROUND))
+        self.setPalette(palette)
+        
+        # Włącz wsparcie dla stylowania tła widgetu
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        # Inicjalizacja UI
+        self._init_ui()
+
+        # Ustawienie danych tekstowych i metadanych (bez ładowania miniatury)
+        self._update_static_data()
+
+        # Asynchroniczne ładowanie miniatury
+        self._load_thumbnail_async()
+        
+        # Instalacja filtrów zdarzeń dla etykiet
+        self.thumbnail_label.installEventFilter(self)
+        self.filename_label.installEventFilter(self)
+        
+        # Ustawienie danych z FilePair
+        self.update_data(file_pair)
+        
+    def _update_font_size(self):
+        """Aktualizuje rozmiar czcionki w zależności od rozmiaru kafelka."""
+        # Oblicz rozmiar czcionki na podstawie rozmiaru kafelka (8-18px)
+        base_font_size = max(8, min(18, int(self.thumbnail_size[0] / 12)))  
+        
+        # Zastosuj centralny styl z dynamicznym rozmiarem czcionki
+        self.filename_label.setStyleSheet(
+            TileStylesheet.get_filename_label_stylesheet(base_font_size)
+        )
+
+    def set_thumbnail_size(self, new_size: tuple[int, int]):
+        """
+        Ustawia nowy rozmiar całego kafelka i dostosowuje jego zawartość.
+
+        Args:
+            new_size: Nowy rozmiar kafelka (szerokość, wysokość) w pikselach.
+        """
+        if self.thumbnail_size != new_size:
+            old_size = self.thumbnail_size
+            self.thumbnail_size = new_size
+
+            # Ustaw stały rozmiar całego widgetu kafelka
+            self.setFixedSize(new_size[0], new_size[1])
+
+            # Oblicz kwadratowy rozmiar dla samej miniatury
+            # Zwiększamy przestrzeń dla nazwy pliku (70px)
+            thumb_dimension = min(new_size[0] - TileSizeConstants.TILE_PADDING * 2, 
+                                new_size[1] - TileSizeConstants.FILENAME_MAX_HEIGHT - TileSizeConstants.METADATA_MAX_HEIGHT - TileSizeConstants.TILE_PADDING * 2)
+
+            # Ustaw rozmiar etykiety miniatury
+            self.thumbnail_label.setFixedSize(thumb_dimension, thumb_dimension)
+
+            # Skalowanie czcionki w zależności od rozmiaru kafelka
+            self._update_font_size()
+
+            # Wymuś ponowne załadowanie miniatury - anulując istniejące zadanie
+            if hasattr(self, "_current_thumbnail_worker") and self._current_thumbnail_worker:
+                self._current_thumbnail_worker.interrupt()
+            self._current_worker_id += 1
+            self._load_thumbnail_async()
+
+            # Aktualizuj layout
+            self.updateGeometry()
+
+            logging.debug(
+                f"Kafelek zmienił rozmiar z {old_size} na {new_size}, miniatura: {self.thumbnail_label.size()}"
+            )
+
+    def _init_ui(self):
+        """
+        Inicjalizuje elementy interfejsu użytkownika kafelka.
+        """
+        # Główny layout - pionowy, z optymalymi marginesami
+        self.layout = QVBoxLayout(self)
+        margins = TileSizeConstants.LAYOUT_MARGINS
+        self.layout.setContentsMargins(margins[0], margins[1], margins[2], margins[3]) 
+        self.layout.setSpacing(TileSizeConstants.LAYOUT_SPACING)
+
+        # --- Frame - kontener na miniaturę z kolorową obwódką ---
+        self.thumbnail_frame = QFrame(self)
+        # Stylowanie ramki miniatury używając centralnych stylów
+        self.thumbnail_frame.setStyleSheet(TileStylesheet.get_thumbnail_frame_stylesheet())
+
+        # Ustawienie layoutu dla thumbnail_frame - bez odstępów
+        thumbnail_frame_layout = QVBoxLayout(self.thumbnail_frame)
+        thumbnail_frame_layout.setContentsMargins(0, 0, 0, 0)
+        thumbnail_frame_layout.setSpacing(0)
+
+        # Label na miniaturę - umieszczona wewnątrz ramki
+        self.thumbnail_label = QLabel(self)
+        self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Konfiguracja miniatury aby była kwadratowa i skalowała się poprawnie
+        self.thumbnail_label.setMinimumSize(
+            TileSizeConstants.MIN_THUMBNAIL_WIDTH, 
+            TileSizeConstants.MIN_THUMBNAIL_HEIGHT
+        )
+
+        # Obliczenie wymiarów dla miniatury kwadratowej
+        thumb_size = min(
+            self.thumbnail_size[0] - TileSizeConstants.TILE_PADDING * 2, 
+            self.thumbnail_size[1] - TileSizeConstants.FILENAME_MAX_HEIGHT - TileSizeConstants.METADATA_MAX_HEIGHT
+        )
+        self.thumbnail_label.setFixedSize(thumb_size, thumb_size)
+        self.thumbnail_label.setScaledContents(True)  # Skaluj zawartość do rozmiaru widgetu
+        self.thumbnail_label.setFrameShape(QFrame.Shape.NoFrame)  # Bez wewnętrznej ramki
+
+        # Zastosowanie centralnych stylów dla miniatury
+        self.thumbnail_label.setStyleSheet(TileStylesheet.get_thumbnail_label_stylesheet())
+
+        # Dodanie thumbnail_label do thumbnail_frame
+        thumbnail_frame_layout.addWidget(self.thumbnail_label)
+
+        # Dodanie ramki z miniaturą do głównego layoutu
+        self.layout.addWidget(self.thumbnail_frame, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        # Etykieta na nazwę pliku
+        self.filename_label = QLabel("Ładowanie...", self)
+        self.filename_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.filename_label.setWordWrap(True)  # Zawijanie tekstu
+        self.filename_label.setMaximumHeight(TileSizeConstants.FILENAME_MAX_HEIGHT)
+        self.filename_label.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        
+        # Zastosowanie stylu z odpowiednim rozmiarem czcionki
+        self._update_font_size()
+        
+        self.layout.addWidget(self.filename_label)
+
+        # --- Kontrolki metadanych ---
+        self.metadata_controls = MetadataControlsWidget(self)
+        self.metadata_controls.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        self.metadata_controls.setMaximumHeight(TileSizeConstants.METADATA_MAX_HEIGHT)
+        self.metadata_controls.setContentsMargins(0, 0, 0, 0)
+        self.layout.addWidget(self.metadata_controls)
+
+        # Połączenie sygnałów z MetadataControlsWidget
+        self.metadata_controls.tile_selected_changed.connect(self._on_tile_selection_changed)
+        self.metadata_controls.stars_value_changed.connect(self._on_stars_changed)
+        self.metadata_controls.color_tag_value_changed.connect(self._on_color_tag_changed)
+
+    def update_data(self, file_pair: Optional[FilePair]):
+        """
+        Aktualizuje dane kafelka na podstawie obiektu FilePair.
+
+        Args:
+            file_pair: Obiekt pary plików z nowymi danymi lub None.
+        """
+        self.file_pair = file_pair
+        
+        # Przekaż FilePair do kontrolek metadanych
+        self.metadata_controls.set_file_pair(file_pair)
+        
+        # Aktualizacja statycznych danych (nazwa, metadane)
+        self._update_static_data()
+
+        # Aktualizacja koloru obwódki
+        if file_pair:
+            color_tag = file_pair.get_color_tag()
+            if color_tag and color_tag.strip():
+                self._update_thumbnail_border_color(color_tag)
+            else:
+                self._update_thumbnail_border_color("")
+        else:
+            self._update_thumbnail_border_color("")
+
+    def _update_static_data(self):
+        """Aktualizuje statyczne dane kafelka (nazwa, metadane)."""
+        try:
+            if self.file_pair:
+                # Aktualizacja nazwy pliku
+                self.filename_label.setText(self.file_pair.get_base_name())
+                
+                # Aktualizacja kontrolek metadanych
+                self.metadata_controls.update_selection_display(False)  # Domyślnie nie wybrany
+                self.metadata_controls.update_stars_display(self.file_pair.get_stars())
+                
+                # Aktualizacja koloru
+                color_tag = self.file_pair.get_color_tag()
+                self.metadata_controls.update_color_tag_display(color_tag)
+            else:
+                # Domyślne wartości gdy nie ma file_pair
+                self.filename_label.setText("Brak danych")
+                self.metadata_controls.update_selection_display(False)
+                self.metadata_controls.update_stars_display(0)
+                self.metadata_controls.update_color_tag_display("")
+        except Exception as e:
+            logging.error(f"Błąd aktualizacji danych statycznych kafelka: {e}")
+            self.filename_label.setText("Błąd danych")
+
+    def _update_thumbnail_border_color(self, color_hex: str):
+        """Aktualizuje kolor obwódki wokół miniatury."""
+        # Użyj centralnej metody stylowania z TileStylesheet
+        self.thumbnail_frame.setStyleSheet(
+            TileStylesheet.get_thumbnail_frame_stylesheet(color_hex)
+        )
+        
+        if color_hex and color_hex.strip():
+            logging.debug(f"Ustawiono kolor obwódki na: {color_hex}")
+        else:
+            logging.debug("Usunięto obwódkę - przezroczysta")
+
+    def set_file_pair(self, file_pair: Optional[FilePair]):
+        """Ustawia parę plików dla kafelka i odświeża UI."""
+        self.file_pair = file_pair
+        self._current_worker_id += 1  # Inkrementacja ID dla nowego zadania ładowania
+
+        if file_pair:
+            self.filename_label.setText(file_pair.get_base_name())
+            self.setToolTip(f"Ścieżka: {file_pair.get_archive_path()}")
+            self._load_thumbnail_async()
+            self.metadata_controls.set_file_pair(file_pair)
+            self.metadata_controls.setEnabled(True)
+
+            # Aktualizacja koloru obwódki
+            color_tag = file_pair.get_color_tag()
+            if color_tag and color_tag.strip():
+                self._update_thumbnail_border_color(color_tag)
+            else:
+                self._update_thumbnail_border_color("")
+        else:
+            self.filename_label.setText("Brak pliku")
+            self.thumbnail_label.clear()
+            self.thumbnail_label.setText("?")
+            self.setToolTip("")
+            self.metadata_controls.set_file_pair(None)
+            self.metadata_controls.setEnabled(False)
+            self._update_thumbnail_border_color("")
+
+    def _load_thumbnail_async(self):
+        """Ładuje miniaturę asynchronicznie używając ThumbnailGenerationWorker i QThreadPool."""
+        if not self.file_pair or not self.file_pair.get_preview_path():
+            logging.warning(
+                "FileTileWidget: Brak file_pair lub ścieżki podglądu, nie można załadować miniatury."
+            )
+            # Ustawienie placeholdera błędu
+            error_placeholder = ThumbnailCache.get_error_icon(
+                self.thumbnail_label.width(), self.thumbnail_label.height()
+            )
+            if not error_placeholder:
+                error_placeholder = create_placeholder_pixmap(
+                    self.thumbnail_label.width(),
+                    self.thumbnail_label.height(),
+                    text="Brak pliku",
+                )
+            self.thumbnail_label.setPixmap(error_placeholder)
+            self.original_thumbnail = error_placeholder
+            return
+
+        preview_path = self.file_pair.get_preview_path()
+        # Używamy rozmiaru etykiety miniatury - zawsze będzie kwadratem
+        width = height = self.thumbnail_label.width()
+
+        # Zabezpieczenie przed zerowymi wymiarami
+        if width <= 0 or height <= 0:
+            width = height = TileSizeConstants.MIN_THUMBNAIL_WIDTH
+            logging.warning(
+                f"Nieprawidłowe wymiary miniatury, używam domyślnych {width}x{height}"
+            )
+
+        # Sprawdź czy miniatura jest w cache
+        cache = ThumbnailCache.get_instance()
+        cached_pixmap = cache.get_thumbnail(preview_path, width, height)
+
+        if cached_pixmap and not cached_pixmap.isNull():
+            logging.debug(f"Cache HIT dla {preview_path} ({width}x{height})")
+            self._on_thumbnail_loaded(cached_pixmap, preview_path, width, height)
+            return
+        else:
+            logging.debug(f"Cache MISS dla {preview_path} ({width}x{height})")
+
+        # Zwiększ ID dla nowego workera
+        self._current_worker_id += 1
+        worker_id = self._current_worker_id
+
+        # Natychmiastowe ustawienie placeholdera "Ładowanie..."
+        loading_placeholder = create_placeholder_pixmap(
+            width, height, text="Ładowanie..."
+        )
+        self.thumbnail_label.setPixmap(loading_placeholder)
+
+        # Przerwij poprzedni worker jeśli istnieje
+        if self._current_thumbnail_worker:
+            self._current_thumbnail_worker.interrupt()
+
+        # Utwórz nowy worker
+        worker = ThumbnailGenerationWorker(preview_path, width, height)
+        self._current_thumbnail_worker = worker
+
+        # Podłącz sygnały
+        worker.signals.finished.connect(
+            lambda pixmap, path, w, h: (
+                self._on_thumbnail_loaded(pixmap, path, w, h)
+                if self._current_thumbnail_worker == worker
+                else None
+            )
+        )
+        worker.signals.error.connect(
+            lambda error_msg, path, w, h: (
+                self._on_thumbnail_error(error_msg, path, w, h)
+                if self._current_thumbnail_worker == worker
+                else None
+            )
+        )
+
+        # Uruchom w thread pool
+        QThreadPool.globalInstance().start(worker)
+
+        logging.debug(
+            f"Rozpoczęto asynch. ładowanie dla {self.file_pair.get_base_name()} (worker_id: {worker_id})"
+        )
+
+    def _on_thumbnail_loaded(self, pixmap: QPixmap, path: str, width: int, height: int):
+        """Obsługuje załadowaną miniaturę z ThumbnailGenerationWorker."""
+        logging.debug(
+            f"FileTileWidget: Otrzymano miniaturę dla {path} ({width}x{height})"
+        )
+
+        if pixmap and not pixmap.isNull():
+            self.thumbnail_label.setPixmap(pixmap)
+            self.original_thumbnail = pixmap
+
+            # Aktualizuj kolor obwódki tylko jeśli jest wybrany kolor
+            if self.file_pair:
+                color_tag = self.file_pair.get_color_tag()
+                if color_tag and color_tag.strip():
+                    self._update_thumbnail_border_color(color_tag)
+        else:
+            # Fallback na ikonę błędu
+            self._on_thumbnail_error("Otrzymano pustą miniaturę", path, width, height)
+
+    def _on_thumbnail_error(self, error_msg: str, path: str, width: int, height: int):
+        """Obsługuje błędy ładowania miniaturek."""
+        logging.warning(f"FileTileWidget: Błąd ładowania miniatury {path}: {error_msg}")
+
+        # Użyj ikony błędu z cache
+        error_pixmap = ThumbnailCache.get_error_icon(width, height)
+        if error_pixmap:
+            self.thumbnail_label.setPixmap(error_pixmap)
+            self.original_thumbnail = error_pixmap
+        else:
+            # Ostateczny fallback - tekst
+            self.thumbnail_label.setText("Błąd ładowania")
+            self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+    # --- Obsługa sygnałów z MetadataControlsWidget ---
+
+    def _on_tile_selection_changed(self, is_selected: bool):
+        """Handle tile selection change from MetadataControlsWidget checkbox."""
+        if self.file_pair:
+            # Emit signal to notify about selection change
+            self.tile_selected.emit(self.file_pair, is_selected)
+            logging.debug(
+                f"FileTileWidget: Zmieniono status selekcji dla {self.file_pair.get_base_name()} na {is_selected}"
+            )
+
+    def _on_stars_changed(self, stars: int):
+        """Obsługuje zmianę liczby gwiazdek w MetadataControlsWidget."""
+        if self.file_pair:
+            self.file_pair.set_stars(stars)
+            self.metadata_controls.update_stars_display(stars)
+            self.stars_changed.emit(self.file_pair, stars)
+            self.file_pair_updated.emit(self.file_pair)
+            logging.debug(
+                f"FileTileWidget: Zmieniono liczbę gwiazdek dla {self.file_pair.get_base_name()} na {stars}"
+            )
+
+    def _on_color_tag_changed(self, color_hex: str):
+        """Obsługuje zmianę tagu koloru w MetadataControlsWidget."""
+        if self.file_pair:
+            self.file_pair.set_color_tag(color_hex)
+            # Odśwież kontrolki metadanych i ramkę miniatury
+            self.metadata_controls.update_color_tag_display(color_hex)
+            self._update_thumbnail_border_color(color_hex)
+
+            # Emituj sygnał, że tag koloru został zmieniony
+            self.color_tag_changed.emit(self.file_pair, color_hex)
+            self.file_pair_updated.emit(self.file_pair)
+
+            logging.debug(
+                f"FileTileWidget: Zmieniono tag koloru dla {self.file_pair.get_base_name()} na {color_hex}"
+            )
+
+    # --- Obsługa zdarzeń myszy ---
+
+    def eventFilter(self, obj, event):
+        """Obsługuje kliknięcia na etykietach miniatury i nazwy."""
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.LeftButton:
+                if obj == self.thumbnail_label:
+                    # Sprawdzenie czy file_pair istnieje przed próbą dostępu
+                    if self.file_pair:
+                        fp_name = self.file_pair.get_base_name()[:20]
+                        logging.debug(f"Thumb: {fp_name}..")
+                        self.preview_image_requested.emit(self.file_pair)
+                    else:
+                        logging.warning(
+                            "Kliknięto miniaturę, ale self.file_pair to None"
+                        )
+                    return True
+                elif obj == self.filename_label:
+                    # Sprawdzenie czy file_pair istnieje przed próbą dostępu
+                    if self.file_pair:
+                        fp_name = self.file_pair.get_base_name()[:20]
+                        logging.debug(f"Name: {fp_name}..")
+                        self.archive_open_requested.emit(self.file_pair)
+                    else:
+                        logging.warning(
+                            "Kliknięto nazwę pliku, ale self.file_pair to None"
+                        )
+                    return True
+        return super().eventFilter(obj, event)
+
+    def mousePressEvent(self, event):
+        """Obsługuje naciśnięcie przycisku myszy (początek przeciągania lub kliknięcia)."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.press_pos = event.pos()
+            self.maybe_drag = True
+            self.drag_active = False
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Obsługuje ruch myszy (potencjalne przeciąganie)."""
+        # Jeśli nie było wciśnięcia lewego przycisku lub nie jest to potencjalne przeciąganie, ignoruj
+        if not self.maybe_drag or not (event.buttons() & Qt.MouseButton.LeftButton):
+            super().mouseMoveEvent(event)
+            return
+
+        # Jeśli przeciąganie jest już aktywne, przekaż zdarzenie
+        if self.drag_active:
+            super().mouseMoveEvent(event)
+            return
+
+        # Sprawdź, czy ruch przekroczył próg rozpoczęcia przeciągania
+        if (event.pos() - self.press_pos).manhattanLength() >= QApplication.instance().startDragDistance():
+            # Sprawdź, co było pod kursorem w momencie naciśnięcia
+            target_widget_at_press = self.childAt(self.press_pos)
+
+            # Rozpocznij przeciąganie, jeśli nie kliknięto bezpośrednio na miniaturę lub nazwę
+            if target_widget_at_press not in [self.thumbnail_label, self.filename_label]:
+                self.drag_active = True
+
+                # Sprawdź czy file_pair jest prawidłowy przed rozpoczęciem przeciągania
+                if not self.file_pair or not self.file_pair.archive_path or not self.file_pair.preview_path:
+                    logging.warning("Próba przeciągnięcia kafelka bez kompletnej pary plików.")
+                    self.maybe_drag = False
+                    return
+
+                # Utwórz obiekt przeciągania
+                drag = QDrag(self)
+                mime_data = QMimeData()
+                urls = [
+                    QUrl.fromLocalFile(self.file_pair.archive_path),
+                    QUrl.fromLocalFile(self.file_pair.preview_path),
+                ]
+                mime_data.setUrls(urls)
+                drag.setMimeData(mime_data)
+
+                # Ustaw obrazek podczas przeciągania
+                pixmap = self.thumbnail_label.pixmap()
+                if pixmap and not pixmap.isNull():
+                    scaled_pixmap = pixmap.scaled(
+                        QSize(100, 100),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    drag.setPixmap(scaled_pixmap)
+                    drag.setHotSpot(scaled_pixmap.rect().center())
+                else:
+                    # Fallback, gdy miniatura nie jest dostępna
+                    placeholder_pixmap = QPixmap(QSize(100, 100))
+                    placeholder_pixmap.fill(QColor(TileColorScheme.LOADING_COLOR))
+                    drag.setPixmap(placeholder_pixmap)
+                    drag.setHotSpot(event.pos() - self.rect().topLeft())
+
+                logging.debug(f"Rozpoczęcie przeciągania dla: {self.file_pair.base_name}")
+
+                # Wykonaj operację przeciągania
+                drop_action = drag.exec(Qt.DropAction.MoveAction)
+
+                if drop_action == Qt.DropAction.MoveAction:
+                    logging.debug(f"Operacja przeciągania zakończona sukcesem dla {self.file_pair.base_name}")
+                else:
+                    logging.debug(f"Operacja przeciągania anulowana dla {self.file_pair.base_name}")
+
+                # Zresetuj flagi
+                self.maybe_drag = False
+                self.drag_active = False
+                self.press_pos = None
+                return
+            else:
+                # Jeśli kliknięto na miniaturę/nazwę, ale ruch był wystarczający do drag,
+                # traktujemy to jako anulowanie "kliknięcia"
+                self.maybe_drag = False
+                return
+
+        # Jeśli self.maybe_drag jest True, ale dystans jest wciąż za mały
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Obsługuje zwolnienie przycisku myszy (koniec przeciągania lub kliknięcie)."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Sprawdź, czy to było "czyste" kliknięcie (nie rozpoczęto przeciągania)
+            if self.maybe_drag and not self.drag_active and self.press_pos is not None:
+                # Sprawdź, czy puszczenie przycisku nastąpiło blisko miejsca naciśnięcia
+                if (event.pos() - self.press_pos).manhattanLength() < QApplication.instance().startDragDistance():
+                    clicked_widget = self.childAt(self.press_pos)
+
+                    if clicked_widget == self.thumbnail_label:
+                        if self.file_pair:
+                            logging.debug(f"Kliknięcie na miniaturę: {self.file_pair.base_name}")
+                            self.preview_image_requested.emit(self.file_pair)
+                        self.maybe_drag = False
+                        self.press_pos = None
+                        super().mouseReleaseEvent(event)
+                        return
+                    elif clicked_widget == self.filename_label:
+                        if self.file_pair:
+                            logging.debug(f"Kliknięcie na nazwę pliku: {self.file_pair.base_name}")
+                            self.archive_open_requested.emit(self.file_pair)
+                        self.maybe_drag = False
+                        self.press_pos = None
+                        super().mouseReleaseEvent(event)
+                        return
+
+            # Zresetuj flagi
+            self.maybe_drag = False
+            self.drag_active = False
+            self.press_pos = None
+            super().mouseReleaseEvent(event)
+        else:
+            super().mouseReleaseEvent(event)
+
+    # --- Menu kontekstowe ---
+
+    def contextMenuEvent(self, event):
+        """Obsługuje wyświetlenie menu kontekstowego po kliknięciu prawym przyciskiem myszy."""
+        if self.file_pair:
+            # Emituj sygnał żądania menu kontekstowego, aby rodzic mógł je wyświetlić
+            self.tile_context_menu_requested.emit(self.file_pair, self, event)
+        else:
+            super().contextMenuEvent(event)
+
+    def _create_context_menu(self) -> QMenu:
+        """Tworzy menu kontekstowe dla kafelka."""
+        menu = QMenu(self)
+
+        action_open = menu.addAction("Otwórz")
+        action_preview = menu.addAction("Podgląd")
+        action_properties = menu.addAction("Właściwości")
+        
+        menu.addSeparator()
+        action_exit = menu.addAction("Zamknij")
+
+        action_open.setShortcut("Ctrl+O")
+        action_preview.setShortcut("Ctrl+P")
+
+        if self.file_pair:
+            action_open.triggered.connect(lambda: self.archive_open_requested.emit(self.file_pair))
+            action_preview.triggered.connect(lambda: self.preview_image_requested.emit(self.file_pair))
+            # Properties będzie obsługiwane przez sygnał custom
+        
+        action_exit.triggered.connect(self.close)
+
+        return menu
+
+    def open_file(self):
+        """Otwiera plik archiwum."""
+        if self.file_pair:
+            self.archive_open_requested.emit(self.file_pair)
+
+    def preview_image(self):
+        """Otwiera podgląd obrazu."""
+        if self.file_pair:
+            self.preview_image_requested.emit(self.file_pair)
+
+    def show_properties(self):
+        """Wyświetla właściwości pliku."""
+        # Ta metoda powinna być zaimplementowana przez klasę nadrzędną
+        if self.file_pair:
+            pass  # Tu można dodać logikę dla właściwości
+
+    def __del__(self):
+        """Destruktor - zapewnia poprawne czyszczenie zasobów."""
+        # Przerwij zadania w tle
+        if hasattr(self, "_current_thumbnail_worker") and self._current_thumbnail_worker:
+            self._current_thumbnail_worker.interrupt()
+            self._current_thumbnail_worker = None

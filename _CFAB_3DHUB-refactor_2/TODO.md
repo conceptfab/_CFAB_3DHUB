@@ -1,0 +1,1 @@
+4. checkbox do zaznacznia kafelków powinien mieć identyczne marginesy od lewej i od dołu

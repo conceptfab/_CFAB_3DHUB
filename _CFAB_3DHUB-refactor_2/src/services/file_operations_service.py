@@ -1,0 +1,199 @@
+"""
+Service odpowiedzialny za operacje na plikach.
+Separacja logiki biznesowej od UI zgodnie z Etapem 2 corrections.md
+"""
+
+import logging
+import os
+import shutil
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+from src.models.file_pair import FilePair
+
+
+class FileOperationsService:
+    """Serwis do operacji na plikach - separacja logiki biznesowej od UI."""
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def bulk_delete(
+        self, file_pairs: List[FilePair]
+    ) -> Tuple[List[FilePair], List[str]]:
+        """
+        Usuwa masowo pary plików.
+
+        Args:
+            file_pairs: Lista par plików do usunięcia
+
+        Returns:
+            Tuple[List[FilePair], List[str]]: (pomyślnie usunięte, błędy)
+        """
+        successfully_deleted = []
+        errors = []
+
+        for file_pair in file_pairs:
+            try:
+                # Usuń archiwum
+                if file_pair.archive_path and os.path.exists(file_pair.archive_path):
+                    os.remove(file_pair.archive_path)
+                    self.logger.info(f"Usunięto archiwum: {file_pair.archive_path}")
+
+                # Usuń podgląd
+                if file_pair.preview_path and os.path.exists(file_pair.preview_path):
+                    os.remove(file_pair.preview_path)
+                    self.logger.info(f"Usunięto podgląd: {file_pair.preview_path}")
+
+                successfully_deleted.append(file_pair)
+
+            except Exception as e:
+                error_msg = f"Błąd usuwania {file_pair.name}: {str(e)}"
+                self.logger.error(error_msg)
+                errors.append(error_msg)
+
+        return successfully_deleted, errors
+
+    def bulk_move(
+        self, file_pairs: List[FilePair], destination: str
+    ) -> Tuple[List[FilePair], List[str]]:
+        """
+        Przenosi masowo pary plików do nowego katalogu.
+
+        Args:
+            file_pairs: Lista par plików do przeniesienia
+            destination: Ścieżka docelowa
+
+        Returns:
+            Tuple[List[FilePair], List[str]]: (pomyślnie przeniesione, błędy)
+        """
+        if not os.path.exists(destination):
+            try:
+                os.makedirs(destination)
+            except Exception as e:
+                return [], [f"Nie można utworzyć katalogu docelowego: {str(e)}"]
+
+        successfully_moved = []
+        errors = []
+
+        for file_pair in file_pairs:
+            try:
+                new_pair = FilePair()
+
+                # Przenieś archiwum
+                if file_pair.archive_path and os.path.exists(file_pair.archive_path):
+                    archive_name = os.path.basename(file_pair.archive_path)
+                    new_archive_path = os.path.join(destination, archive_name)
+                    shutil.move(file_pair.archive_path, new_archive_path)
+                    new_pair.archive_path = new_archive_path
+                    self.logger.info(f"Przeniesiono archiwum: {new_archive_path}")
+
+                # Przenieś podgląd
+                if file_pair.preview_path and os.path.exists(file_pair.preview_path):
+                    preview_name = os.path.basename(file_pair.preview_path)
+                    new_preview_path = os.path.join(destination, preview_name)
+                    shutil.move(file_pair.preview_path, new_preview_path)
+                    new_pair.preview_path = new_preview_path
+                    self.logger.info(f"Przeniesiono podgląd: {new_preview_path}")
+
+                # Kopiuj metadane
+                new_pair.rating = file_pair.rating
+                new_pair.color = file_pair.color
+                new_pair.description = file_pair.description
+
+                successfully_moved.append(new_pair)
+
+            except Exception as e:
+                error_msg = f"Błąd przenoszenia {file_pair.name}: {str(e)}"
+                self.logger.error(error_msg)
+                errors.append(error_msg)
+
+        return successfully_moved, errors
+
+    def manual_pair(self, archive_path: str, preview_path: str) -> Optional[FilePair]:
+        """
+        Tworzy ręczną parę plików.
+
+        Args:
+            archive_path: Ścieżka do archiwum
+            preview_path: Ścieżka do podglądu
+
+        Returns:
+            Optional[FilePair]: Nowa para lub None w przypadku błędu
+        """
+        try:
+            # Walidacja
+            if not os.path.exists(archive_path):
+                self.logger.error(f"Archiwum nie istnieje: {archive_path}")
+                return None
+
+            if not os.path.exists(preview_path):
+                self.logger.error(f"Podgląd nie istnieje: {preview_path}")
+                return None
+
+            # Utwórz parę
+            file_pair = FilePair()
+            file_pair.archive_path = archive_path
+            file_pair.preview_path = preview_path
+
+            self.logger.info(f"Utworzono ręczną parę: {file_pair.name}")
+            return file_pair
+
+        except Exception as e:
+            self.logger.error(f"Błąd tworzenia ręcznej pary: {str(e)}")
+            return None
+
+    def validate_file_paths(self, *paths: str) -> List[str]:
+        """
+        Waliduje czy podane ścieżki istnieją.
+
+        Args:
+            *paths: Ścieżki do walidacji
+
+        Returns:
+            List[str]: Lista błędów walidacji
+        """
+        errors = []
+
+        for path in paths:
+            if not path:
+                errors.append("Pusta ścieżka")
+                continue
+
+            if not os.path.exists(path):
+                errors.append(f"Plik nie istnieje: {path}")
+                continue
+
+            if not os.path.isfile(path):
+                errors.append(f"Ścieżka nie wskazuje na plik: {path}")
+
+        return errors
+
+    def cleanup_empty_directories(self, base_path: str) -> int:
+        """
+        Usuwa puste katalogi po operacjach na plikach.
+
+        Args:
+            base_path: Ścieżka bazowa do sprawdzenia
+
+        Returns:
+            int: Liczba usuniętych katalogów
+        """
+        removed_count = 0
+
+        try:
+            for root, dirs, files in os.walk(base_path, topdown=False):
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    try:
+                        if not os.listdir(dir_path):  # Katalog pusty
+                            os.rmdir(dir_path)
+                            removed_count += 1
+                            self.logger.info(f"Usunięto pusty katalog: {dir_path}")
+                    except OSError:
+                        # Katalog nie jest pusty lub błąd dostępu
+                        pass
+        except Exception as e:
+            self.logger.error(f"Błąd czyszczenia pustych katalogów: {str(e)}")
+
+        return removed_count
