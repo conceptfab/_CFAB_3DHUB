@@ -4,6 +4,7 @@ Manager galerii - zarządzanie wyświetlaniem kafelków.
 
 import logging
 import math
+import os
 from typing import Dict, List, Set
 
 from PyQt6.QtCore import Qt
@@ -101,6 +102,34 @@ class GalleryManager:
             # Utwórz zbiór ścieżek dla szybkiego sprawdzania
             visible_paths = {fp.get_archive_path() for fp in self.file_pairs_list}
 
+            # Identyfikacja i usuwanie zduplikowanych/nieprawidłowych kafelków - FIX dla problemu nakładania się
+            duplicate_keys = []
+            for archive_path, tile_widget in list(self.gallery_tile_widgets.items()):
+                # Sprawdź czy plik istnieje na dysku, jeśli nie - oznacz do usunięcia
+                if not os.path.exists(archive_path):
+                    logging.debug(
+                        f"Usuwanie kafelka dla nieistniejącego pliku: {archive_path}"
+                    )
+                    duplicate_keys.append(archive_path)
+                # Sprawdź czy są zduplikowane ścieżki w visible_paths (ta sama nazwa pliku w innej ścieżce)
+                elif archive_path not in visible_paths and os.path.basename(
+                    archive_path
+                ) in [os.path.basename(p) for p in visible_paths]:
+                    logging.debug(
+                        f"Wykryto potencjalny duplikat po przeniesieniu: {archive_path}"
+                    )
+                    duplicate_keys.append(archive_path)
+
+            # Usuń zduplikowane kafelki z self.gallery_tile_widgets
+            for key in duplicate_keys:
+                if key in self.gallery_tile_widgets:
+                    tile = self.gallery_tile_widgets.pop(key)
+                    if tile:
+                        tile.setVisible(False)
+                        tile.setParent(None)
+                        tile.deleteLater()
+                        logging.debug(f"Usunięto zduplikowany kafelek: {key}")
+
             # Ukryj kafelki, których nie ma w obecnie wyświetlanej liście
             for archive_path, tile_widget in self.gallery_tile_widgets.items():
                 if archive_path not in visible_paths and tile_widget.isVisible():
@@ -113,10 +142,8 @@ class GalleryManager:
             )
             cols = max(1, math.floor(container_width / tile_width_with_spacing))
 
-            # Wyczyść layout, ale tylko jeśli to konieczne
-            layout_needs_rebuild = (
-                True  # Do rozważenia: wykrywanie czy układ się zmienił
-            )
+            # Zawsze czyść layout przy podejrzeniu duplikatów
+            layout_needs_rebuild = True
 
             if layout_needs_rebuild:
                 # Usuń widgety z layoutu, ale nie z pamięci

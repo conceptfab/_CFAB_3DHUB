@@ -44,8 +44,8 @@ from src.ui.delegates.workers import (
     BulkDeleteWorker,
     BulkMoveWorker,
     DataProcessingWorker,
-    SaveMetadataWorker,
     ScanFolderWorker,
+    WorkerFactory,
 )
 from src.ui.directory_tree_manager import DirectoryTreeManager
 from src.ui.file_operations_ui import FileOperationsUI
@@ -1249,8 +1249,8 @@ class MainWindow(QMainWindow):
             logging.debug("Brak folderu roboczego lub par plików do zapisu metadanych.")
             return
 
-        # Utwórz workera do zapisu metadanych
-        worker = SaveMetadataWorker(
+        # Utwórz workera do zapisu metadanych używając fabryki
+        worker = WorkerFactory.create_save_metadata_worker(
             self.current_working_directory,
             self.all_file_pairs,
             self.unpaired_archives,
