@@ -325,7 +325,7 @@ class StatsProxyModel(QSortFilterProxyModel):
 # Definicja delegata do podświetlania celu upuszczenia
 class DropHighlightDelegate(QStyledItemDelegate):
     """Delegate do podświetlania celu upuszczenia plików."""
-    
+
     def __init__(self, directory_tree_manager, parent=None):
         super().__init__(parent)
         self.directory_tree_manager = directory_tree_manager
@@ -341,18 +341,20 @@ class DropHighlightDelegate(QStyledItemDelegate):
         ):
             # Użyj wyraźnego koloru do podświetlenia
             painter.save()
-            
+
             # Podświetlenie z ramką
-            highlight_color = QColor(255, 165, 0, 100)  # Pomarańczowy z przezroczystością
-            border_color = QColor(255, 140, 0, 200)      # Ciemniejszy pomarańczowy
-            
+            highlight_color = QColor(
+                255, 165, 0, 100
+            )  # Pomarańczowy z przezroczystością
+            border_color = QColor(255, 140, 0, 200)  # Ciemniejszy pomarańczowy
+
             # Wypełnienie
             painter.fillRect(option.rect, highlight_color)
-            
+
             # Ramka
             painter.setPen(border_color)
             painter.drawRect(option.rect.adjusted(0, 0, -1, -1))
-            
+
             painter.restore()
             logger.debug(f"Podświetlono folder dla drop: {index.data()}")
 
@@ -531,10 +533,81 @@ class DirectoryTreeManager:
     def open_folder_in_explorer(self, folder_path: str):
         """Otwiera folder w eksploratorze Windows."""
         try:
-            subprocess.Popen(f'explorer "{folder_path}"')
-            logger.info(f"Otwarto folder w eksploratorze: {folder_path}")
+            logging.info(f"🗂️ EKSPLORATOR: Próba otwarcia folderu: '{folder_path}'")
+
+            # Sprawdź czy folder istnieje
+            if not os.path.exists(folder_path):
+                logging.error(
+                    f"🗂️ EKSPLORATOR: BŁĄD - Folder nie istnieje: '{folder_path}'"
+                )
+                QMessageBox.warning(
+                    self.parent_window,
+                    "Błąd",
+                    f"Folder nie istnieje:\n{folder_path}",
+                )
+                return
+
+            if not os.path.isdir(folder_path):
+                logging.error(
+                    f"🗂️ EKSPLORATOR: BŁĄD - Ścieżka nie jest folderem: '{folder_path}'"
+                )
+                QMessageBox.warning(
+                    self.parent_window,
+                    "Błąd",
+                    f"Ścieżka nie jest folderem:\n{folder_path}",
+                )
+                return
+
+            # Normalizuj ścieżkę do formatu Windows
+            normalized_path = os.path.normpath(folder_path)
+            logging.info(f"🗂️ EKSPLORATOR: Znormalizowana ścieżka: '{normalized_path}'")
+
+            logging.info(f"🗂️ EKSPLORATOR: Otwieranie folderu w eksploratorze...")
+
+            # Użyj alternatywnych metod wywołania explorera
+            import sys
+
+            if sys.platform == "win32":
+                # Metoda 1: Przez os.startfile - najbardziej niezawodna dla Windows
+                try:
+                    os.startfile(normalized_path)
+                    logging.info(
+                        f"🗂️ EKSPLORATOR: SUKCES (os.startfile) - Otwarto folder: {normalized_path}"
+                    )
+                    return
+                except Exception as e1:
+                    logging.warning(f"🗂️ EKSPLORATOR: os.startfile nie zadziałało: {e1}")
+
+                # Metoda 2: Przez subprocess z argumentami w liście
+                try:
+                    subprocess.Popen(["explorer", normalized_path])
+                    logging.info(
+                        f"🗂️ EKSPLORATOR: SUKCES (subprocess lista) - Otwarto folder: {normalized_path}"
+                    )
+                    return
+                except Exception as e2:
+                    logging.warning(
+                        f"🗂️ EKSPLORATOR: subprocess z listą nie zadziałało: {e2}"
+                    )
+
+                # Metoda 3: Przez subprocess z shell=True
+                try:
+                    subprocess.Popen(f'explorer "{normalized_path}"', shell=True)
+                    logging.info(
+                        f"🗂️ EKSPLORATOR: SUKCES (subprocess shell) - Otwarto folder: {normalized_path}"
+                    )
+                    return
+                except Exception as e3:
+                    logging.error(
+                        f"🗂️ EKSPLORATOR: subprocess z shell nie zadziałało: {e3}"
+                    )
+            else:
+                logging.error(
+                    f"🗂️ EKSPLORATOR: Nieobsługiwany system operacyjny: {sys.platform}"
+                )
+
         except Exception as e:
-            logger.error(f"Błąd otwierania eksploratora: {e}")
+            logging.error(f"🗂️ EKSPLORATOR: BŁĄD KRYTYCZNY otwierania eksploratora: {e}")
             QMessageBox.warning(
                 self.parent_window,
                 "Błąd",
@@ -712,9 +785,12 @@ class DirectoryTreeManager:
             )
 
             # Ustaw główny folder roboczy jako root
-            root_index = self.model.setRootPath(self._main_working_directory)
-            proxy_root_index = self.get_proxy_index_from_source(root_index)
-            self.folder_tree.setRootIndex(proxy_root_index)
+            self.model.setRootPath(self._main_working_directory)
+
+            # Pobierz indeks konkretnego folderu (nie root systemu)
+            source_folder_index = self.model.index(self._main_working_directory)
+            proxy_folder_index = self.get_proxy_index_from_source(source_folder_index)
+            self.folder_tree.setRootIndex(proxy_folder_index)
 
             # Rozwiń automatycznie wszystkie foldery które zawierają pliki
             QTimer.singleShot(
@@ -740,9 +816,12 @@ class DirectoryTreeManager:
             )
 
             # Ustaw główny folder roboczy jako root
-            root_index = self.model.setRootPath(self._main_working_directory)
-            proxy_root_index = self.get_proxy_index_from_source(root_index)
-            self.folder_tree.setRootIndex(proxy_root_index)
+            self.model.setRootPath(self._main_working_directory)
+
+            # Pobierz indeks konkretnego folderu (nie root systemu)
+            source_folder_index = self.model.index(self._main_working_directory)
+            proxy_folder_index = self.get_proxy_index_from_source(source_folder_index)
+            self.folder_tree.setRootIndex(proxy_folder_index)
 
             # Rozwiń automatycznie wszystkie foldery które zawierają pliki
             QTimer.singleShot(
@@ -842,18 +921,53 @@ class DirectoryTreeManager:
         """
         Wyświetla rozszerzone menu kontekstowe dla drzewa folderów.
         """
+        logging.info(
+            f"🗂️ MENU_KONTEKSTOWE: Wyświetlanie menu kontekstowego na pozycji: {position}"
+        )
+
         # Pobierz indeks wybranego elementu (używamy proxy model)
         proxy_index = self.folder_tree.indexAt(position)
         if not proxy_index.isValid():
+            logging.warning(
+                f"🗂️ MENU_KONTEKSTOWE: BŁĄD - Nieprawidłowy proxy_index na pozycji: {position}"
+            )
             return
+
+        logging.info(f"🗂️ MENU_KONTEKSTOWE: Proxy index jest prawidłowy: {proxy_index}")
 
         # Mapuj z proxy na źródłowy model
         source_index = self.proxy_model.mapToSource(proxy_index)
         if not source_index.isValid():
+            logging.warning(
+                f"🗂️ MENU_KONTEKSTOWE: BŁĄD - Nieprawidłowy source_index dla proxy: {proxy_index}"
+            )
             return
+
+        logging.info(
+            f"🗂️ MENU_KONTEKSTOWE: Source index jest prawidłowy: {source_index}"
+        )
 
         # Pobierz ścieżkę do wybranego folderu
         folder_path = self.model.filePath(source_index)
+
+        logging.info(f"🗂️ MENU_KONTEKSTOWE: Pobrana ścieżka folderu: '{folder_path}'")
+
+        # Sprawdź czy folder istnieje i jest folderem
+        if not os.path.exists(folder_path):
+            logging.error(
+                f"🗂️ MENU_KONTEKSTOWE: BŁĄD - Folder nie istnieje: '{folder_path}'"
+            )
+            return
+
+        if not os.path.isdir(folder_path):
+            logging.error(
+                f"🗂️ MENU_KONTEKSTOWE: BŁĄD - Ścieżka nie jest folderem: '{folder_path}'"
+            )
+            return
+
+        logging.info(
+            f"🗂️ MENU_KONTEKSTOWE: Folder zweryfikowany pomyślnie: '{folder_path}'"
+        )
 
         # Tworzenie menu kontekstowego
         context_menu = QMenu()
@@ -1447,12 +1561,12 @@ class DirectoryTreeManager:
                             if self.highlighted_drop_index.isValid():
                                 old_index = self.highlighted_drop_index
                                 self.folder_tree.update(old_index)
-                            
+
                             # Ustaw nowe podświetlenie
                             self.highlighted_drop_index = index
                             self.folder_tree.update(index)
                             logger.debug(f"Podświetlono folder: {folder_path}")
-                        
+
                         event.acceptProposedAction()
                         return
 
@@ -1480,7 +1594,7 @@ class DirectoryTreeManager:
     def _drop_event(self, event: QDropEvent):
         """Obsługuje upuszczenie plików na folder w drzewie."""
         logger.info("=== DROP EVENT START ===")
-        
+
         if not event.mimeData().hasUrls():
             event.ignore()
             logger.warning("Drop event: Brak URLs w mimeData")
@@ -1529,13 +1643,17 @@ class DirectoryTreeManager:
 
         # Zaloguj informację o upuszczeniu
         file_paths = [url.toLocalFile() for url in file_urls]
-        logger.info(f"Drop event: Upuszczono {len(file_paths)} plików na folder: {target_folder_path}")
+        logger.info(
+            f"Drop event: Upuszczono {len(file_paths)} plików na folder: {target_folder_path}"
+        )
         logger.info(f"Drop event: Pliki: {file_paths}")
 
         # Przekaż obsługę do file_operations_ui jeśli jest dostępne
         if hasattr(self.parent_window, "file_operations_ui"):
             try:
-                logger.info("Drop event: Przekazuję do file_operations_ui.handle_drop_on_folder")
+                logger.info(
+                    "Drop event: Przekazuję do file_operations_ui.handle_drop_on_folder"
+                )
                 result = self.parent_window.file_operations_ui.handle_drop_on_folder(
                     file_urls, target_folder_path
                 )
@@ -1550,11 +1668,19 @@ class DirectoryTreeManager:
                     f"Drop event: Błąd podczas przekazywania do file_operations_ui: {e}"
                 )
                 import traceback
+
                 traceback.print_exc()
                 event.ignore()
         else:
             # Fallback - bezpośrednie przeniesienie plików
             logger.warning("Drop event: Brak file_operations_ui, używam fallback")
             event.acceptProposedAction()
-        
+
         logger.info("=== DROP EVENT END ===")
+
+    def invalidate_folder_cache(self, folder_path: str):
+        """Usuwa wpis z cache statystyk dla danego folderu."""
+        cache_key = normalize_path(folder_path)
+        if cache_key in self._folder_stats_cache:
+            del self._folder_stats_cache[cache_key]
+            logger.debug(f"Invalidowano cache dla: {folder_path}")

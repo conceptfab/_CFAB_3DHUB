@@ -139,6 +139,11 @@
 
 ---
 
+
+
+
+
+
 ## 6. ANALIZA: src/ui/directory_tree_manager.py (🟡 PRIORYTET ŚREDNI)
 
 **Rozmiar:** 783 linii kodu  

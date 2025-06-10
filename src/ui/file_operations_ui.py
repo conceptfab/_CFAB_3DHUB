@@ -394,7 +394,9 @@ class FileOperationsUI:
             target_folder_path: Ścieżka do folderu docelowego
         """
         file_paths = [url.toLocalFile() for url in urls]
-        logging.info(f"🚀 DRAG&DROP: Upuszczono {len(file_paths)} plików na folder {target_folder_path}")
+        logging.info(
+            f"🚀 DRAG&DROP: Upuszczono {len(file_paths)} plików na folder {target_folder_path}"
+        )
         logging.info(f"🚀 DRAG&DROP: Pliki: {file_paths}")
 
         # Bezpośrednio rozpocznij przenoszenie bez pytania
@@ -413,23 +415,33 @@ class FileOperationsUI:
                     all_files.append(file_path)
                     logging.debug(f"🚀 DRAG&DROP: Dodano plik: {file_path}")
                 elif os.path.isdir(file_path):
-                    logging.debug(f"🚀 DRAG&DROP: Znaleziono folder, skanuje zawartość: {file_path}")
+                    logging.debug(
+                        f"🚀 DRAG&DROP: Znaleziono folder, skanuje zawartość: {file_path}"
+                    )
                     # Jeśli to folder, zbierz pliki z niego
                     dir_file_map = collect_files(file_path, max_depth=1)
                     for files_list in dir_file_map.values():
                         all_files.extend(files_list)
-                        logging.debug(f"🚀 DRAG&DROP: Dodano pliki z folderu: {files_list}")
+                        logging.debug(
+                            f"🚀 DRAG&DROP: Dodano pliki z folderu: {files_list}"
+                        )
                 else:
-                    logging.warning(f"🚀 DRAG&DROP: Pominięto nieistniejący element: {file_path}")
+                    logging.warning(
+                        f"🚀 DRAG&DROP: Pominięto nieistniejący element: {file_path}"
+                    )
 
-            logging.info(f"🚀 DRAG&DROP: Znaleziono łącznie {len(all_files)} plików do przeniesienia")
+            logging.info(
+                f"🚀 DRAG&DROP: Znaleziono łącznie {len(all_files)} plików do przeniesienia"
+            )
 
             if not all_files:
                 if hasattr(self.parent_window, "_show_progress"):
                     self.parent_window._show_progress(
                         100, "Nie znaleziono plików do przeniesienia"
                     )
-                logging.warning("🚀 DRAG&DROP: BŁĄD - Nie znaleziono plików do przeniesienia")
+                logging.warning(
+                    "🚀 DRAG&DROP: BŁĄD - Nie znaleziono plików do przeniesienia"
+                )
                 return False
 
             # Utwórz tymczasowy file_map dla algorytmu create_file_pairs
@@ -440,7 +452,9 @@ class FileOperationsUI:
                     temp_file_map[dir_path] = []
                 temp_file_map[dir_path].append(file_path)
 
-            logging.info(f"🚀 DRAG&DROP: Utworzono file_map dla {len(temp_file_map)} katalogów")
+            logging.info(
+                f"🚀 DRAG&DROP: Utworzono file_map dla {len(temp_file_map)} katalogów"
+            )
 
             # Utwórz pary plików używając strategii "best_match"
             file_pairs, _ = create_file_pairs(
@@ -462,13 +476,17 @@ class FileOperationsUI:
                 return True
 
             # Użyj BulkMoveWorker do przeniesienia par plików
-            logging.info(f"🚀 DRAG&DROP: Uruchamianie BulkMoveWorker dla {len(file_pairs)} par")
+            logging.info(
+                f"🚀 DRAG&DROP: Uruchamianie BulkMoveWorker dla {len(file_pairs)} par"
+            )
             self._move_file_pairs_bulk(file_pairs, target_folder_path)
             logging.info("🚀 DRAG&DROP: SUKCES - Uruchomiono przenoszenie par plików")
             return True
 
         except Exception as e:
-            logging.error(f"🚀 DRAG&DROP: BŁĄD podczas przenoszenia plików: {e}", exc_info=True)
+            logging.error(
+                f"🚀 DRAG&DROP: BŁĄD podczas przenoszenia plików: {e}", exc_info=True
+            )
             if hasattr(self.parent_window, "_show_progress"):
                 self.parent_window._show_progress(100, f"Błąd przenoszenia: {str(e)}")
             return False
@@ -627,7 +645,9 @@ class FileOperationsUI:
         """
         import shutil
 
-        logging.info(f"🚀 DRAG&DROP: _move_individual_files uruchomiona dla {len(files)} plików")
+        logging.info(
+            f"🚀 DRAG&DROP: _move_individual_files uruchomiona dla {len(files)} plików"
+        )
         logging.info(f"🚀 DRAG&DROP: Folder docelowy: {target_folder_path}")
 
         try:
@@ -635,7 +655,9 @@ class FileOperationsUI:
                 filename = os.path.basename(file_path)
                 destination_path = os.path.join(target_folder_path, filename)
 
-                logging.debug(f"🚀 DRAG&DROP: Przenoszenie {i+1}/{len(files)}: {file_path} -> {destination_path}")
+                logging.debug(
+                    f"🚀 DRAG&DROP: Przenoszenie {i+1}/{len(files)}: {file_path} -> {destination_path}"
+                )
 
                 # Informuj o postępie w pasku statusu
                 if hasattr(self.parent_window, "_show_progress"):
@@ -646,7 +668,9 @@ class FileOperationsUI:
 
                 try:
                     shutil.move(file_path, destination_path)
-                    logging.debug(f"🚀 DRAG&DROP: Przeniesiono: {file_path} -> {destination_path}")
+                    logging.debug(
+                        f"🚀 DRAG&DROP: Przeniesiono: {file_path} -> {destination_path}"
+                    )
                 except Exception as e:
                     logging.error(f"🚀 DRAG&DROP: Błąd przenoszenia {file_path}: {e}")
                     # Usunięto QMessageBox.warning - błędy tylko w logach            # Zakończenie operacji
@@ -655,7 +679,9 @@ class FileOperationsUI:
                     100, f"Przeniesiono {len(files)} plików"
                 )
 
-            logging.info(f"🚀 DRAG&DROP: _move_individual_files ZAKOŃCZONA - przeniesiono {len(files)} plików")
+            logging.info(
+                f"🚀 DRAG&DROP: _move_individual_files ZAKOŃCZONA - przeniesiono {len(files)} plików"
+            )
 
         except Exception as e:
             logging.error(f"🚀 DRAG&DROP: Błąd podczas przenoszenia plików: {e}")
@@ -680,10 +706,14 @@ class FileOperationsUI:
             target_folder_path: Ścieżka do folderu docelowego
         """
         if not file_pairs:
-            logging.warning("🚀 DRAG&DROP: _move_file_pairs_bulk wywołana z pustą listą plików")
+            logging.warning(
+                "🚀 DRAG&DROP: _move_file_pairs_bulk wywołana z pustą listą plików"
+            )
             return
 
-        logging.info(f"🚀 DRAG&DROP: _move_file_pairs_bulk uruchomiona dla {len(file_pairs)} par plików")
+        logging.info(
+            f"🚀 DRAG&DROP: _move_file_pairs_bulk uruchomiona dla {len(file_pairs)} par plików"
+        )
         logging.info(f"🚀 DRAG&DROP: Folder docelowy: {target_folder_path}")
 
         # Utwórz workera do masowego przenoszenia
@@ -705,7 +735,7 @@ class FileOperationsUI:
         worker.signals.progress.connect(
             lambda percent, msg: self._handle_bulk_move_progress(percent, msg)
         )
-        
+
         logging.info("🚀 DRAG&DROP: BulkMoveWorker uruchamiany...")
         # Uruchom workera
         QThreadPool.globalInstance().start(worker)
@@ -718,7 +748,9 @@ class FileOperationsUI:
         Args:
             moved_pairs: Lista pomyślnie przeniesionych par
         """
-        logging.info(f"🚀 DRAG&DROP: _handle_bulk_move_finished - pomyślnie przeniesiono {len(moved_pairs)} par plików")
+        logging.info(
+            f"🚀 DRAG&DROP: _handle_bulk_move_finished - pomyślnie przeniesiono {len(moved_pairs)} par plików"
+        )
 
         # Informuj o zakończeniu w pasku statusu i ukryj po chwili
         if hasattr(self.parent_window, "_show_progress"):
@@ -738,7 +770,7 @@ class FileOperationsUI:
                 # Usuń z zaznaczonych kafelków jeśli istnieje
                 if hasattr(self.parent_window, "selected_tiles"):
                     self.parent_window.selected_tiles.discard(file_pair)
-            
+
             logging.info(
                 f"🚀 DRAG&DROP: Usunięto {len(moved_pairs)} par z all_file_pairs"
             )
