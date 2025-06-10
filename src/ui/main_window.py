@@ -544,17 +544,26 @@ class MainWindow(QMainWindow):
         # Ustaw proporcje splitter i zapewnij widoczność drzewa
         self.splitter.setSizes([350, 650])  # Więcej miejsca dla drzewa
         self.splitter.setCollapsible(0, False)  # Nie pozwól na zwijanie drzewa
-        self.splitter.setCollapsible(1, False)  # Nie pozwól na zwijanie galerii
-
-        logging.debug(f"Splitter ma {self.splitter.count()} widgetów")
+        self.splitter.setCollapsible(
+            1, False
+        )  # Nie pozwól na zwijanie galerii        logging.debug(f"Splitter ma {self.splitter.count()} widgetów")
 
         self.gallery_tab_layout.addWidget(self.splitter)
         self.tab_widget.addTab(self.gallery_tab, "Galeria")
 
     def _create_folder_tree(self):
         """
-        Tworzy drzewo folderów.
+        Tworzy drzewo folderów z kontrolkami expand/collapse.
         """
+        # Kontener dla drzewa folderów + kontrolek
+        self.folder_tree_container = QWidget()
+        folder_tree_layout = QVBoxLayout(self.folder_tree_container)
+        folder_tree_layout.setContentsMargins(0, 0, 0, 0)
+        folder_tree_layout.setSpacing(2)
+
+        # Kontrolki expand/collapse będą dodane po inicjalizacji DirectoryTreeManager
+        # (placeholder dla przyszłych kontrolek)
+
         self.folder_tree = QTreeView()
         self.folder_tree.setHeaderHidden(True)
         self.folder_tree.setMinimumWidth(250)  # Zwiększona minimalna szerokość
@@ -573,9 +582,12 @@ class MainWindow(QMainWindow):
         for col in range(1, 4):
             self.folder_tree.setColumnHidden(col, True)
 
+        # Dodaj drzewo do kontenera
+        folder_tree_layout.addWidget(self.folder_tree)
+
         # Dodaj debug info
-        logging.debug("Dodaję drzewo folderów do splitter")
-        self.splitter.addWidget(self.folder_tree)
+        logging.debug("Dodaję kontener drzewa folderów do splitter")
+        self.splitter.addWidget(self.folder_tree_container)
 
         # Zapewnij widoczność
         self.folder_tree.setVisible(True)
@@ -612,7 +624,6 @@ class MainWindow(QMainWindow):
 
         # Lista niesparowanych podglądów
         self._create_unpaired_previews_list()
-
         self.unpaired_files_layout.addWidget(self.unpaired_splitter)
 
         # Przycisk do ręcznego parowania
@@ -671,6 +682,18 @@ class MainWindow(QMainWindow):
 
         # Inicjalizacja DirectoryTreeManager
         self.directory_tree_manager = DirectoryTreeManager(self.folder_tree, self)
+
+        # ==================== DODANIE KONTROLEK EXPAND/COLLAPSE ====================
+        # Dodaj kontrolki expand/collapse nad drzewem folderów
+        if hasattr(self, "folder_tree_container"):
+            expand_controls = (
+                self.directory_tree_manager.setup_expand_collapse_controls()
+            )
+            # Dodaj kontrolki na górze kontenera (przed drzewem)
+            layout = self.folder_tree_container.layout()
+            if layout:
+                layout.insertWidget(0, expand_controls)
+                logging.debug("✅ Dodano kontrolki expand/collapse do UI")
 
         # Inicjalizacja GalleryManager
         self.gallery_manager = GalleryManager(self.tiles_container, self.tiles_layout)
@@ -1072,11 +1095,21 @@ class MainWindow(QMainWindow):
         self.filter_panel.setEnabled(True)  # Odblokuj panel filtrów
         is_gallery_populated = bool(self.gallery_manager.file_pairs_list)
         self.size_control_panel.setVisible(is_gallery_populated)
-        # Zakładka parowania zawsze widoczna
-
-        # Inicjalizacja drzewa katalogów
+        # Zakładka parowania zawsze widoczna        # Inicjalizacja drzewa katalogów
         logging.debug("Inicjalizacja drzewa katalogów...")
-        self.directory_tree_manager.init_directory_tree(self.current_working_directory)
+        logging.info(
+            f"DEBUG: current_working_directory = '{self.current_working_directory}'"
+        )
+        if self.current_working_directory:
+            logging.info("DEBUG: Wywołuję init_directory_tree...")
+            self.directory_tree_manager.init_directory_tree(
+                self.current_working_directory
+            )
+            logging.info("DEBUG: init_directory_tree zakończone")
+        else:
+            logging.warning(
+                "DEBUG: current_working_directory jest None - nie inicjalizuję drzewa"
+            )
 
         # Upewnij się że drzewo folderów jest widoczne
         if hasattr(self, "folder_tree"):

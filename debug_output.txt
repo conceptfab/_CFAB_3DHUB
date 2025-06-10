@@ -1,0 +1,74 @@
+2025-06-10 21:52:21,494 - root - INFO - System logowania zainicjalizowany
+2025-06-10 21:52:21,494 - root - INFO - Za³adowano style z: c:\_cloud\_CFAB_3DHUB\src\resources\styles.qss
+2025-06-10 21:52:21,498 - root - INFO - System logowania zainicjalizowany
+2025-06-10 21:52:21,516 - root - INFO - Stosowanie arkusza stylów (7902 bajtów)
+2025-06-10 21:52:21,517 - src.app_config - INFO - Konfiguracja wczytana z: C:/Users/micz/.CFAB_3DHUB/config.json
+2025-06-10 21:52:21,518 - root - INFO - Initial slider position set to: 50%, resulting thumbnail size: 175px
+2025-06-10 21:52:21,656 - root - INFO - ThreadCoordinator zainicjalizowany
+2025-06-10 21:52:21,667 - src.ui.directory_tree_manager - INFO - StatsProxyModel zainicjalizowany!
+2025-06-10 21:52:21,667 - src.ui.directory_tree_manager - INFO - DirectoryTreeManager: Utworzono StatsProxyModel
+2025-06-10 21:52:21,668 - root - INFO - \U0001f39b\ufe0f PREFERENCJE WCZYTANE POMYŒLNIE!
+2025-06-10 21:52:21,669 - root - INFO -   \U0001f4cf Thumbnail slider: 78%
+2025-06-10 21:52:21,669 - root - INFO -   \U0001f5c2\ufe0f Auto-load folder: True
+2025-06-10 21:52:21,669 - root - INFO -   \U0001f4c1 Ostatni folder: C:/_cloud/___TEST_FOLDER/
+2025-06-10 21:52:21,669 - root - INFO -   \U0001f4be Cache miniaturek: 500 szt.
+2025-06-10 21:52:21,669 - root - INFO -   \U0001f9e0 Pamiêæ cache: 100MB
+2025-06-10 21:52:21,669 - root - INFO - \U0001f504 Auto-loading ostatniego folderu: C:/_cloud/___TEST_FOLDER/
+2025-06-10 21:52:21,669 - root - INFO - \U0001f504 Auto-loading z domyœlnego folderu
+2025-06-10 21:52:21,669 - root - INFO - Wybrano folder roboczy: C:/_cloud/___TEST_FOLDER
+2025-06-10 21:52:21,670 - src.services.scanning_service - INFO - Rozpoczynam skanowanie: C:/_cloud/___TEST_FOLDER
+2025-06-10 21:52:21,670 - src.logic.scanner - INFO - Rozpoczêto ETAP 3 skanowanie katalogu: C:/_cloud/___TEST_FOLDER ze strategi¹ first_match
+2025-06-10 21:52:21,670 - src.logic.scanner - INFO - Rozpoczêto STREAMING zbieranie plików z katalogu: C:/_cloud/___TEST_FOLDER
+2025-06-10 21:52:21,670 - src.logic.scanner - INFO - Zakoñczono STREAMING zbieranie plików. Przeskanowano 1 folderów, znaleziono 0 plików w czasie 0.00s
+2025-06-10 21:52:21,670 - src.logic.scanner - INFO - Zakoñczono ETAP 3 skanowanie 'C:/_cloud/___TEST_FOLDER' w czasie 0.00s. Znaleziono 0 par, 0 niesparowanych archiwów i 0 niesparowanych podgl¹dów.
+2025-06-10 21:52:21,670 - src.services.scanning_service - INFO - Skanowanie zakoñczone: 0 par, 0 niesparowanych archiwów, 0 niesparowanych podgl¹dów
+2025-06-10 21:52:21,670 - root - INFO - Zakoñczono tworzenie wszystkich kafelków.
+2025-06-10 21:52:21,671 - root - INFO - DEBUG: current_working_directory = 'C:/_cloud/___TEST_FOLDER'
+2025-06-10 21:52:21,671 - root - INFO - DEBUG: Wywo³ujê init_directory_tree...
+2025-06-10 21:52:21,671 - src.ui.directory_tree_manager - INFO - INIT_DIRECTORY_TREE wywo³ane dla: C:/_cloud/___TEST_FOLDER
+2025-06-10 21:52:21,672 - root - INFO - Znaleziono 5 folderów z plikami w: C:/_cloud/___TEST_FOLDER
+2025-06-10 21:52:21,673 - root - INFO - Drzewo katalogów zainicjalizowane - g³ówny folder: C:/_cloud/___TEST_FOLDER, foldery z plikami: 5
+2025-06-10 21:52:21,675 - root - INFO - Zaznaczono aktualny folder w drzewie: C:/_cloud/___TEST_FOLDER
+2025-06-10 21:52:21,675 - root - INFO - DEBUG: init_directory_tree zakoñczone
+2025-06-10 21:52:21,675 - root - INFO - \U0001f504 _save_metadata wywo³ane - katalog: C:/_cloud/___TEST_FOLDER
+2025-06-10 21:52:21,675 - root - INFO - Widok zaktualizowany. Wyœwietlono po filtracji: 0.
+2025-06-10 21:52:21,675 - src.controllers.main_window_controller - INFO - Skanowanie ukoñczone: 0 par, 0 archiwów, 0 podgl¹dów
+2025-06-10 21:52:21,676 - root - INFO - Controller scan SUCCESS: C:/_cloud/___TEST_FOLDER
+2025-06-10 21:52:21,676 - root - INFO - G³ówne okno aplikacji zosta³o zainicjalizowane
+2025-06-10 21:52:22,032 - root - INFO - Aplikacja CFAB_3DHUB uruchomiona poprzez main()
+2025-06-10 21:52:22,032 - src.logic.metadata_manager - INFO - Rozpoczêcie zapisu metadanych dla katalogu: C:/_cloud/___TEST_FOLDER
+2025-06-10 21:52:22,035 - src.logic.metadata_manager - INFO - Pomyœlnie zapisano metadane do C:/_cloud/___TEST_FOLDER/.app_metadata/metadata.json
+2025-06-10 21:52:22,035 - src.ui.delegates.workers - INFO - SaveMetadataWorker: Zakoñczono pomyœlnie
+2025-06-10 21:52:22,177 - root - INFO - \u2705 Metadane zapisane pomyœlnie.
+2025-06-10 21:52:22,205 - src.logic.scanner - INFO - Rozpoczêto ETAP 3 skanowanie katalogu: C:/_cloud/___TEST_FOLDER/test ze strategi¹ first_match
+2025-06-10 21:52:22,205 - src.logic.scanner - INFO - Rozpoczêto STREAMING zbieranie plików z katalogu: C:/_cloud/___TEST_FOLDER/test
+2025-06-10 21:52:22,206 - src.logic.scanner - INFO - Zakoñczono STREAMING zbieranie plików. Przeskanowano 1 folderów, znaleziono 36 plików w czasie 0.00s
+2025-06-10 21:52:22,207 - src.logic.scanner - INFO - Zakoñczono ETAP 3 skanowanie 'C:/_cloud/___TEST_FOLDER/test' w czasie 0.00s. Znaleziono 18 par, 0 niesparowanych archiwów i 0 niesparowanych podgl¹dów.
+2025-06-10 21:52:22,207 - src.ui.delegates.workers - INFO - FolderStatisticsWorker: Zakoñczono pomyœlnie
+2025-06-10 21:52:22,209 - src.logic.scanner - INFO - Rozpoczêto ETAP 3 skanowanie katalogu: C:/_cloud/___TEST_FOLDER/Vehicle/bikes ze strategi¹ first_match
+2025-06-10 21:52:22,210 - src.logic.scanner - INFO - Rozpoczêto ETAP 3 skanowanie katalogu: C:/_cloud/___TEST_FOLDER/Vehicle/motors ze strategi¹ first_match
+2025-06-10 21:52:22,210 - src.logic.scanner - INFO - Rozpoczêto STREAMING zbieranie plików z katalogu: C:/_cloud/___TEST_FOLDER/Vehicle/bikes
+2025-06-10 21:52:22,210 - src.logic.scanner - INFO - Rozpoczêto STREAMING zbieranie plików z katalogu: C:/_cloud/___TEST_FOLDER/Vehicle/motors
+2025-06-10 21:52:22,212 - src.logic.scanner - INFO - Zakoñczono STREAMING zbieranie plików. Przeskanowano 1 folderów, znaleziono 26 plików w czasie 0.00s
+2025-06-10 21:52:22,212 - src.logic.scanner - INFO - Zakoñczono STREAMING zbieranie plików. Przeskanowano 1 folderów, znaleziono 20 plików w czasie 0.00s
+2025-06-10 21:52:22,213 - src.logic.scanner - INFO - Zakoñczono ETAP 3 skanowanie 'C:/_cloud/___TEST_FOLDER/Vehicle/bikes' w czasie 0.00s. Znaleziono 13 par, 0 niesparowanych archiwów i 0 niesparowanych podgl¹dów.
+2025-06-10 21:52:22,213 - src.ui.delegates.workers - INFO - FolderStatisticsWorker: Zakoñczono pomyœlnie
+2025-06-10 21:52:22,214 - src.logic.scanner - INFO - Zakoñczono ETAP 3 skanowanie 'C:/_cloud/___TEST_FOLDER/Vehicle/motors' w czasie 0.00s. Znaleziono 10 par, 0 niesparowanych archiwów i 0 niesparowanych podgl¹dów.
+2025-06-10 21:52:22,214 - src.ui.delegates.workers - INFO - FolderStatisticsWorker: Zakoñczono pomyœlnie
+2025-06-10 21:52:22,221 - src.logic.scanner - INFO - Rozpoczêto ETAP 3 skanowanie katalogu: C:/_cloud/___TEST_FOLDER/Vehicle ze strategi¹ first_match
+2025-06-10 21:52:22,222 - src.logic.scanner - INFO - Rozpoczêto STREAMING zbieranie plików z katalogu: C:/_cloud/___TEST_FOLDER/Vehicle
+2025-06-10 21:52:22,223 - src.logic.scanner - INFO - Zakoñczono STREAMING zbieranie plików. Przeskanowano 1 folderów, znaleziono 138 plików w czasie 0.00s
+2025-06-10 21:52:22,224 - src.logic.scanner - INFO - Zakoñczono ETAP 3 skanowanie 'C:/_cloud/___TEST_FOLDER/Vehicle' w czasie 0.00s. Znaleziono 65 par, 7 niesparowanych archiwów i 1 niesparowanych podgl¹dów.
+2025-06-10 21:52:22,224 - src.ui.delegates.workers - INFO - FolderStatisticsWorker: Zakoñczono pomyœlnie
+2025-06-10 21:52:22,226 - src.logic.scanner - INFO - Rozpoczêto ETAP 3 skanowanie katalogu: C:/_cloud/___TEST_FOLDER/_test ze strategi¹ first_match
+2025-06-10 21:52:22,226 - src.logic.scanner - INFO - Rozpoczêto STREAMING zbieranie plików z katalogu: C:/_cloud/___TEST_FOLDER/_test
+2025-06-10 21:52:22,228 - src.logic.scanner - INFO - Zakoñczono STREAMING zbieranie plików. Przeskanowano 1 folderów, znaleziono 328 plików w czasie 0.00s
+2025-06-10 21:52:22,230 - src.logic.scanner - INFO - Zakoñczono ETAP 3 skanowanie 'C:/_cloud/___TEST_FOLDER/_test' w czasie 0.00s. Znaleziono 159 par, 2 niesparowanych archiwów i 8 niesparowanych podgl¹dów.
+2025-06-10 21:52:22,230 - src.ui.delegates.workers - INFO - FolderStatisticsWorker: Zakoñczono pomyœlnie
+2025-06-10 21:52:22,233 - src.logic.scanner - INFO - CACHE HIT (legacy): U¿ywam buforowanych wyników dla C:/_cloud/___TEST_FOLDER ze strategi¹ first_match
+2025-06-10 21:52:22,233 - src.ui.delegates.workers - INFO - FolderStatisticsWorker: Zakoñczono pomyœlnie
+2025-06-10 21:52:28,738 - root - INFO - Czyszczenie wszystkich w¹tków...
+2025-06-10 21:52:28,738 - root - INFO - Wszystkie w¹tki wyczyszczone
+Root in path: c:\_cloud\_CFAB_3DHUB
+Wczytywanie stylów z: c:\_cloud\_CFAB_3DHUB\src\resources\styles.qss
+Za³adowano 7902 bajtów stylów (UTF-8)
