@@ -1,392 +1,257 @@
-# MAPA PROJEKTU - CFAB_3DHUB
+# MAPA PROJEKTU CFAB_3DHUB
 
-**Wersja:** 1.0  
-**Data utworzenia:** 2025-06-09  
-**Status audytu:** ✅ KOMPLETNY - ETAP 1 i ETAP 2 ukończone
+## ETAP 1: WSTĘPNA ANALIZA I MAPOWANIE PROJEKTU
 
-## SPIS TREŚCI
-
-1. [Przegląd systemu](#przegląd-systemu)
-2. [Architektura projektu](#architektura-projektu)
-3. [Analiza plików według priorytetów](#analiza-plików-według-priorytetów)
-4. [Problemy krytyczne](#problemy-krytyczne)
-5. [Plan etapu 2](#plan-etapu-2)
+**Data utworzenia:** Zgodnie z audytem w \_audyt.md  
+**Status:** ETAP 1 ZAKOŃCZONY
 
 ---
 
-## PRZEGLĄD SYSTEMU
+## 📊 STRUKTURA PROJEKTU
 
-**Typ aplikacji:** Aplikacja PyQt6 do zarządzania archiwami i podglądami plików  
-**Główny problem:** Bardzo częste cleanup cache miniaturek (co ~200-500ms) powodujące problemy wydajności  
-**Architektura:** Wzorzec MVC z wyraźnym podziałem na warstwy logiki, UI i modeli
+### CFAB_3DHUB/
 
-### Kluczowe funkcjonalności:
-
-- Skanowanie folderów w poszukiwaniu par archiwum+podgląd
-- Wyświetlanie galerii miniaturek z cache'owaniem
-- Operacje na plikach (przenoszenie, usuwanie, kopiowanie)
-- Zarządzanie metadanymi
-- System filtrowania plików
-- Asynchroniczne przetwarzanie z workerami
-
----
-
-## ARCHITEKTURA PROJEKTU
-
-```
-CFAB_3DHUB/
-├── run_app.py              🟢 [PUNKT WEJŚCIA]
-├── src/
-│   ├── main.py             🟡 [INICJALIZACJA]
-│   ├── app_config.py       🟡 [KONFIGURACJA]
-│   ├── logic/              🔴 [LOGIKA BIZNESOWA]
-│   │   ├── scanner.py      🔴 [SKANOWANIE]
-│   │   ├── file_operations.py 🟡 [OPERACJE PLIKOWE]
-│   │   ├── filter_logic.py 🟢 [FILTROWANIE]
-│   │   └── metadata_manager.py 🟡 [METADANE]
-│   ├── models/             🟢 [MODELE DANYCH]
-│   │   └── file_pair.py    🟢 [MODEL PARY]
-│   ├── ui/                 🔴 [INTERFEJS UŻYTKOWNIKA]
-│   │   ├── main_window.py  🔴 [GŁÓWNE OKNO]
-│   │   ├── gallery_manager.py 🔴 [GALERIA]
-│   │   ├── directory_tree_manager.py 🟡 [DRZEWO]
-│   │   ├── file_operations_ui.py 🟡 [UI OPERACJI]
-│   │   ├── delegates/      🟡 [WORKERY]
-│   │   │   ├── scanner_worker.py 🟡 [WORKER SKANOWANIA]
-│   │   │   └── workers.py  🟡 [WORKERY OGÓLNE]
-│   │   └── widgets/        🔴 [WIDGETY UI]
-│   │       ├── thumbnail_cache.py 🔴 [CACHE MINIATUREK - KRYTYCZNY!]
-│   │       ├── file_tile_widget.py 🟡 [KAFELEK PLIKU]
-│   │       ├── filter_panel.py 🟢 [PANEL FILTRÓW]
-│   │       ├── preview_dialog.py 🟡 [DIALOG PODGLĄDU]
-│   │       ├── metadata_controls_widget.py 🟡 [KONTROLKI METADANYCH]
-│   │       └── tile_styles.py 🟢 [STYLE KAFELKÓW]
-│   └── utils/              🟡 [NARZĘDZIA POMOCNICZE]
-│       ├── logging_config.py 🟢 [KONFIGURACJA LOGÓW]
-│       ├── arg_parser.py   🟢 [PARSER ARGUMENTÓW]
-│       ├── style_loader.py 🟢 [ŁADOWACZ STYLÓW]
-│       ├── path_utils.py   🟡 [NARZĘDZIA ŚCIEŻEK]
-│       └── image_utils.py  🟡 [NARZĘDZIA OBRAZÓW]
-├── tests/                  [POMIJANE W AUDYCIE]
-└── requirements.txt        🟢 [ZALEŻNOŚCI]
-```
-
-**Legenda priorytetów:**
-
-- 🔴 **WYSOKI** - Krytyczne problemy wydajności/stabilności, wymagają natychmiastowej analizy
-- 🟡 **ŚREDNI** - Ważne komponenty, mogą mieć problemy wydajności lub architektury
-- 🟢 **NISKI** - Stabilne komponenty, drobne ulepszenia lub dokumentacja
+├── **run_app.py** 🔴 **WYSOKI PRIORYTET** - Główny plik uruchomieniowy, problemy z konfiguracją sys.path i obsługą błędów
+├── **src/**
+│ ├── **main.py** 🔴 **WYSOKI PRIORYTET** - Punkt wejścia aplikacji, nadmiarowa obsługa wyjątków, błędna logika uruchamiania
+│ ├── **app_config.py** 🟡 **ŚREDNI PRIORYTET** - System konfiguracji, do optymalizacji walidacji i cache
+│ ├── ****init**.py** 🟢 **NISKI PRIORYTET** - Podstawowy plik inicjalizacyjny
+│ ├── **controllers/**
+│ │ └── **main_window_controller.py** 🟡 **ŚREDNI PRIORYTET** - Kontroler głównego okna, wymagana implementacja wzorca MVC
+│ ├── **logic/**
+│ │ ├── **scanner.py** 🔴 **WYSOKI PRIORYTET** - Główny moduł skanowania, bardzo duży (916 linii), problemy z wydajnością cache
+│ │ ├── **metadata_manager.py** 🟡 **ŚREDNI PRIORYTET** - Zarządzanie metadanymi, wymagana optymalizacja I/O
+│ │ ├── **file_operations.py** 🟡 **ŚREDNI PRIORYTET** - Operacje na plikach, wymagana refaktoryzacja
+│ │ ├── **filter_logic.py** 🟢 **NISKI PRIORYTET** - Logika filtrowania, analiza nieużywanego kodu
+│ │ └── ****init**.py** 🟢 **NISKI PRIORYTET** - Plik inicjalizacyjny modułu
+│ ├── **models/**
+│ │ ├── **file_pair.py** 🟡 **ŚREDNI PRIORYTET** - Model danych par plików, optymalizacja struktury
+│ │ └── ****init**.py** 🟢 **NISKI PRIORYTET** - Plik inicjalizacyjny modułu
+│ ├── **services/**
+│ │ ├── **scanning_service.py** 🟡 **ŚREDNI PRIORYTET** - Usługa skanowania, duplikacja z logic/scanner
+│ │ ├── **file_operations_service.py** 🟡 **ŚREDNI PRIORYTET** - Usługa operacji na plikach, duplikacja funkcjonalności
+│ │ ├── **thread_coordinator.py** 🟡 **ŚREDNI PRIORYTET** - Koordynacja wątków, wymagana optymalizacja
+│ │ └── ****init**.py** 🟢 **NISKI PRIORYTET** - Plik inicjalizacyjny modułu
+│ ├── **ui/**
+│ │ ├── **main_window.py** 🔴 **WYSOKI PRIORYTET** - Główne okno UI (2010 linii), nadmiernie skomplikowane, wymagana refaktoryzacja
+│ │ ├── **directory_tree_manager.py** 🔴 **WYSOKI PRIORYTET** - Manager drzewa katalogów (1687 linii), problemy z wydajnością
+│ │ ├── **file_operations_ui.py** 🟡 **ŚREDNI PRIORYTET** - UI operacji na plikach, duplikacja logiki
+│ │ ├── **gallery_manager.py** 🟡 **ŚREDNI PRIORYTET** - Manager galerii, wymagana optymalizacja
+│ │ ├── **gallery_manager_fixed.py** 🟢 **NISKI PRIORYTET** - Duplikat gallery_manager.py, do usunięcia
+│ │ ├── **fixed_folder_stats_worker.py** 🟢 **NISKI PRIORYTET** - Pusty plik, do usunięcia
+│ │ ├── ****init**.py** 🟢 **NISKI PRIORYTET** - Plik inicjalizacyjny modułu
+│ │ ├── **delegates/**
+│ │ │ ├── **workers.py** 🔴 **WYSOKI PRIORYTET** - Workery do zadań w tle (2067 linii), bardzo skomplikowane, duplikacja kodu
+│ │ │ ├── **scanner_worker.py** 🟡 **ŚREDNI PRIORYTET** - Worker skanowania, duplikacja z workers.py
+│ │ │ └── ****init**.py** 🟢 **NISKI PRIORYTET** - Plik inicjalizacyjny modułu
+│ │ └── **widgets/**
+│ │ ├── **file_tile_widget.py** 🟡 **ŚREDNI PRIORYTET** - Widget kafelka pliku, optymalizacja renderowania
+│ │ ├── **file_tile_widget.py.new** 🟢 **NISKI PRIORYTET** - Nowa wersja, do scalenia lub usunięcia
+│ │ ├── **file_tile_widget.py.fixed** 🟢 **NISKI PRIORYTET** - Pusty plik, do usunięcia
+│ │ ├── **preferences_dialog.py** 🟡 **ŚREDNI PRIORYTET** - Dialog preferencji, wymagana optymalizacja
+│ │ ├── **thumbnail_cache.py** 🟡 **ŚREDNI PRIORYTET** - Cache miniaturek, problemy z zarządzaniem pamięcią
+│ │ ├── **metadata_controls_widget.py** 🟢 **NISKI PRIORYTET** - Widget kontroli metadanych
+│ │ ├── **preview_dialog.py** 🟢 **NISKI PRIORYTET** - Dialog podglądu
+│ │ ├── **filter_panel.py** 🟢 **NISKI PRIORYTET** - Panel filtrów
+│ │ ├── **tile_styles.py** 🟢 **NISKI PRIORYTET** - Style kafelków
+│ │ └── ****init**.py** 🟢 **NISKI PRIORYTET** - Plik inicjalizacyjny modułu
+│ ├── **utils/**
+│ │ ├── **path_utils.py** 🟡 **ŚREDNI PRIORYTET** - Utility ścieżek, wymagana optymalizacja
+│ │ ├── **image_utils.py** 🟢 **NISKI PRIORYTET** - Utility obrazów
+│ │ ├── **logging_config.py** 🟢 **NISKI PRIORYTET** - Konfiguracja logowania
+│ │ ├── **arg_parser.py** 🟢 **NISKI PRIORYTET** - Parser argumentów
+│ │ ├── **style_loader.py** 🟢 **NISKI PRIORYTET** - Ładowacz stylów
+│ │ └── ****init**.py** 🟢 **NISKI PRIORYTET** - Plik inicjalizacyjny modułu
+│ └── **resources/**
+│ └── **styles.qss** 🟢 **NISKI PRIORYTET** - Arkusz stylów Qt
+├── **requirements.txt** 🟢 **NISKI PRIORYTET** - Zależności projektu
+└── **pytest.ini** 🟢 **NISKI PRIORYTET** - Konfiguracja testów
 
 ---
 
-## ANALIZA PLIKÓW WEDŁUG PRIORYTETÓW
+## 🎯 WSTĘPNA ANALIZA PLIKÓW
 
-### 🔴 PRIORYTET WYSOKI (Krytyczne)
+### 🔴 WYSOKÍ PRIORYTET - Krytyczne problemy wydajności i struktury
 
-#### `src/ui/widgets/thumbnail_cache.py` 🔴
+#### **run_app.py**
 
-**Funkcjonalność:** Singleton cache miniaturek z mechanizmem LRU  
-**Problem krytyczny:** Bardzo częste `_cleanup_cache()` co ~200-500ms powoduje:
+- **Funkcjonalność:** Główny punkt wejścia aplikacji z obsługą argumentów CLI
+- **Wydajność:** Niski wpływ, ale krytyczne dla działania całej aplikacji
+- **Stan obecny:** Problemy z konfiguracją sys.path, nadmierna obsługa błędów, mieszanie logiki
+- **Zależności:** src/main.py, src/utils/\*
+- **Priorytet poprawek:** NATYCHMIASTOWY - podstawa działania aplikacji
 
-- Blokowanie UI podczas cleanup
-- Nadmierne zużycie CPU
-- Problemy z responsywnością przy tysiącach plików
+#### **src/main.py**
 
-**Stan obecny:**
+- **Funkcjonalność:** Inicjalizacja aplikacji Qt, obsługa wyjątków globalnych
+- **Wydajność:** Krytyczny wpływ na startowalność aplikacji
+- **Stan obecny:** Nadmiarowa obsługa wyjątków, niepotrzebna logika uruchamiania bezpośredniego
+- **Zależności:** PyQt6, src/ui/main_window.py, src/utils/logging_config.py
+- **Priorytet poprawek:** NATYCHMIASTOWY - centralne miejsce startu aplikacji
 
-- Implementacja LRU z OrderedDict
-- Cleanup gdy >70% limitu (domyślnie 500 elementów, 200MB)
-- Szacowanie rozmiaru: `width * height * 4` bajtów
-- Synchroniczne ładowanie miniaturek blokuje UI
+#### **src/logic/scanner.py** (916 linii)
 
-**Zależności:** `app_config`, `image_utils`, `path_utils`  
-**Priorytet poprawek:** 🔴 NAJWYŻSZY - optymalizacja cleanup, asynchroniczne operacje
+- **Funkcjonalność:** Skanowanie folderów, parowanie plików, cache wyników
+- **Wydajność:** KRYTYCZNY wpływ - obsługuje tysiące plików, główna funkcjonalność
+- **Stan obecny:** Bardzo duży plik, skomplikowany cache, problemy z wydajnością przy dużych zbiorach danych
+- **Zależności:** src/models/file_pair.py, src/utils/path_utils.py, src/app_config.py
+- **Priorytet poprawek:** NATYCHMIASTOWY - serce aplikacji
 
-#### `src/ui/main_window.py` 🔴
+#### **src/ui/main_window.py** (2010 linii)
 
-**Funkcjonalność:** Główne okno aplikacji (1254 linii)
-**Problem:** Bardzo duży plik, prawdopodobnie naruszenie SRP  
-**Stan obecny:** Zarządza UI, eventy, statusbar, progress dialogi  
-**Zależności:** Wszystkie główne komponenty UI i logika  
-**Priorytet poprawek:** 🔴 WYSOKI - refaktoryzacja na mniejsze klasy
+- **Funkcjonalność:** Główne okno aplikacji, zarządzanie UI i stanem
+- **Wydajność:** Wysoki wpływ na responsywność interfejsu
+- **Stan obecny:** Nadmiernie skomplikowane, za dużo odpowiedzialności, problemy z separacją logiki
+- **Zależności:** PyQt6, wszystkie pozostałe moduły UI, services, logic
+- **Priorytet poprawek:** NATYCHMIASTOWY - monolityczna struktura
 
-#### `src/logic/scanner.py` 🔴
+#### **src/ui/directory_tree_manager.py** (1687 linii)
 
-**Funkcjonalność:** Skanowanie folderów i parowanie plików (628 linii)
-**Problem:** Duży plik, skomplikowana logika cache i skanowania  
-**Stan obecny:** Cache skanowania, asynchroniczne workery, parowanie archiwów  
-**Zależności:** `app_config`, `file_pair`, `path_utils`  
-**Priorytet poprawek:** 🔴 WYSOKI - optymalizacja cache, podział na moduły
+- **Funkcjonalność:** Zarządzanie drzewem katalogów, drag&drop, statystyki folderów
+- **Wydajność:** Wysoki wpływ na nawigację po folderach
+- **Stan obecny:** Bardzo duży plik, problemy z wydajnością przy dużych struktur folderów
+- **Zależności:** PyQt6, src/logic/scanner.py, src/logic/file_operations.py
+- **Priorytet poprawek:** NATYCHMIASTOWY - kluczowa funkcjonalność
 
-#### `src/ui/gallery_manager.py` 🔴
+#### **src/ui/delegates/workers.py** (2067 linii)
 
-**Funkcjonalność:** Zarządzanie galerią miniaturek  
-**Problem:** Współpracuje z problematycznym thumbnail_cache  
-**Stan obecny:** Wyświetlanie siatki miniaturek, lazy loading  
-**Zależności:** `thumbnail_cache`, `file_tile_widget`  
-**Priorytet poprawek:** 🔴 WYSOKI - optymalizacja ładowania miniaturek
+- **Funkcjonalność:** Wszystkie workery do zadań w tle (skanowanie, operacje na plikach)
+- **Wydajność:** KRYTYCZNY wpływ na wszystkie operacje w tle
+- **Stan obecny:** Największy plik, bardzo skomplikowany, duplikacja kodu między workerami
+- **Zależności:** PyQt6, src/logic/_, src/models/_, src/utils/\*
+- **Priorytet poprawek:** NATYCHMIASTOWY - refaktoryzacja i podział na mniejsze moduły
 
-### 🟡 PRIORYTET ŚREDNI
+### 🟡 ŚREDNI PRIORYTET - Ważne optymalizacje i ulepszenia
 
-#### `src/main.py` 🟡
+#### **src/app_config.py**
 
-**Funkcjonalność:** Inicjalizacja aplikacji, global exception handler  
-**Stan obecny:** 138 linii, podstawowa inicjalizacja PyQt6  
-**Problem:** Brak zaawansowanej obsługi błędów  
-**Zależności:** `main_window`, `logging_config`  
-**Priorytet poprawek:** 🟡 ŚREDNI - rozbudowa obsługi błędów
+- **Funkcjonalność:** Zarządzanie konfiguracją aplikacji, walidacja ustawień
+- **Wydajność:** Średni wpływ, ładowanie przy starcie
+- **Stan obecny:** Dobrze napisane, wymagana optymalizacja walidatorów i cache
+- **Zależności:** json, src/utils/path_utils.py
+- **Priorytet poprawek:** Średni - optymalizacja walidacji
 
-#### `src/app_config.py` 🟡
+#### **src/controllers/main_window_controller.py**
 
-**Funkcjonalność:** Centralna konfiguracja aplikacji  
-**Stan obecny:** Zawiera ustawienia cache, rozszerzenia plików, limity  
-**Problem:** Może wymagać reorganizacji dla lepszej skalowalności  
-**Zależności:** Używane przez wszystkie moduły  
-**Priorytet poprawek:** 🟡 ŚREDNI - kategorizacja ustawień
+- **Funkcjonalność:** Kontroler wzorca MVC dla głównego okna
+- **Wydajność:** Średni wpływ na organizację kodu
+- **Stan obecny:** Wymaga pełnej implementacji wzorca MVC
+- **Zależności:** src/ui/main_window.py
+- **Priorytet poprawek:** Średni - implementacja architektury MVC
 
-#### `src/logic/file_operations.py` 🟡
+#### **src/logic/metadata_manager.py**
 
-**Funkcjonalność:** Operacje na plikach (kopiowanie, przenoszenie, usuwanie)  
-**Stan obecny:** Synchroniczne operacje plikowe  
-**Problem:** Może blokować UI przy dużych plikach  
-**Zależności:** `path_utils`, system plików  
-**Priorytet poprawek:** 🟡 ŚREDNI - asynchroniczne operacje
+- **Funkcjonalność:** Zarządzanie metadanymi plików (gwiazdy, kolory, komentarze)
+- **Wydajność:** Średni wpływ, operacje I/O na metadanych
+- **Stan obecny:** Wymagana optymalizacja operacji I/O i cache
+- **Zależności:** json, src/models/file_pair.py, src/utils/path_utils.py
+- **Priorytet poprawek:** Średni - optymalizacja I/O
 
-#### `src/logic/metadata_manager.py` 🟡
+#### **src/services/** (wszystkie pliki)
 
-**Funkcjonalność:** Zarządzanie metadanymi plików  
-**Stan obecny:** Odczyt/zapis metadanych  
-**Problem:** Może być nieefektywne przy dużej liczbie plików  
-**Zależności:** `file_pair`, system plików  
-**Priorytet poprawek:** 🟡 ŚREDNI - cache metadanych
+- **Funkcjonalność:** Warstwa serwisowa aplikacji
+- **Wydajność:** Średni wpływ, abstrakcja biznesowa
+- **Stan obecny:** Duplikacja funkcjonalności z logic/, niejasna architektura
+- **Zależności:** src/logic/_, src/models/_
+- **Priorytet poprawek:** Średni - refaktoryzacja architektury
 
-#### `src/ui/directory_tree_manager.py` 🟡
+#### **src/models/file_pair.py**
 
-**Funkcjonalność:** Zarządzanie drzewem katalogów  
-**Stan obecny:** QTreeView z file system model  
-**Problem:** Może być wolne dla dużych struktury folderów  
-**Zależności:** PyQt6 QFileSystemModel  
-**Priorytet poprawek:** 🟡 ŚREDNI - optymalizacja wydajności
+- **Funkcjonalność:** Model danych reprezentujący parę plików (archiwum + podgląd)
+- **Wydajność:** Średni wpływ, używany wszędzie
+- **Stan obecny:** Dobrze napisane, wymagana optymalizacja struktury danych
+- **Zależności:** src/utils/path_utils.py
+- **Priorytet poprawek:** Średni - optymalizacja wydajności
 
-#### `src/ui/file_operations_ui.py` 🟡
+#### **src/ui/widgets/** (główne pliki)
 
-**Funkcjonalność:** UI dla operacji na plikach  
-**Stan obecny:** Dialogi i progress bary  
-**Problem:** Synchronizacja z operacjami w tle  
-**Zależności:** `file_operations`, `workers`  
-**Priorytet poprawek:** 🟡 ŚREDNI - lepsze UI feedback
+- **Funkcjonalność:** Komponenty interfejsu użytkownika
+- **Wydajność:** Średni wpływ na wydajność renderowania
+- **Stan obecny:** Wymagane optymalizacje renderowania i zarządzania pamięcią
+- **Zależności:** PyQt6, src/models/\*
+- **Priorytet poprawek:** Średni - optymalizacja UI
 
-#### `src/ui/delegates/scanner_worker.py` 🟡
+#### **src/utils/path_utils.py**
 
-**Funkcjonalność:** Worker do asynchronicznego skanowania  
-**Stan obecny:** QRunnable dla skanowania w tle  
-**Problem:** Może wymagać optymalizacji komunikacji z UI  
-**Zależności:** `scanner`, PyQt6 threading  
-**Priorytet poprawek:** 🟡 ŚREDNI - optymalizacja sygnałów
+- **Funkcjonalność:** Utility do obsługi ścieżek plików
+- **Wydajność:** Średni wpływ, używane wszędzie
+- **Stan obecny:** Wymagana optymalizacja normalizacji ścieżek
+- **Zależności:** os, pathlib
+- **Priorytet poprawek:** Średni - optymalizacja funkcji
 
-#### `src/ui/delegates/workers.py` 🟡
+### 🟢 NISKI PRIORYTET - Drobne poprawki i czyszczenie
 
-**Funkcjonalność:** Ogólne workery do operacji w tle  
-**Stan obecny:** BulkDeleteWorker, BulkMoveWorker, etc.  
-**Problem:** Możliwe dublowanie kodu między workerami  
-**Zależności:** PyQt6 threading, `file_operations`  
-**Priorytet poprawek:** 🟡 ŚREDNI - refaktoryzacja wspólnego kodu
+#### Pliki do usunięcia/scalenia:
 
-#### `src/ui/widgets/file_tile_widget.py` 🟡
+- **src/ui/gallery_manager_fixed.py** - Duplikat gallery_manager.py
+- **src/ui/fixed_folder_stats_worker.py** - Pusty plik
+- **src/ui/widgets/file_tile_widget.py.fixed** - Pusty plik
+- **src/ui/widgets/file_tile_widget.py.new** - Do scalenia z głównym plikiem
 
-**Funkcjonalność:** Widget kafelka pojedynczego pliku  
-**Stan obecny:** Wyświetlanie miniatury, nazwy, metadanych  
-**Problem:** Może mieć problemy z wydajnością przy dużej liczbie kafelków  
-**Zależności:** `thumbnail_cache`, `file_pair`  
-**Priorytet poprawek:** 🟡 ŚREDNI - optymalizacja rendering
+#### Pliki konfiguracyjne i pomocnicze:
 
-#### `src/ui/widgets/preview_dialog.py` 🟡
-
-**Funkcjonalność:** Dialog podglądu plików  
-**Stan obecny:** Wyświetlanie podglądu obrazów/archiwów  
-**Problem:** Może wymagać optymalizacji ładowania dużych plików  
-**Zależności:** `image_utils`, PyQt6  
-**Priorytet poprawek:** 🟡 ŚREDNI - lazy loading
-
-#### `src/ui/widgets/metadata_controls_widget.py` 🟡
-
-**Funkcjonalność:** Kontrolki do edycji metadanych  
-**Stan obecny:** UI dla edycji tagów, opisów  
-**Problem:** Może wymagać validacji i lepszego UX  
-**Zależności:** `metadata_manager`  
-**Priorytet poprawek:** 🟡 ŚREDNI - validation, UX
-
-#### `src/utils/path_utils.py` 🟡
-
-**Funkcjonalność:** Narzędzia do obsługi ścieżek  
-**Stan obecny:** Normalizacja ścieżek, walidacja  
-**Problem:** Może wymagać obsługi edge cases  
-**Zależności:** os, pathlib  
-**Priorytet poprawek:** 🟡 ŚREDNI - edge cases, performance
-
-#### `src/utils/image_utils.py` 🟡
-
-**Funkcjonalność:** Narzędzia do obsługi obrazów  
-**Stan obecny:** Konwersje PIL<->QPixmap, crop_to_square  
-**Problem:** Może być nieefektywne dla dużych obrazów  
-**Zależności:** PIL, PyQt6  
-**Priorytet poprawek:** 🟡 ŚREDNI - optymalizacja pamięci
-
-### 🟢 PRIORYTET NISKI (Stabilne)
-
-#### `run_app.py` 🟢
-
-**Funkcjonalność:** Punkt wejścia aplikacji z parsowaniem argumentów  
-**Stan obecny:** 83 linie, obsługa argumentów, ładowanie stylów  
-**Problem:** Brak istotnych problemów  
-**Zależności:** `main`, `arg_parser`, `style_loader`  
-**Priorytet poprawek:** 🟢 NISKI - drobne ulepszenia UX
-
-#### `src/models/file_pair.py` 🟢
-
-**Funkcjonalność:** Model danych dla pary plik+podgląd  
-**Stan obecny:** Dataclass z metadanymi  
-**Problem:** Brak istotnych problemów  
-**Zależności:** dataclass, typing  
-**Priorytet poprawek:** 🟢 NISKI - rozszerzenie o dodatkowe pola
-
-#### `src/logic/filter_logic.py` 🟢
-
-**Funkcjonalność:** Logika filtrowania list plików  
-**Stan obecny:** Filtry według rozmiaru, daty, nazwy  
-**Problem:** Brak istotnych problemów  
-**Zależności:** `file_pair`  
-**Priorytet poprawek:** 🟢 NISKI - dodanie nowych filtrów
-
-#### `src/ui/widgets/filter_panel.py` 🟢
-
-**Funkcjonalność:** Panel z kontrolkami filtrów  
-**Stan obecny:** UI dla ustawienia filtrów  
-**Problem:** Brak istotnych problemów  
-**Zależności:** `filter_logic`, PyQt6  
-**Priorytet poprawek:** 🟢 NISKI - rozszerzenie funkcjonalności
-
-#### `src/ui/widgets/tile_styles.py` 🟢
-
-**Funkcjonalność:** Style CSS dla kafelków  
-**Stan obecny:** Definicje stylów dla różnych motywów  
-**Problem:** Brak istotnych problemów  
-**Zależności:** brak  
-**Priorytet poprawek:** 🟢 NISKI - nowe motywy
-
-#### `src/utils/logging_config.py` 🟢
-
-**Funkcjonalność:** Konfiguracja systemu logowania  
-**Stan obecny:** Ustawienia logów do pliku i konsoli  
-**Problem:** Brak istotnych problemów  
-**Zależności:** logging  
-**Priorytet poprawek:** 🟢 NISKI - rozbudowa opcji
-
-#### `src/utils/arg_parser.py` 🟢
-
-**Funkcjonalność:** Parser argumentów linii poleceń  
-**Stan obecny:** argparse z podstawowymi opcjami  
-**Problem:** Brak istotnych problemów  
-**Zależności:** argparse  
-**Priorytet poprawek:** 🟢 NISKI - dodanie nowych opcji
-
-#### `src/utils/style_loader.py` 🟢
-
-**Funkcjonalność:** Ładowacz stylów CSS dla PyQt6  
-**Stan obecny:** Ładowanie plików CSS z dysku  
-**Problem:** Brak istotnych problemów  
-**Zależności:** os, PyQt6  
-**Priorytet poprawek:** 🟢 NISKI - cache stylów
-
-#### `requirements.txt` 🟢
-
-**Funkcjonalność:** Lista zależności Python  
-**Stan obecny:** PyQt6, Pillow, inne standardowe biblioteki  
-**Problem:** Mogą być nieaktualne wersje  
-**Zależności:** pip  
-**Priorytet poprawek:** 🟢 NISKI - aktualizacja wersji
+- Wszystkie ****init**.py** - Sprawdzenie poprawności importów
+- **requirements.txt** - Aktualizacja wersji zależności
+- **pytest.ini** - Konfiguracja testów
+- **src/resources/styles.qss** - Sprawdzenie nieużywanych stylów
 
 ---
 
-## PROBLEMY KRYTYCZNE
+## 📋 PLAN ETAPU 2
 
-### 1. 🔴 Cache miniaturek (`thumbnail_cache.py`)
+### Kolejność analizy (zgodnie z priorytetami):
 
-**Problem:** Częste cleanup co ~200-500ms blokuje UI  
-**Przyczyna:** Agresywny cleanup przy przekroczeniu 70% limitu  
-**Wpływ:** Lagowanie interfejsu, problemy z responsywnością  
-**Sugerowane rozwiązanie:**
+1. **FAZA 1 - Krytyczne pliki (🔴)**
 
-- Asynchroniczny cleanup w osobnym wątku
-- Inteligentniejsza strategia cleanup (na podstawie czasu dostępu)
-- Optymalizacja estymacji rozmiaru pixmap
+   - src/logic/scanner.py
+   - src/ui/main_window.py
+   - src/ui/directory_tree_manager.py
+   - src/ui/delegates/workers.py
+   - src/main.py
+   - run_app.py
 
-### 2. 🔴 Architektura głównego okna (`main_window.py`)
+2. **FAZA 2 - Ważne optymalizacje (🟡)**
 
-**Problem:** Plik 1254 linii narusza Single Responsibility Principle  
-**Przyczyna:** Koncentracja zbyt wielu odpowiedzialności w jednej klasie  
-**Wpływ:** Trudność w utrzymaniu, debugowaniu, testowaniu  
-**Sugerowane rozwiązanie:**
+   - src/app_config.py
+   - src/controllers/main_window_controller.py
+   - src/logic/metadata_manager.py
+   - src/services/\* (wszystkie)
+   - src/models/file_pair.py
+   - src/ui/widgets/\* (główne)
+   - src/utils/path_utils.py
 
-- Podział na kontrolery dla różnych obszarów funkcjonalnych
-- Wydzielenie zarządzania stanem do osobnych klas
-- Implementacja wzorca Command dla akcji
+3. **FAZA 3 - Czyszczenie kodu (🟢)**
+   - Usunięcie duplikatów i pustych plików
+   - Sprawdzenie **init**.py
+   - Aktualizacja plików konfiguracyjnych
 
-### 3. 🔴 Skanowanie folderów (`scanner.py`)
+### Grupowanie plików:
 
-**Problem:** Kompleksowa logika cache i skanowania w jednym pliku (628 linii)  
-**Przyczyna:** Zbyt wiele odpowiedzialności, skomplikowane algorytmy  
-**Wpływ:** Potencjalne problemy wydajności przy dużych folderach  
-**Sugerowane rozwiązanie:**
-
-- Podział na moduły: scanning, caching, pairing
-- Optymalizacja algorytmów cache
-- Lepsze zarządzanie pamięcią
-
----
-
-## PLAN ETAPU 2
-
-### Kolejność analizy (według priorytetu):
-
-#### Faza 1: Komponenty krytyczne (🔴)
-
-1. **`src/ui/widgets/thumbnail_cache.py`** - najwyższy priorytet
-2. **`src/ui/main_window.py`** - architektura i refaktoryzacja
-3. **`src/logic/scanner.py`** - optymalizacja skanowania
-4. **`src/ui/gallery_manager.py`** - integracja z cache
-
-#### Faza 2: Komponenty ważne (🟡)
-
-5. **`src/main.py`** - obsługa błędów
-6. **`src/app_config.py`** - reorganizacja konfiguracji
-7. **`src/logic/file_operations.py`** - asynchroniczne operacje
-8. **`src/ui/delegates/`** - workery i threading
-9. **Pozostałe komponenty UI i utils**
-
-#### Faza 3: Komponenty stabilne (🟢)
-
-10. **Drobne ulepszenia** w stabilnych komponentach
-11. **Dokumentacja** i **testy**
+- **Grupa 1:** Scanner + Models (wydajność core)
+- **Grupa 2:** UI + Workers (responsywność)
+- **Grupa 3:** Services + Logic (architektura)
+- **Grupa 4:** Utils + Config (fundament)
 
 ### Szacowany zakres zmian:
 
-- **Duże refaktoryzacje:** 4 pliki (cache, main_window, scanner, gallery)
-- **Średnie zmiany:** 8 plików (logika, workery, UI)
-- **Drobne poprawki:** 7 plików (utils, modele, konfiguracja)
-
-### Metryki do śledzenia:
-
-- Czas cleanup cache miniaturek
-- Responsywność UI podczas skanowania
-- Zużycie pamięci przez cache
-- Czas ładowania dużych folderów
-- Stabilność aplikacji przy tysiącach plików
+- **Refaktoryzacja:** 6 dużych plików (podział na mniejsze moduły)
+- **Optymalizacja:** Cache, I/O, renderowanie UI
+- **Usunięcie:** 4 niepotrzebne pliki
+- **Architektura:** Implementacja MVC, usunięcie duplikacji
 
 ---
 
-**UWAGA:** Zgodnie z procedurą audytu opisaną w `_audyt.md`, ETAP 1 skupiał się wyłącznie na dokumentacji i wstępnej analizie. Żadne zmiany w kodzie nie zostały wprowadzone.
+## 📊 STATYSTYKI PROJEKTU
 
-✅ **ETAP 2 UKOŃCZONY:** Szczegółowa analiza z konkretnymi rekomendacjami została ukończona w pliku `corrections.md`. Wszystkie 19 plików kodu zostało przeanalizowanych, zidentyfikowano 47+ problemów i opracowano 23 priorytetowe rekomendacje poprawek.
+- **Łączna liczba plików kodu:** 32
+- **Pliki wysokiego priorytetu:** 6 (18,7%)
+- **Pliki średniego priorytetu:** 14 (43,8%)
+- **Pliki niskiego priorytetu:** 12 (37,5%)
+- **Największe pliki:** workers.py (2067), main_window.py (2010), directory_tree_manager.py (1687), scanner.py (916)
+- **Pliki do usunięcia:** 4
+- **Szacowany czas analizy ETAPU 2:** 6-8 sesji roboczych
 
-**Status całego audytu:** 🎉 **KOMPLETNY** - dokumentacja gotowa do implementacji przez zespół deweloperów.
+---
+
+**Status ETAPU 1:** ✅ **ZAKOŃCZONY**  
+**Gotowość do ETAPU 2:** ✅ **TAK** - Mapa kompletna, priorytety ustalone
