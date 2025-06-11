@@ -113,32 +113,38 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
             if self.check_interruption():
                 return
 
-            # Oblicz rozmiar foldera
+            # Oblicz rozmiar foldera aktualnego (bez przeglądania podfolderów)
             self.emit_progress(25, "Obliczanie rozmiaru folderu...")
-            total_size = 0
+            folder_size = 0
             file_count = 0
 
-            for root, dirs, files in os.walk(self.folder_path):
-                if self.check_interruption():
-                    return
+            # Najpierw oblicz rozmiar tylko dla bieżącego folderu
+            try:
+                for item in os.listdir(self.folder_path):
+                    if self.check_interruption():
+                        return
 
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    try:
-                        total_size += os.path.getsize(file_path)
-                        file_count += 1
-                    except (OSError, FileNotFoundError):
-                        continue
+                    item_path = os.path.join(self.folder_path, item)
+                    if os.path.isfile(item_path):
+                        try:
+                            file_size = os.path.getsize(item_path)
+                            folder_size += file_size
+                            file_count += 1
+                        except (OSError, FileNotFoundError):
+                            continue
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Błąd przy dostępie do folderu {self.folder_path}: {e}")
 
-            stats.size_gb = total_size / (1024**3)
+            stats.size_gb = folder_size / (1024**3)
             stats.total_files = file_count
 
-            # Oblicz liczbę par plików
-            self.emit_progress(75, "Obliczanie liczby par plików...")
+            # Oblicz liczbę par plików w bieżącym folderze (bez podfolderów)
+            self.emit_progress(50, "Obliczanie liczby par plików...")
             if self.check_interruption():
                 return
 
             try:
+                # Używamy max_depth=0 aby ograniczyć tylko do bieżącego folderu
                 found_pairs, _, _ = scan_folder_for_pairs(
                     self.folder_path, max_depth=0, pair_strategy="first_match"
                 )
@@ -146,6 +152,48 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
             except Exception as e:
                 logger.warning(f"Błąd obliczania par plików: {e}")
                 stats.pairs_count = 0
+
+            # Oblicz statystyki dla podfolderów
+            self.emit_progress(75, "Obliczanie statystyk podfolderów...")
+            subfolders_size = 0
+            subfolders_pairs = 0
+
+            try:
+                # Uzyskaj listę bezpośrednich podfolderów
+                subdirs = [
+                    os.path.join(self.folder_path, d)
+                    for d in os.listdir(self.folder_path)
+                    if os.path.isdir(os.path.join(self.folder_path, d))
+                ]
+
+                for subdir in subdirs:
+                    if self.check_interruption():
+                        return
+
+                    # Oblicz rozmiar podfolderu
+                    for root, dirs, files in os.walk(subdir):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            try:
+                                subfolders_size += os.path.getsize(file_path)
+                            except (OSError, FileNotFoundError):
+                                continue
+
+                    # Oblicz pary w podfolderze
+                    try:
+                        sub_pairs, _, _ = scan_folder_for_pairs(
+                            subdir, max_depth=-1, pair_strategy="first_match"
+                        )
+                        subfolders_pairs += len(sub_pairs)
+                    except Exception:
+                        pass
+            except (OSError, PermissionError) as e:
+                logger.warning(
+                    f"Błąd przy dostępie do podfolderów {self.folder_path}: {e}"
+                )
+
+            stats.subfolders_size_gb = subfolders_size / (1024**3)
+            stats.subfolders_pairs = subfolders_pairs
 
             self.emit_progress(100, "Zakończono obliczanie statystyk")
             self.custom_signals.finished.emit(stats)
@@ -307,9 +355,7 @@ class StatsProxyModel(QSortFilterProxyModel):
             )
             if stats:
                 # Zwróć nazwę ze statystykami
-                display_text = (
-                    f"{folder_name} ({stats.size_gb:.1f} GB, {stats.pairs_count} par)"
-                )
+                display_text = f"{folder_name} ({stats.total_size_gb:.1f} GB, {stats.total_pairs} par)"
                 logger.info(f"StatsProxyModel: Zwracam ze statystykami: {display_text}")
                 return display_text
             else:
@@ -1058,8 +1104,12 @@ class DirectoryTreeManager:
         folder_name = os.path.basename(folder_path)
         message = f"""Statystyki folderu '{folder_name}':
 
-📁 Rozmiar: {stats.size_gb:.2f} GB
-📦 Liczba par plików: {stats.pairs_count}
+📁 Rozmiar bieżącego folderu: {stats.size_gb:.2f} GB
+📁 Rozmiar podfolderów: {stats.subfolders_size_gb:.2f} GB
+📁 Rozmiar całkowity: {stats.total_size_gb:.2f} GB
+📦 Liczba par w bieżącym folderze: {stats.pairs_count}
+📦 Liczba par w podfolderach: {stats.subfolders_pairs}
+📦 Całkowita liczba par: {stats.total_pairs}
 📄 Całkowita liczba plików: {stats.total_files}
 
 💾 Dane z cache: {'Tak' if self.get_cached_folder_statistics(folder_path) else 'Nie'}"""
