@@ -11,7 +11,20 @@
 
 ### FAZA 1 - Krytyczne pliki (🔴) - ✅ ZAKOŃCZONA
 
-1. ✅ **src/logic/scanner.py** - ZAKOŃCZONY
+1. ✅ **src/logic/scanner.py** - **ZAKOŃCZONY ✅ ETAP 1 ZAIMPLEMENTOWANY**
+   - **Status:** DONE ✅
+   - **Data wykonania:** 2025-06-11
+   - **Testy:** Utworzone i działające
+   - **Rezultat refaktoryzacji:**
+     - **USUNIĘTO duplikację cache:** Legacy _scan_cache i _files_cache całkowicie usunięte, pozostał tylko ThreadSafeCache
+     - **USUNIĘTO deprecated funkcję:** collect_files() zastąpione przez collect_files_streaming() we wszystkich miejscach
+     - **PODZIELONO na moduły:** 916 linii → 4 moduły:
+       - scanner.py: 175 linii (koordynator)
+       - scan_cache.py: 222 linii (zarządzanie cache)
+       - scanner_core.py: 256 linii (podstawowe skanowanie)
+       - file_pairing.py: 189 linii (algorytmy parowania)
+     - **UTWORZONO testy:** Pełne pokrycie testami jednostkowymi i integracyjnymi
+     - **ZACHOWANO kompatybilność:** Wszystkie publiczne API działają bez zmian
 2. ✅ **src/ui/main_window.py** - ZAKOŃCZONY
 3. ✅ **src/ui/directory_tree_manager.py** - ZAKOŃCZONY
 4. ✅ **src/ui/delegates/workers.py** - ZAKOŃCZONY

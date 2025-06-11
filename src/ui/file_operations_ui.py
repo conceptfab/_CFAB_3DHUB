@@ -20,7 +20,7 @@ from src.logic.file_operations import (
     MoveFilePairWorker,
     RenameFilePairWorker,
 )
-from src.logic.scanner import collect_files, create_file_pairs
+from src.logic.scanner import collect_files_streaming, create_file_pairs
 from src.models.file_pair import FilePair
 from src.ui.delegates.workers import BulkMoveWorker
 from src.utils.path_utils import normalize_path  # Dodano import normalize_path
@@ -419,7 +419,7 @@ class FileOperationsUI:
                         f"🚀 DRAG&DROP: Znaleziono folder, skanuje zawartość: {file_path}"
                     )
                     # Jeśli to folder, zbierz pliki z niego
-                    dir_file_map = collect_files(file_path, max_depth=1)
+                    dir_file_map = collect_files_streaming(file_path, max_depth=1)
                     for files_list in dir_file_map.values():
                         all_files.extend(files_list)
                         logging.debug(
