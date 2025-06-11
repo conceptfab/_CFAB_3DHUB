@@ -1670,6 +1670,10 @@ class DataProcessingWorker(QObject):
             self.emit_error(f"Wystąpił błąd podczas przetwarzania danych: {e}", e)
             self.finished.emit([])  # Zawsze emituj sygnał zakończenia
 
+    def stop(self):
+        """Przerywa wykonywanie workera - alias dla interrupt()."""
+        self.interrupt()
+
 
 class BulkDeleteWorker(UnifiedBaseWorker):
     """

@@ -175,13 +175,13 @@ class GalleryTab:
                 self.main_window.size_control_panel.setVisible(False)
             return
 
-        # Pobierz kryteria filtrowania z panelu
-        filter_criteria = None
+        # Pobierz kryteria filtrowania z panelu (może być puste)
+        filter_criteria = {}
         if hasattr(self.main_window, "filter_panel"):
             filter_criteria = self.main_window.filter_panel.get_filter_criteria()
 
-        # Zastosuj filtry
-        if hasattr(self.main_window, "gallery_manager") and filter_criteria:
+        # ZAWSZE zastosuj filtry z aktualną listą par plików z kontrolera
+        if hasattr(self.main_window, "gallery_manager"):
             self.main_window.gallery_manager.apply_filters_and_update_view(
                 self.main_window.controller.current_file_pairs, filter_criteria
             )

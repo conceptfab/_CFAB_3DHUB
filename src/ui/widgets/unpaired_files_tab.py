@@ -58,18 +58,31 @@ class UnpairedFilesTab:
         Returns:
             Widget zakładki niesparowanych plików
         """
+        logging.info("🏗️ CREATE_UNPAIRED_FILES_TAB - rozpoczynam tworzenie")
+        
         self.unpaired_files_tab = QWidget()
         self.unpaired_files_layout = QVBoxLayout(self.unpaired_files_tab)
         self.unpaired_files_layout.setContentsMargins(5, 5, 5, 5)
+        logging.info("✅ Utworzono podstawowy widget i layout")
 
         # Splitter dla dwóch list
         self.unpaired_splitter = QSplitter()
+        logging.info("✅ Utworzono splitter")
 
         # Lista niesparowanych archiwów
+        logging.info("🔧 Tworzę listę archiwów...")
         self._create_unpaired_archives_list()
+        logging.info(f"✅ Lista archiwów utworzona. Widget: {hasattr(self, 'unpaired_archives_list_widget')}")
+        if hasattr(self, 'unpaired_archives_list_widget'):
+            logging.info(f"✅ Wartość widget archiwów: {self.unpaired_archives_list_widget}")
 
         # Lista niesparowanych podglądów
+        logging.info("🔧 Tworzę listę podglądów...")
         self._create_unpaired_previews_list()
+        logging.info(f"✅ Lista podglądów utworzona. Widget: {hasattr(self, 'unpaired_previews_list_widget')}")
+        if hasattr(self, 'unpaired_previews_list_widget'):
+            logging.info(f"✅ Wartość widget podglądów: {self.unpaired_previews_list_widget}")
+        
         self.unpaired_files_layout.addWidget(self.unpaired_splitter)
 
         # Przycisk do ręcznego parowania
@@ -77,7 +90,9 @@ class UnpairedFilesTab:
         self.pair_manually_button.clicked.connect(self._handle_manual_pairing)
         self.pair_manually_button.setEnabled(False)
         self.unpaired_files_layout.addWidget(self.pair_manually_button)
+        logging.info("✅ Przycisk parowania utworzony")
 
+        logging.info("🎉 CREATE_UNPAIRED_FILES_TAB - zakończono pomyślnie")
         return self.unpaired_files_tab
 
     def _create_unpaired_archives_list(self):
@@ -331,9 +346,43 @@ class UnpairedFilesTab:
         """
         Aktualizuje listy niesparowanych plików w interfejsie użytkownika.
         """
-        if not self.unpaired_archives_list_widget:
+        logging.info("🔍 UPDATE_UNPAIRED_FILES_LISTS wywołane")
+        
+        # NAPRAWKA: Sprawdzamy tylko czy atrybut istnieje, nie jego wartość boolean
+        if not hasattr(self, 'unpaired_archives_list_widget'):
+            logging.error("❌ KRYTYCZNY BŁĄD: unpaired_archives_list_widget nie istnieje w managerie!")
             return
 
+        if not hasattr(self, 'unpaired_previews_list_widget'):
+            logging.error("❌ KRYTYCZNY BŁĄD: unpaired_previews_list_widget nie istnieje w managerie!")
+            return
+
+        if not hasattr(self, 'unpaired_previews_layout'):
+            logging.error("❌ KRYTYCZNY BŁĄD: unpaired_previews_layout nie istnieje w managerie!")
+            return
+
+        # NAPRAWKA: Sprawdzamy czy widget jest None a nie czy jest "falsy"
+        if self.unpaired_archives_list_widget is None:
+            logging.error("❌ unpaired_archives_list_widget jest None!")
+            return
+            
+        if self.unpaired_previews_list_widget is None:
+            logging.error("❌ unpaired_previews_list_widget jest None!")
+            return
+
+        # DEBUG: Sprawdź stan w kontrolerze
+        archives_count = len(self.main_window.controller.unpaired_archives)
+        previews_count = len(self.main_window.controller.unpaired_previews)
+        logging.info(f"📊 Controller unpaired_archives: {archives_count}")
+        logging.info(f"📊 Controller unpaired_previews: {previews_count}")
+        
+        for i, archive in enumerate(self.main_window.controller.unpaired_archives):
+            logging.info(f"  📁 Archive {i}: {archive}")
+        
+        for i, preview in enumerate(self.main_window.controller.unpaired_previews):
+            logging.info(f"  🖼️ Preview {i}: {preview}")
+
+        # UŻYWAMY BEZPOŚREDNIO ATRYBUTÓW Z MANAGERA
         self.unpaired_archives_list_widget.clear()
         self.unpaired_previews_list_widget.clear()
 
@@ -349,6 +398,8 @@ class UnpairedFilesTab:
             item = QListWidgetItem(os.path.basename(archive_path))
             item.setData(Qt.ItemDataRole.UserRole, archive_path)
             self.unpaired_archives_list_widget.addItem(item)
+            archive_name = os.path.basename(archive_path)
+            logging.info(f"✅ Dodano archiwum do listy: {archive_name}")
 
         # Aktualizuj miniaturki podglądów - stan z Controller
         for preview_path in self.main_window.controller.unpaired_previews:
@@ -358,12 +409,13 @@ class UnpairedFilesTab:
             self.unpaired_previews_list_widget.addItem(item)
 
             # Dodaj miniaturkę
+            preview_name = os.path.basename(preview_path)
+            logging.info(f"✅ Tworzę miniaturkę dla: {preview_name}")
             self._add_preview_thumbnail(preview_path)
 
-        logging.debug(
-            f"Zaktualizowano listy niesparowanych: "
-            f"{len(self.main_window.controller.unpaired_archives)} archiwów, "
-            f"{len(self.main_window.controller.unpaired_previews)} podglądów."
+        logging.info(
+            f"✅ ZAKOŃCZONO aktualizację listy niesparowanych: "
+            f"{archives_count} archiwów, {previews_count} podglądów."
         )
         self._update_pair_button_state()
 

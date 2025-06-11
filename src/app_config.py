@@ -55,6 +55,13 @@ class AppConfig:
         "thumbnail_cache_max_memory_mb": 100,  # Maksymalna pamięć w MB (przybliżone)
         "thumbnail_cache_enable_disk": False,  # Czy używać cache na dysku
         "thumbnail_cache_cleanup_threshold": 0.8,  # Próg czyszczenia (80% limitu)
+        # Parametry okna i timerów
+        "window_min_width": 800,  # Minimalna szerokość okna
+        "window_min_height": 600,  # Minimalna wysokość okna
+        "resize_timer_delay_ms": 150,  # Opóźnienie timera resize galerii (ms)
+        "progress_hide_delay_ms": 3000,  # Czas wyświetlania postępu po zakończeniu (ms)
+        "thread_wait_timeout_ms": 1000,  # Timeout oczekiwania na zakończenie wątku (ms)
+        "preferences_status_display_ms": 3000,  # Czas wyświetlania statusu preferencji (ms)
         # Ochrona ustawień
     }
 
@@ -567,6 +574,38 @@ class AppConfig:
             Próg czyszczenia cache.
         """
         return self.get("thumbnail_cache_cleanup_threshold", 0.8)
+
+    # --- Properties dla parametrów okna i timerów ---
+
+    @property
+    def window_min_width(self) -> int:
+        """Zwraca minimalną szerokość okna."""
+        return self.get("window_min_width", 800)
+
+    @property
+    def window_min_height(self) -> int:
+        """Zwraca minimalną wysokość okna."""
+        return self.get("window_min_height", 600)
+
+    @property
+    def resize_timer_delay_ms(self) -> int:
+        """Zwraca opóźnienie timera resize galerii w milisekundach."""
+        return self.get("resize_timer_delay_ms", 150)
+
+    @property
+    def progress_hide_delay_ms(self) -> int:
+        """Zwraca czas wyświetlania postępu po zakończeniu w milisekundach."""
+        return self.get("progress_hide_delay_ms", 3000)
+
+    @property
+    def thread_wait_timeout_ms(self) -> int:
+        """Zwraca timeout oczekiwania na zakończenie wątku w milisekundach."""
+        return self.get("thread_wait_timeout_ms", 1000)
+
+    @property
+    def preferences_status_display_ms(self) -> int:
+        """Zwraca czas wyświetlania statusu preferencji w milisekundach."""
+        return self.get("preferences_status_display_ms", 3000)
 
 
 # --- Inicjalizacja domyślnej instancji konfiguracji ---

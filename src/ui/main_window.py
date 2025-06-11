@@ -29,8 +29,7 @@ from src import app_config
 from src.controllers.main_window_controller import MainWindowController
 from src.logic import file_operations
 from src.models.file_pair import FilePair
-from src.services.file_operations_service import FileOperationsService
-from src.services.scanning_service import ScanningService
+
 from src.services.thread_coordinator import ThreadCoordinator
 from src.ui.delegates.workers import (
     BaseWorker,
@@ -76,9 +75,7 @@ class MainWindow(QMainWindow):
         # ETAP 2 FINAL: MVC Controller - centralna logika biznesowa
         self.controller = MainWindowController(self)
 
-        # LEGACY: Zachowane dla kompatybilności (stopniowe usuwanie)
-        self.file_operations_service = FileOperationsService()
-        self.scanning_service = ScanningService()
+
 
         # Wątki
         self.scan_thread = None
@@ -119,7 +116,10 @@ class MainWindow(QMainWindow):
 
         # Konfiguracja okna
         self.setWindowTitle("CFAB_3DHUB")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(
+            self.app_config.window_min_width, 
+            self.app_config.window_min_height
+        )
 
         # Inicjalizacja paska statusu
         self.status_bar = QStatusBar(self)
@@ -636,10 +636,11 @@ class MainWindow(QMainWindow):
         self.progress_label.setText("✅ Preferencje wczytane")
         self.progress_label.setStyleSheet("color: green; font-weight: bold;")
 
-        # Po 3 sekundach przywróć normalny status
-        QTimer.singleShot(3000, lambda: self.progress_label.setText("Gotowy"))
+        # Po czasie z konfiguracji przywróć normalny status
+        delay = self.app_config.preferences_status_display_ms
+        QTimer.singleShot(delay, lambda: self.progress_label.setText("Gotowy"))
         QTimer.singleShot(
-            3000,
+            delay,
             lambda: self.progress_label.setStyleSheet(
                 "color: gray; font-style: italic;"
             ),
@@ -664,7 +665,7 @@ class MainWindow(QMainWindow):
             if self.scan_thread and self.scan_thread.isRunning():
                 logging.info("Kończenie wątku skanowania przy zamykaniu aplikacji...")
                 self.scan_thread.quit()
-                if not self.scan_thread.wait(1000):
+                if not self.scan_thread.wait(self.app_config.thread_wait_timeout_ms):
                     logging.warning("Wątek skanowania nie zakończył się, wymuszam...")
                     self.scan_thread.terminate()
                     self.scan_thread.wait()
@@ -674,7 +675,7 @@ class MainWindow(QMainWindow):
                     "Kończenie wątku przetwarzania przy zamykaniu aplikacji..."
                 )
                 self.data_processing_thread.quit()
-                if not self.data_processing_thread.wait(1000):
+                if not self.data_processing_thread.wait(self.app_config.thread_wait_timeout_ms):
                     logging.warning(
                         "Wątek przetwarzania nie zakończył się, wymuszam..."
                     )
@@ -769,7 +770,7 @@ class MainWindow(QMainWindow):
             except (TypeError, AttributeError):
                 logging.debug("Nie można było odłączyć sygnałów od starego workera.")
             self.scan_thread.quit()
-            self.scan_thread.wait(500)
+            self.scan_thread.wait(self.app_config.thread_wait_timeout_ms // 2)
 
     def _start_folder_scanning(self, directory_path: str):
         """
@@ -863,7 +864,57 @@ class MainWindow(QMainWindow):
         )
         # Deleguj update przycisku parowania do managera unpaired files
         if hasattr(self, "unpaired_files_tab_manager"):
-            self.unpaired_files_tab_manager.update_pair_button_state()
+            logging.info("🔍 Sprawdzam stan unpaired_files_tab_manager w _on_tile_loading_finished...")
+            logging.info(f"📋 unpaired_archives_list_widget: {hasattr(self.unpaired_files_tab_manager, 'unpaired_archives_list_widget')}")
+            if hasattr(self.unpaired_files_tab_manager, 'unpaired_archives_list_widget'):
+                logging.info(f"📋 unpaired_archives_list_widget value: {self.unpaired_files_tab_manager.unpaired_archives_list_widget}")
+            logging.info(f"📋 unpaired_previews_list_widget: {hasattr(self.unpaired_files_tab_manager, 'unpaired_previews_list_widget')}")
+            
+            # BEZPOŚREDNIA AKTUALIZACJA jako FALLBACK
+            logging.info("🛠️ FALLBACK: Bezpośrednia aktualizacja niesparowanych plików")
+            self._update_unpaired_files_direct()
+
+    def _update_unpaired_files_direct(self):
+        """
+        FALLBACK: Bezpośrednia aktualizacja niesparowanych plików.
+        Używana gdy manager nie działa poprawnie.
+        """
+        try:
+            logging.info("🔧 FALLBACK: Rozpoczynam bezpośrednią aktualizację niesparowanych plików")
+            
+            # Sprawdź czy mamy widgety przypisane do main_window
+            if not hasattr(self, 'unpaired_archives_list_widget') or not self.unpaired_archives_list_widget:
+                logging.warning("⚠️ FALLBACK: Brak widgetów w main_window - pomijam aktualizację")
+                return
+                
+            # Wyczyść stare dane
+            self.unpaired_archives_list_widget.clear()
+            self.unpaired_previews_list_widget.clear()
+            
+            # Dodaj archiwa
+            archives_added = 0
+            for archive_path in self.controller.unpaired_archives:
+                item = QListWidgetItem(os.path.basename(archive_path))
+                item.setData(Qt.ItemDataRole.UserRole, archive_path)
+                self.unpaired_archives_list_widget.addItem(item)
+                archives_added += 1
+                logging.info(f"📁 FALLBACK: Dodano archiwum {os.path.basename(archive_path)}")
+            
+            # Dodaj podglądy
+            previews_added = 0
+            for preview_path in self.controller.unpaired_previews:
+                item = QListWidgetItem(os.path.basename(preview_path))
+                item.setData(Qt.ItemDataRole.UserRole, preview_path)
+                self.unpaired_previews_list_widget.addItem(item)
+                previews_added += 1
+                logging.info(f"🖼️ FALLBACK: Dodano podgląd {os.path.basename(preview_path)}")
+            
+            logging.info(f"✅ FALLBACK: Dodano {archives_added} archiwów i {previews_added} podglądów")
+            
+        except Exception as e:
+            logging.error(f"❌ FALLBACK ERROR: {e}")
+
+            self.unpaired_files_tab_manager.update_unpaired_files_lists()
 
     def _handle_scan_finished(self, found_pairs, unpaired_archives, unpaired_previews):
         """
@@ -891,12 +942,27 @@ class MainWindow(QMainWindow):
         """
         Inicjalizuje i uruchamia workera do przetwarzania danych.
         """
+        # NAPRAWKA: Prawidłowo zakończ poprzedni worker jeśli nadal działa
         if self.data_processing_thread and self.data_processing_thread.isRunning():
             logging.warning(
-                "Próba uruchomienia workera przetwarzania, "
-                "gdy poprzedni jeszcze działa."
+                "Poprzedni worker przetwarzania nadal działa - przerywam go i uruchamiam nowy"
             )
-            return
+            # Przerwij poprzedni worker
+            if self.data_processing_worker:
+                try:
+                    self.data_processing_worker.finished.disconnect()
+                except (TypeError, AttributeError):
+                    pass  # Sygnał może być już odłączony
+                self.data_processing_worker.stop()
+
+            # Zakończ poprzedni wątek
+            self.data_processing_thread.quit()
+            if not self.data_processing_thread.wait(
+                self.app_config.thread_wait_timeout_ms
+            ):  # Czekaj maksymalnie według konfiguracji
+                logging.warning("Wymuszenie zakończenia poprzedniego workera")
+                self.data_processing_thread.terminate()
+                self.data_processing_thread.wait()
 
         self.data_processing_thread = QThread()
         self.data_processing_worker = DataProcessingWorker(
@@ -912,6 +978,9 @@ class MainWindow(QMainWindow):
         self.data_processing_thread.started.connect(self.data_processing_worker.run)
 
         self.data_processing_thread.start()
+        logging.info(
+            f"Uruchomiono nowy worker do przetwarzania {len(file_pairs)} par plików"
+        )
 
     def _create_tile_widget_for_pair(self, file_pair: FilePair):
         """
@@ -1089,7 +1158,7 @@ class MainWindow(QMainWindow):
         """
         Obsługuje zmianę rozmiaru okna.
         """  # Opóźnienie przerenderowania galerii
-        self.resize_timer.start(150)
+        self.resize_timer.start(self.app_config.resize_timer_delay_ms)
         super().resizeEvent(event)
 
     def _save_metadata(self):
@@ -1465,7 +1534,7 @@ class MainWindow(QMainWindow):
 
         # Jeśli osiągnięto 100%, ukryj pasek po krótkim czasie
         if percent >= 100:
-            QTimer.singleShot(3000, self._hide_progress)
+            QTimer.singleShot(self.app_config.progress_hide_delay_ms, self._hide_progress)
 
     def _hide_progress(self):
         """Ukrywa pasek postępu i resetuje etykietę."""
@@ -1507,11 +1576,8 @@ class MainWindow(QMainWindow):
 
     def update_scan_results(self, scan_result):
         """Aktualizuje UI wynikami skanowania z kontrolera."""
-        self.controller.handle_scan_finished(
-            scan_result.file_pairs,
-            scan_result.unpaired_archives,
-            scan_result.unpaired_previews,
-        )
+        # UWAGA: Controller już zaktualizował swój stan w handle_folder_selection()
+        # NIE wywołujemy controller.handle_scan_finished() aby nie nadpisać danych!
 
         # Wyczyść poprzednie widgety
         self.gallery_manager.clear_gallery()
@@ -1522,9 +1588,8 @@ class MainWindow(QMainWindow):
         else:
             self._on_tile_loading_finished()
 
-        # Aktualizuj listy niesparowanych przez delegację do managera
-        if hasattr(self, "unpaired_files_tab_manager"):
-            self.unpaired_files_tab_manager.update_unpaired_files_lists()
+        # UWAGA: update_unpaired_files_lists() jest już wywoływana w _on_tile_loading_finished()
+        # Nie wywołujemy tutaj aby uniknąć błędów z niezainicjalizowanymi widgetami
 
     def confirm_bulk_delete(self, count: int) -> bool:
         """Potwierdza operację bulk delete z użytkownikiem."""
