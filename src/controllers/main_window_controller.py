@@ -337,3 +337,41 @@ class MainWindowController:
             error_msg += f"\n\n... i {len(errors) - 5} więcej błędów"
 
         self.view.show_warning_message(f"Błędy {operation_name}", error_msg)
+
+    def handle_scan_finished(
+        self,
+        found_pairs: List[FilePair],
+        unpaired_archives: List[str],
+        unpaired_previews: List[str],
+    ):
+        """
+        Obsługuje wyniki skanowania - centralizuje stan aplikacji.
+
+        Args:
+            found_pairs: Lista znalezionych par plików
+            unpaired_archives: Lista niesparowanych archiwów
+            unpaired_previews: Lista niesparowanych podglądów
+        """
+        self.current_file_pairs = found_pairs
+        self.unpaired_archives = unpaired_archives
+        self.unpaired_previews = unpaired_previews
+
+        self.logger.info(
+            f"Stan zaktualizowany: {len(found_pairs)} par, {len(unpaired_archives)} archiwów, {len(unpaired_previews)} podglądów"
+        )
+
+    def clear_all_data_and_views(self):
+        """
+        Czyści stan aplikacji i informuje UI o potrzebie odświeżenia.
+        """
+        self.current_file_pairs = []
+        self.unpaired_archives = []
+        self.unpaired_previews = []
+        self.selected_tiles = set()
+
+        # Informuj UI o czyszczeniu (usuńmy problematyczne wywołanie)
+        self.view.gallery_manager.clear_gallery()
+        self.view.filter_panel.setEnabled(False)
+        self.view.setWindowTitle("CFAB_3DHUB")
+
+        self.logger.debug("Stan aplikacji wyczyszczony")

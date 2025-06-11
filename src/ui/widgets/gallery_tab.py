@@ -138,7 +138,7 @@ class GalleryTab:
         if hasattr(self.main_window, "directory_tree_manager"):
             folder_path = (
                 self.main_window.directory_tree_manager.folder_tree_item_clicked(
-                    index, self.main_window.current_working_directory
+                    index, self.main_window.controller.current_directory
                 )
             )
             if folder_path:
@@ -155,7 +155,7 @@ class GalleryTab:
         """
         Zbiera kryteria, filtruje pary i aktualizuje galerię.
         """
-        if not self.main_window.current_working_directory:
+        if not self.main_window.controller.current_directory:
             if hasattr(self.main_window, "gallery_manager"):
                 self.main_window.gallery_manager.file_pairs_list = []
             self.update_gallery_view()
@@ -167,7 +167,7 @@ class GalleryTab:
                 )  # Zablokuj zamiast ukryć
             return
 
-        if not self.main_window.all_file_pairs:
+        if not self.main_window.controller.current_file_pairs:
             if hasattr(self.main_window, "gallery_manager"):
                 self.main_window.gallery_manager.file_pairs_list = []
             self.update_gallery_view()
@@ -183,7 +183,7 @@ class GalleryTab:
         # Zastosuj filtry
         if hasattr(self.main_window, "gallery_manager") and filter_criteria:
             self.main_window.gallery_manager.apply_filters_and_update_view(
-                self.main_window.all_file_pairs, filter_criteria
+                self.main_window.controller.current_file_pairs, filter_criteria
             )
 
         is_gallery_populated = bool(

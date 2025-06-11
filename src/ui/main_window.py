@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -78,14 +79,6 @@ class MainWindow(QMainWindow):
         # LEGACY: Zachowane dla kompatybilności (stopniowe usuwanie)
         self.file_operations_service = FileOperationsService()
         self.scanning_service = ScanningService()
-
-        self.current_working_directory = None
-        self.all_file_pairs: list[FilePair] = []
-        self.unpaired_archives: list[str] = []
-        self.unpaired_previews: list[str] = []
-
-        # Bulk selection tracking
-        self.selected_tiles: set[FilePair] = set()
 
         # Wątki
         self.scan_thread = None
@@ -304,7 +297,7 @@ class MainWindow(QMainWindow):
                     self._update_thumbnail_size()
 
             # Odśwież widok jeśli jest otwarty folder
-            if self.current_working_directory:
+            if self.controller.current_directory:
                 self.refresh_all_views()
 
             logging.info("Nowe ustawienia preferencji zostały zastosowane")
@@ -319,7 +312,7 @@ class MainWindow(QMainWindow):
 
     def remove_all_metadata_folders(self):
         """Usuwa wszystkie foldery .app_metadata z folderu roboczego."""
-        if not self.current_working_directory:
+        if not self.controller.current_directory:
             QMessageBox.warning(self, "Uwaga", "Nie wybrano folderu roboczego.")
             return
 
@@ -344,7 +337,7 @@ class MainWindow(QMainWindow):
 
             # Znajdź wszystkie foldery .app_metadata
             metadata_folders = []
-            root_path = Path(self.current_working_directory)
+            root_path = Path(self.controller.current_directory)
 
             for folder in root_path.rglob(".app_metadata"):
                 if folder.is_dir():
@@ -709,9 +702,9 @@ class MainWindow(QMainWindow):
         if not self._validate_directory_path(path):
             return
 
-        # Ustaw nowy folder roboczy
-        self.current_working_directory = normalize_path(path)
-        base_folder_name = os.path.basename(self.current_working_directory)
+        # Ustaw nowy folder roboczy przez kontroler
+        normalized_path = normalize_path(path)
+        base_folder_name = os.path.basename(normalized_path)
         self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
 
         # NIGDY NIE NADPISUJ DOMYŚLNEGO FOLDERU AUTOMATYCZNIE!
@@ -721,11 +714,11 @@ class MainWindow(QMainWindow):
         else:
             logging.info(f"🔄 Auto-loading z domyślnego folderu")
 
-        logging.info("Wybrano folder roboczy: %s", self.current_working_directory)
+        logging.info("Wybrano folder roboczy: %s", normalized_path)
 
         # Wyczyść dane i rozpocznij skanowanie
         self._clear_all_data_and_views()
-        self._start_folder_scanning()
+        self._start_folder_scanning(normalized_path)
 
     def _validate_directory_path(self, path: str) -> bool:
         """
@@ -778,7 +771,7 @@ class MainWindow(QMainWindow):
             self.scan_thread.quit()
             self.scan_thread.wait(500)
 
-    def _start_folder_scanning(self):
+    def _start_folder_scanning(self, directory_path: str):
         """
         ETAP 2 FINAL: Delegacja skanowania do MainWindowController (MVC).
         """
@@ -787,18 +780,16 @@ class MainWindow(QMainWindow):
         self.select_folder_button.setEnabled(False)
 
         # DELEGACJA DO KONTROLERA - NO MORE WORKER THREADS!
-        success = self.controller.handle_folder_selection(
-            self.current_working_directory
-        )
+        success = self.controller.handle_folder_selection(directory_path)
 
         # Przywróć UI state
         self.select_folder_button.setText("Wybierz Folder")
         self.select_folder_button.setEnabled(True)
 
         if success:
-            logging.info(f"Controller scan SUCCESS: {self.current_working_directory}")
+            logging.info(f"Controller scan SUCCESS: {directory_path}")
         else:
-            logging.warning(f"Controller scan FAILED: {self.current_working_directory}")
+            logging.warning(f"Controller scan FAILED: {directory_path}")
 
     def _on_scan_thread_finished(self):
         """
@@ -821,38 +812,22 @@ class MainWindow(QMainWindow):
         """
         Wymusza ponowne skanowanie poprzez czyszczenie cache.
         """
-        if self.current_working_directory:
+        if self.controller.current_directory:
             from src.logic.scanner import clear_cache
 
             clear_cache()
             logging.info("Cache wyczyszczony - wymuszono ponowne skanowanie")
-            self._select_working_directory(self.current_working_directory)
+            self._select_working_directory(self.controller.current_directory)
 
     def _clear_all_data_and_views(self):
         """
         Czyści wszystkie dane plików i odpowiednie widoki.
         """
-        self.all_file_pairs = []
-        self.unpaired_archives = []
-        self.unpaired_previews = []
-
-        self.gallery_manager.clear_gallery()
-        self._clear_unpaired_files_lists()
-        self.filter_panel.setEnabled(False)  # Zablokuj zamiast ukryć
-        # Zakładka parowania zawsze widoczna - nie ukrywamy!
-        self.setWindowTitle("CFAB_3DHUB")
+        self.controller.clear_all_data_and_views()
 
     def _clear_unpaired_files_lists(self):
         """
         Czyści listy niesparowanych plików w interfejsie użytkownika.
-        """
-        self.unpaired_archives_list_widget.clear()
-        self.unpaired_previews_list_widget.clear()
-        logging.debug("Wyczyszczono listy niesparowanych plików w UI.")
-
-    def _update_unpaired_files_lists(self):
-        """
-        Aktualizuje listy niesparowanych plików w interfejsie użytkownika.
         """
         self.unpaired_archives_list_widget.clear()
         self.unpaired_previews_list_widget.clear()
@@ -865,25 +840,26 @@ class MainWindow(QMainWindow):
                 self.unpaired_previews_layout.removeWidget(widget_to_remove)
 
         # Aktualizuj listę archiwów
-        for archive_path in self.unpaired_archives:
+        for archive_path in self.controller.unpaired_archives:
             item = QListWidgetItem(os.path.basename(archive_path))
             item.setData(Qt.ItemDataRole.UserRole, archive_path)
             self.unpaired_archives_list_widget.addItem(item)
 
         # Aktualizuj miniaturki podglądów
-        for preview_path in self.unpaired_previews:
+        for preview_path in self.controller.unpaired_previews:
             # Dodaj do ukrytego QListWidget dla kompatybilności
             item = QListWidgetItem(os.path.basename(preview_path))
             item.setData(Qt.ItemDataRole.UserRole, preview_path)
             self.unpaired_previews_list_widget.addItem(item)
 
-            # Dodaj miniaturkę
-            self._add_preview_thumbnail(preview_path)
+            # Dodaj miniaturkę przez manager unpaired files
+            if hasattr(self, "unpaired_files_tab_manager"):
+                self.unpaired_files_tab_manager._add_preview_thumbnail(preview_path)
 
         logging.debug(
             f"Zaktualizowano listy niesparowanych: "
-            f"{len(self.unpaired_archives)} archiwów, "
-            f"{len(self.unpaired_previews)} podglądów."
+            f"{len(self.controller.unpaired_archives)} archiwów, "
+            f"{len(self.controller.unpaired_previews)} podglądów."
         )
         # Deleguj update przycisku parowania do managera unpaired files
         if hasattr(self, "unpaired_files_tab_manager"):
@@ -894,26 +870,20 @@ class MainWindow(QMainWindow):
         Obsługuje wyniki pomyślnie zakończonego skanowania folderu.
         """
         logging.info(
-            f"Skanowanie folderu {self.current_working_directory} "
+            f"Skanowanie folderu {self.controller.current_directory} "
             f"zakończone pomyślnie."
         )
 
-        self.all_file_pairs = found_pairs
-        self.unpaired_archives = unpaired_archives
-        self.unpaired_previews = unpaired_previews
-
-        logging.info(f"Wczytano {len(self.all_file_pairs)} sparowanych plików.")
-        logging.info(
-            f"Niesparowane: {len(self.unpaired_archives)} archiwów, "
-            f"{len(self.unpaired_previews)} podglądów."
+        self.controller.handle_scan_finished(
+            found_pairs, unpaired_archives, unpaired_previews
         )
 
         # Wyczyść poprzednie widgety kafelków
         self.gallery_manager.clear_gallery()
 
         # Uruchom workera do tworzenia kafelków w tle
-        if self.all_file_pairs:
-            self._start_data_processing_worker(self.all_file_pairs)
+        if found_pairs:
+            self._start_data_processing_worker(found_pairs)
         else:
             self._on_tile_loading_finished()
 
@@ -930,7 +900,7 @@ class MainWindow(QMainWindow):
 
         self.data_processing_thread = QThread()
         self.data_processing_worker = DataProcessingWorker(
-            self.current_working_directory, file_pairs
+            self.controller.current_directory, file_pairs
         )
         self.data_processing_worker.moveToThread(self.data_processing_thread)
 
@@ -970,32 +940,31 @@ class MainWindow(QMainWindow):
 
     def _on_tile_loading_finished(self):
         """
-        Slot wywoływany po zakończeniu tworzenia wszystkich kafelków.
+        Wywoływane po zakończeniu tworzenia wszystkich kafelków.
         """
-        if self.data_processing_thread:
-            self.data_processing_thread.quit()
-            self.data_processing_thread.wait()
-            self.data_processing_thread = None
-
         logging.info("Zakończono tworzenie wszystkich kafelków.")
 
         # Zastosuj filtry i odśwież widok
         self._apply_filters_and_update_view()
-        self._update_unpaired_files_lists()
+        # Delegacja do managera zamiast wywołania nieistniejącej metody
+        if hasattr(self, "unpaired_files_tab_manager"):
+            self.unpaired_files_tab_manager.update_unpaired_files_lists()
 
         # Pokaż interfejs
         self.filter_panel.setEnabled(True)  # Odblokuj panel filtrów
         is_gallery_populated = bool(self.gallery_manager.file_pairs_list)
         self.size_control_panel.setVisible(is_gallery_populated)
-        # Zakładka parowania zawsze widoczna        # Inicjalizacja drzewa katalogów
+        # Zakładka parowania zawsze widoczna
+
+        # Inicjalizacja drzewa katalogów
         logging.debug("Inicjalizacja drzewa katalogów...")
         logging.info(
-            f"DEBUG: current_working_directory = '{self.current_working_directory}'"
+            f"DEBUG: current_working_directory = '{self.controller.current_directory}'"
         )
-        if self.current_working_directory:
+        if self.controller.current_directory:
             logging.info("DEBUG: Wywołuję init_directory_tree...")
             self.directory_tree_manager.init_directory_tree(
-                self.current_working_directory
+                self.controller.current_directory
             )
             logging.info("DEBUG: init_directory_tree zakończone")
         else:
@@ -1063,7 +1032,7 @@ class MainWindow(QMainWindow):
         Args:
             new_selection: FilePair do zaznaczenia po odświeżeniu (opcjonalne)
         """
-        if not self.current_working_directory:
+        if not self.controller.current_directory:
             return
 
         # Zapobiegnij duplikowaniu operacji skanowania
@@ -1083,7 +1052,9 @@ class MainWindow(QMainWindow):
 
         # Zamiast pełnego skanowania, odśwież tylko UI z istniejącymi danymi
         self._apply_filters_and_update_view()
-        self._update_unpaired_files_lists()
+        # Delegacja do managera zamiast wywołania nieistniejącej metody
+        if hasattr(self, "unpaired_files_tab_manager"):
+            self.unpaired_files_tab_manager.update_unpaired_files_lists()
 
         # Zapisz metadane bez ponownego skanowania
         self._save_metadata()
@@ -1094,7 +1065,7 @@ class MainWindow(QMainWindow):
         """
         Wymusza pełne ponowne skanowanie - tylko gdy rzeczywiście potrzebne.
         """
-        if not self.current_working_directory:
+        if not self.controller.current_directory:
             return
 
         logging.info("Wymuszanie pełnego ponownego skanowania")
@@ -1105,7 +1076,7 @@ class MainWindow(QMainWindow):
         clear_cache()
 
         # Rozpocznij ponowne skanowanie bieżącego folderu
-        self._select_working_directory(self.current_working_directory)
+        self._select_working_directory(self.controller.current_directory)
 
     def _update_thumbnail_size(self):
         """
@@ -1126,18 +1097,18 @@ class MainWindow(QMainWindow):
         Zapisuje metadane dla wszystkich par plików w osobnym wątku.
         """
         logging.info(
-            f"🔄 _save_metadata wywołane - katalog: {self.current_working_directory}"
+            f"🔄 _save_metadata wywołane - katalog: {self.controller.current_directory}"
         )
-        if not self.current_working_directory:
+        if not self.controller.current_directory:
             logging.debug("Brak folderu roboczego lub par plików do zapisu metadanych.")
             return
 
         # Utwórz workera do zapisu metadanych używając fabryki
         worker = WorkerFactory.create_save_metadata_worker(
-            self.current_working_directory,
-            self.all_file_pairs,
-            self.unpaired_archives,
-            self.unpaired_previews,
+            self.controller.current_directory,
+            self.controller.current_file_pairs,
+            self.controller.unpaired_archives,
+            self.controller.unpaired_previews,
         )
 
         # Podłącz sygnały
@@ -1146,7 +1117,8 @@ class MainWindow(QMainWindow):
 
         # Uruchom workera
         self._show_progress(
-            0, f"Zapisywanie metadanych dla {len(self.all_file_pairs)} par plików..."
+            0,
+            f"Zapisywanie metadanych dla {len(self.controller.current_file_pairs)} par plików...",
         )
         self.thread_pool.start(worker)
 
@@ -1214,27 +1186,27 @@ class MainWindow(QMainWindow):
 
         # LEGACY: Aktualizuj lokalny stan (stopniowo usuwane)
         if is_selected:
-            self.selected_tiles.add(file_pair)
+            self.controller.selected_tiles.add(file_pair)
         else:
-            self.selected_tiles.discard(file_pair)
+            self.controller.selected_tiles.discard(file_pair)
 
         # Update bulk operations UI visibility
         self._update_bulk_operations_visibility()
 
-        logging.debug(f"Total selected tiles: {len(self.selected_tiles)}")
+        logging.debug(f"Total selected tiles: {len(self.controller.selected_tiles)}")
 
     def _update_bulk_operations_visibility(self):
         """Updates visibility of bulk operations controls based on selection count."""
-        has_selection = len(self.selected_tiles) > 0
+        has_selection = len(self.controller.selected_tiles) > 0
         if hasattr(self, "bulk_operations_panel"):
             self.bulk_operations_panel.setVisible(has_selection)
             if hasattr(self, "selected_count_label"):
-                count = len(self.selected_tiles)
+                count = len(self.controller.selected_tiles)
                 self.selected_count_label.setText(f"Zaznaczone: {count}")
 
     def _clear_all_selections(self):
         """Clears all tile selections."""
-        self.selected_tiles.clear()  # Update all visible tiles to reflect cleared selection
+        self.controller.selected_tiles.clear()  # Update all visible tiles to reflect cleared selection
         if hasattr(self, "gallery_manager") and self.gallery_manager:
             for tile_widget in self.gallery_manager.get_all_tile_widgets():
                 if hasattr(tile_widget, "metadata_controls"):
@@ -1248,24 +1220,28 @@ class MainWindow(QMainWindow):
         if hasattr(self, "gallery_manager") and self.gallery_manager:
             for tile_widget in self.gallery_manager.get_all_tile_widgets():
                 if hasattr(tile_widget, "file_pair") and tile_widget.file_pair:
-                    self.selected_tiles.add(tile_widget.file_pair)
+                    self.controller.selected_tiles.add(tile_widget.file_pair)
                     if hasattr(tile_widget, "metadata_controls"):
                         tile_widget.metadata_controls.update_selection_display(True)
 
             self._update_bulk_operations_visibility()
-            logging.debug(f"Selected all {len(self.selected_tiles)} visible tiles")
+            logging.debug(
+                f"Selected all {len(self.controller.selected_tiles)} visible tiles"
+            )
 
     def _perform_bulk_delete(self):
         """ETAP 2 FINAL: Delegacja bulk delete do MainWindowController (MVC)."""
-        if not self.selected_tiles:
+        if not self.controller.selected_tiles:
             return
 
         # DELEGACJA DO KONTROLERA - NO MORE DIRECT UI LOGIC!
-        success = self.controller.handle_bulk_delete(list(self.selected_tiles))
+        success = self.controller.handle_bulk_delete(
+            list(self.controller.selected_tiles)
+        )
 
         if success:
             # Wyczyść selekcję po pomyślnej operacji
-            self.selected_tiles.clear()
+            self.controller.selected_tiles.clear()
             self._update_bulk_operations_visibility()
             logging.info("Controller bulk delete SUCCESS")
         else:
@@ -1284,9 +1260,9 @@ class MainWindow(QMainWindow):
 
         # Usuń pary z głównej listy i selekcji
         for file_pair in deleted_pairs:
-            if file_pair in self.all_file_pairs:
-                self.all_file_pairs.remove(file_pair)
-            self.selected_tiles.discard(file_pair)
+            if file_pair in self.controller.current_file_pairs:
+                self.controller.current_file_pairs.remove(file_pair)
+            self.controller.selected_tiles.discard(file_pair)
 
         # Odśwież widok
         self._apply_filters_and_update_view()
@@ -1298,26 +1274,26 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             "Usuwanie zakończone",
-            f"Usunięto {len(deleted_pairs)} z {len(self.selected_tiles) + len(deleted_pairs)} zaznaczonych plików.",
+            f"Usunięto {len(deleted_pairs)} z {len(self.controller.selected_tiles) + len(deleted_pairs)} zaznaczonych plików.",
         )
 
     def _perform_bulk_move(self):
         """Wykonuje masową operację przenoszenia zaznaczonych kafelków przy użyciu wątku roboczego."""
-        if not self.selected_tiles:
+        if not self.controller.selected_tiles:
             return
 
         # Pobierz katalog docelowy
         destination = QFileDialog.getExistingDirectory(
-            self, "Wybierz folder docelowy", self.current_working_directory or ""
+            self, "Wybierz folder docelowy", self.controller.current_directory or ""
         )
 
         if not destination:
             return
 
-        count = len(self.selected_tiles)
+        count = len(self.controller.selected_tiles)
 
         # Utwórz workera do masowego przenoszenia
-        worker = BulkMoveWorker(list(self.selected_tiles), destination)
+        worker = BulkMoveWorker(list(self.controller.selected_tiles), destination)
 
         # Podłącz sygnały
         self._setup_worker_connections(worker)
@@ -1340,16 +1316,16 @@ class MainWindow(QMainWindow):
 
         # Usuń przeniesione pary z struktur danych
         for file_pair in moved_pairs:
-            if file_pair in self.all_file_pairs:
-                self.all_file_pairs.remove(file_pair)
-            self.selected_tiles.discard(file_pair)
+            if file_pair in self.controller.current_file_pairs:
+                self.controller.current_file_pairs.remove(file_pair)
+            self.controller.selected_tiles.discard(file_pair)
 
         # 🔧 NAPRAWKA: Odśwież folder źródłowy po operacji drag&drop
         # Po przeniesieniu plików musimy ponownie przeskanować folder źródłowy,
         # żeby usunąć z widoku pliki które już nie istnieją na dysku
-        if self.current_working_directory:
+        if self.controller.current_directory:
             logging.info(
-                f"Odświeżanie folderu źródłowego po drag&drop: {self.current_working_directory}"
+                f"Odświeżanie folderu źródłowego po drag&drop: {self.controller.current_directory}"
             )
             self._refresh_source_folder_after_move()
 
@@ -1365,7 +1341,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             "Przenoszenie zakończone",
-            f"Przeniesiono {len(moved_pairs)} z {len(self.selected_tiles) + len(moved_pairs)} zaznaczonych plików do:\n{destination}",
+            f"Przeniesiono {len(moved_pairs)} z {len(self.controller.selected_tiles) + len(moved_pairs)} zaznaczonych plików do:\n{destination}",
         )
 
     def _refresh_source_folder_after_move(self):
@@ -1375,18 +1351,18 @@ class MainWindow(QMainWindow):
         Ta metoda ponownie skanuje current_working_directory, aby usunąć z widoku
         pliki które zostały przeniesione i już nie istnieją na dysku.
         """
-        if not self.current_working_directory or not os.path.exists(
-            self.current_working_directory
+        if not self.controller.current_directory or not os.path.exists(
+            self.controller.current_directory
         ):
             logging.warning(
-                f"Nie można odświeżyć - folder źródłowy nie istnieje: {self.current_working_directory}"
+                f"Nie można odświeżyć - folder źródłowy nie istnieje: {self.controller.current_directory}"
             )
             return
 
         try:
             # Ponownie przeskanuj folder źródłowy
             logging.info(
-                f"Rozpoczynanie ponownego skanowania folderu: {self.current_working_directory}"
+                f"Rozpoczynanie ponownego skanowania folderu: {self.controller.current_directory}"
             )
 
             # Wyczyść cache aby wymusić pełny rescan
@@ -1395,10 +1371,10 @@ class MainWindow(QMainWindow):
             clear_cache()
 
             # Uruchom ponowne skanowanie za pomocą kontrolera
-            # To wywoła pełne ponowne skanowanie i zaktualizuje self.all_file_pairs
+            # To wywoła pełne ponowne skanowanie i zaktualizuje self.controller.current_file_pairs
             if hasattr(self, "controller") and self.controller:
                 success = self.controller.handle_folder_selection(
-                    self.current_working_directory
+                    self.controller.current_directory
                 )
                 if success:
                     logging.info(
@@ -1531,21 +1507,24 @@ class MainWindow(QMainWindow):
 
     def update_scan_results(self, scan_result):
         """Aktualizuje UI wynikami skanowania z kontrolera."""
-        self.all_file_pairs = scan_result.file_pairs
-        self.unpaired_archives = scan_result.unpaired_archives
-        self.unpaired_previews = scan_result.unpaired_previews
+        self.controller.handle_scan_finished(
+            scan_result.file_pairs,
+            scan_result.unpaired_archives,
+            scan_result.unpaired_previews,
+        )
 
         # Wyczyść poprzednie widgety
         self.gallery_manager.clear_gallery()
 
         # Utwórz nowe kafelki
-        if self.all_file_pairs:
-            self._start_data_processing_worker(self.all_file_pairs)
+        if scan_result.file_pairs:
+            self._start_data_processing_worker(scan_result.file_pairs)
         else:
             self._on_tile_loading_finished()
 
-        # Aktualizuj listy niesparowanych
-        self._update_unpaired_files_lists()
+        # Aktualizuj listy niesparowanych przez delegację do managera
+        if hasattr(self, "unpaired_files_tab_manager"):
+            self.unpaired_files_tab_manager.update_unpaired_files_lists()
 
     def confirm_bulk_delete(self, count: int) -> bool:
         """Potwierdza operację bulk delete z użytkownikiem."""
@@ -1578,16 +1557,18 @@ class MainWindow(QMainWindow):
 
     def add_new_pair(self, new_pair):
         """Dodaje nową parę do UI."""
-        self.all_file_pairs.append(new_pair)
+        self.controller.current_file_pairs.append(new_pair)
         tile = self._create_tile_widget_for_pair(new_pair)
         if tile:
             self.gallery_manager.add_tile_widget(tile)
 
     def update_unpaired_lists(self, archives, previews):
         """Aktualizuje listy niesparowanych plików."""
-        self.unpaired_archives = archives
-        self.unpaired_previews = previews
-        self._update_unpaired_files_lists()
+        self.controller.unpaired_archives = archives
+        self.controller.unpaired_previews = previews
+        # Delegacja do managera zamiast wywołania nieistniejącej metody
+        if hasattr(self, "unpaired_files_tab_manager"):
+            self.unpaired_files_tab_manager.update_unpaired_files_lists()
 
     def request_metadata_save(self):
         """Żąda zapisu metadanych."""

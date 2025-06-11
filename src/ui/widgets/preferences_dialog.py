@@ -532,10 +532,10 @@ class PreferencesDialog(QDialog):
     def _set_current_as_default(self):
         """Ustawia aktualny folder głównego okna jako domyślny."""
         if (
-            hasattr(self.parent(), "current_working_directory")
-            and self.parent().current_working_directory
+            hasattr(self.parent(), "controller")
+            and self.parent().controller.current_directory
         ):
-            current_folder = self.parent().current_working_directory
+            current_folder = self.parent().controller.current_directory
             self.default_folder_edit.setText(current_folder)
             self._mark_changed()
             logging.info(

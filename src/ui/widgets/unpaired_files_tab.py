@@ -344,14 +344,14 @@ class UnpairedFilesTab:
                 widget_to_remove.setParent(None)
                 self.unpaired_previews_layout.removeWidget(widget_to_remove)
 
-        # Aktualizuj listę archiwów
-        for archive_path in self.main_window.unpaired_archives:
+        # Aktualizuj listę archiwów - stan z Controller
+        for archive_path in self.main_window.controller.unpaired_archives:
             item = QListWidgetItem(os.path.basename(archive_path))
             item.setData(Qt.ItemDataRole.UserRole, archive_path)
             self.unpaired_archives_list_widget.addItem(item)
 
-        # Aktualizuj miniaturki podglądów
-        for preview_path in self.main_window.unpaired_previews:
+        # Aktualizuj miniaturki podglądów - stan z Controller
+        for preview_path in self.main_window.controller.unpaired_previews:
             # Dodaj do ukrytego QListWidget dla kompatybilności
             item = QListWidgetItem(os.path.basename(preview_path))
             item.setData(Qt.ItemDataRole.UserRole, preview_path)
@@ -362,8 +362,8 @@ class UnpairedFilesTab:
 
         logging.debug(
             f"Zaktualizowano listy niesparowanych: "
-            f"{len(self.main_window.unpaired_archives)} archiwów, "
-            f"{len(self.main_window.unpaired_previews)} podglądów."
+            f"{len(self.main_window.controller.unpaired_archives)} archiwów, "
+            f"{len(self.main_window.controller.unpaired_previews)} podglądów."
         )
         self._update_pair_button_state()
 
@@ -401,7 +401,7 @@ class UnpairedFilesTab:
         Odświeża widok niesparowanych plików po operacjach takich jak usuwanie.
         """
         # Ponowne skanowanie folderu
-        current_folder = self.main_window.current_working_directory
+        current_folder = self.main_window.controller.current_directory
         if current_folder and os.path.isdir(current_folder):
             # Deleguj do głównego okna
             if hasattr(self.main_window, "force_full_refresh"):

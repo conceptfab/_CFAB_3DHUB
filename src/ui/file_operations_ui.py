@@ -762,17 +762,17 @@ class FileOperationsUI:
 
         # 🔧 NAPRAWKA DRAG&DROP: Usuń przeniesione pary z struktur danych głównego okna
         # i odśwież folder źródłowy żeby usunąć pliki które już nie istnieją na dysku
-        if hasattr(self.parent_window, "all_file_pairs") and moved_pairs:
+        if hasattr(self.parent_window, "controller") and moved_pairs:
             # Usuń przeniesione pary z głównej listy
             for file_pair in moved_pairs:
-                if file_pair in self.parent_window.all_file_pairs:
-                    self.parent_window.all_file_pairs.remove(file_pair)
+                if file_pair in self.parent_window.controller.current_file_pairs:
+                    self.parent_window.controller.current_file_pairs.remove(file_pair)
                 # Usuń z zaznaczonych kafelków jeśli istnieje
-                if hasattr(self.parent_window, "selected_tiles"):
-                    self.parent_window.selected_tiles.discard(file_pair)
+                if hasattr(self.parent_window, "controller"):
+                    self.parent_window.controller.selected_tiles.discard(file_pair)
 
             logging.info(
-                f"🚀 DRAG&DROP: Usunięto {len(moved_pairs)} par z all_file_pairs"
+                f"🚀 DRAG&DROP: Usunięto {len(moved_pairs)} par z current_file_pairs"
             )
 
             # Odśwież folder źródłowy używając tego samego mechanizmu co w głównym oknie
