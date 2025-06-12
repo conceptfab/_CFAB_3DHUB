@@ -997,7 +997,7 @@ class DirectoryTreeManager:
         rename_folder_action.triggered.connect(lambda: self.rename_folder(folder_path))
         delete_folder_action.triggered.connect(
             lambda: self.delete_folder(
-                folder_path, self.parent_window.current_working_directory
+                folder_path, self.parent_window.controller.current_directory
             )
         )
 

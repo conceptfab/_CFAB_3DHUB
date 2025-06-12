@@ -1132,24 +1132,24 @@ class MainWindow(QMainWindow):
 
     def force_full_refresh(self):
         """
-        Wymusza pełne ponowne skanowanie - tylko gdy rzeczywiście potrzebne.
+        Wymusza pełne ponowne skanowanie bieżącego katalogu i odświeżenie
+        wszystkich widoków.
         """
-        if not self.controller.current_directory:
-            return
-
-        logging.info("Wymuszanie pełnego ponownego skanowania")
-
-        # Wyczyść cache skanera aby wymusić ponowne skanowanie
-        from src.logic.scanner import clear_cache
-
-        clear_cache()
-
-        # Rozpocznij ponowne skanowanie bieżącego folderu
-        self._select_working_directory(self.controller.current_directory)
+        current_folder = self.controller.current_directory
+        if current_folder and os.path.isdir(current_folder):
+            logging.info(f"Wymuszanie pełnego odświeżenia dla: {current_folder}")
+            # Użyj istniejącej metody do ponownego wybrania folderu,
+            # co uruchomi cały proces od nowa.
+            self._select_working_directory(current_folder)
+        else:
+            logging.warning(
+                "Nie można wymusić odświeżenia - brak bieżącego "
+                "katalogu roboczego."
+            )
 
     def _update_thumbnail_size(self):
         """
-        Aktualizuje rozmiar miniatur i przerenderowuje galerię.
+        Aktualizuje rozmiar miniatur na podstawie wartości suwaka.
         """
         # Deleguj do gallery_tab_manager
         self.gallery_tab_manager.update_thumbnail_size()

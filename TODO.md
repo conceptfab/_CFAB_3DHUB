@@ -1,1 +1,2 @@
-4. checkbox do zaznacznia kafelków powinien mieć identyczne marginesy od lewej i od dołu
+1. Ograniczenie logowanie do konsoli - wg ustwien w preferencjach - INFO, DEBUG
+2. Dodanie too

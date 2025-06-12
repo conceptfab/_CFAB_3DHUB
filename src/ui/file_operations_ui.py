@@ -267,56 +267,40 @@ class FileOperationsUI:
             self.parent_window.refresh_all_views()
 
     def handle_manual_pairing(
-        self, unpaired_archives_list: QListWidget, unpaired_previews_list: QListWidget
+        self,
+        unpaired_archives_list: QListWidget,
+        unpaired_previews_list: QListWidget,
+        current_working_directory: str,
     ) -> None:  # Zmieniono zwracany typ
         """
-        Obsługuje logikę ręcznego parowania plików zaznaczonych na listach, używając workera.
+        Obsługuje ręczne parowanie plików.
         """
         selected_archives = unpaired_archives_list.selectedItems()
         selected_previews = unpaired_previews_list.selectedItems()
 
-        if not (len(selected_archives) == 1 and len(selected_previews) == 1):
-            QMessageBox.warning(
-                self.parent_window,
-                "Błąd parowania",
-                "Proszę zaznaczyć dokładnie jeden plik archiwum "
-                "i jeden plik podglądu.",
-            )
-            return None
-
-        archive_item = selected_archives[0]
-        preview_item = selected_previews[0]
-
-        archive_path = archive_item.data(Qt.ItemDataRole.UserRole)
-        preview_path = preview_item.data(Qt.ItemDataRole.UserRole)
-
-        # Używamy nowej funkcji z file_operations, która zwraca worker
-        # Pobieramy working_directory z parent_window.current_working_directory
-        if not hasattr(self.parent_window, "current_working_directory"):
+        if not current_working_directory:
             QMessageBox.critical(
                 self.parent_window,
                 "Błąd konfiguracji",
-                "Nie można uzyskać ścieżki bieżącego katalogu roboczego. Operacja parowania przerwana.",
-            )
-            logger.error(
-                "Nie można uzyskać working_directory z self.parent_window.current_working_directory"
+                "Nie można uzyskać ścieżki bieżącego katalogu roboczego. "
+                "Operacja parowania przerwana.",
             )
             return
 
-        working_directory = self.parent_window.current_working_directory
-        if not working_directory or not os.path.isdir(working_directory):
-            QMessageBox.critical(
+        if len(selected_archives) != 1 or len(selected_previews) != 1:
+            QMessageBox.warning(
                 self.parent_window,
-                "Błąd ścieżki roboczej",
-                f"Uzyskana ścieżka katalogu roboczego jest nieprawidłowa lub nie istnieje: {working_directory}",
-            )
-            logger.error(
-                f"Nieprawidłowa ścieżka working_directory: {working_directory}"
+                "Wymagane zaznaczenie",
+                "Proszę zaznaczyć dokładnie jeden plik archiwum "
+                "i jeden plik podglądu.",
             )
             return
+
+        archive_path = selected_archives[0].data(Qt.ItemDataRole.UserRole)
+        preview_path = selected_previews[0].data(Qt.ItemDataRole.UserRole)
 
         worker = file_operations.manually_pair_files(
-            archive_path, preview_path, working_directory
+            archive_path, preview_path, current_working_directory
         )
 
         if worker:
@@ -369,21 +353,19 @@ class FileOperationsUI:
     def _handle_manual_pairing_finished(
         self, new_file_pair: FilePair, progress_dialog: QProgressDialog
     ):
-        logger.info(
-            f"Pomyślnie sparowano pliki: {new_file_pair.get_archive_path()} z {new_file_pair.get_preview_path()}"
-        )
+        logger.info(f"Pomyślnie sparowano pliki: {new_file_pair}")
         if progress_dialog.isVisible():
             progress_dialog.accept()
 
         QMessageBox.information(
-            self.parent_window,
-            "Sukces",
-            f"Pomyślnie sparowano pliki dla '{new_file_pair.get_base_name()}'.",
+            self.parent_window, "Sukces", f"Pomyślnie sparowano plik: {new_file_pair}"
         )
-        if hasattr(self.parent_window, "refresh_all_views") and callable(
-            self.parent_window.refresh_all_views
+
+        # Odśwież widoki w MainWindow
+        if hasattr(self.parent_window, "force_full_refresh") and callable(
+            self.parent_window.force_full_refresh
         ):
-            self.parent_window.refresh_all_views(new_selection=new_file_pair)
+            self.parent_window.force_full_refresh()
 
     def handle_drop_on_folder(self, urls: List, target_folder_path: str):
         """

@@ -6,8 +6,8 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QPixmap
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QGridLayout,
     QLabel,
@@ -20,6 +20,10 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QVBoxLayout,
     QWidget,
+    QStyle,
+    QFrame,
+    QCheckBox,
+    QHBoxLayout,
 )
 
 if TYPE_CHECKING:
@@ -50,6 +54,7 @@ class UnpairedFilesTab:
         self.unpaired_previews_layout = None
         self.unpaired_previews_list_widget = None
         self.pair_manually_button = None
+        self.preview_checkboxes = []
 
     def create_unpaired_files_tab(self) -> QWidget:
         """
@@ -214,11 +219,53 @@ class UnpairedFilesTab:
         if not os.path.exists(preview_path):
             return
 
-        # Utwórz kontener na miniaturkę i przyciski
-        thumbnail_widget = QWidget()
-        thumbnail_layout = QVBoxLayout(thumbnail_widget)
+        # Utwórz ramkę, która będzie kontenerem dla kafelka
+        tile_frame = QFrame()
+        tile_frame.setObjectName("UnpairedPreviewTile")
+        tile_frame.setStyleSheet("""
+            QFrame#UnpairedPreviewTile {
+                border: 1px solid #454545;
+                border-radius: 5px;
+                background-color: #2E2E2E;
+            }
+            QFrame#UnpairedPreviewTile:hover {
+                background-color: #383838;
+            }
+        """)
+
+        # Utwórz layout dla ramki
+        thumbnail_layout = QVBoxLayout(tile_frame)
         thumbnail_layout.setContentsMargins(5, 5, 5, 5)
         thumbnail_layout.setSpacing(5)
+
+        # --- Wiersz z kontrolkami na dole ---
+        bottom_controls_layout = QHBoxLayout()
+
+        # Checkbox do zaznaczania
+        checkbox = QCheckBox()
+        checkbox.setToolTip("Zaznacz ten podgląd do sparowania")
+        checkbox.stateChanged.connect(
+            lambda state, cb=checkbox, path=preview_path: self._on_preview_checkbox_changed(
+                cb, path, state
+            )
+        )
+        bottom_controls_layout.addWidget(checkbox)
+        self.preview_checkboxes.append(checkbox)
+
+        # Elastyczna przestrzeń
+        bottom_controls_layout.addStretch()
+
+        # Przycisk do usuwania podglądu
+        delete_button = QPushButton()
+        trash_icon = self.main_window.style().standardIcon(
+            QStyle.StandardPixmap.SP_TrashIcon
+        )
+        delete_button.setIcon(trash_icon)
+        delete_button.setToolTip("Usuń plik podglądu")
+        delete_button.setFixedSize(QSize(32, 32))
+        delete_button.setIconSize(QSize(24, 24))
+        delete_button.clicked.connect(lambda: self._delete_preview_file(preview_path))
+        bottom_controls_layout.addWidget(delete_button)
 
         # Utwórz etykietę na miniaturkę
         thumbnail_label = QLabel()
@@ -254,13 +301,11 @@ class UnpairedFilesTab:
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         thumbnail_layout.addWidget(name_label)
 
-        # Przycisk do usuwania podglądu
-        delete_button = QPushButton("Usuń")
-        delete_button.clicked.connect(lambda: self._delete_preview_file(preview_path))
-        thumbnail_layout.addWidget(delete_button)
+        # Dodaj kontrolki na dole
+        thumbnail_layout.addLayout(bottom_controls_layout)
 
         # Przechowuj ścieżkę pliku w danych widgetu
-        thumbnail_widget.setProperty("file_path", preview_path)
+        tile_frame.setProperty("file_path", preview_path)
 
         # Dodaj do siatki
         row = self.unpaired_previews_layout.rowCount()
@@ -271,12 +316,40 @@ class UnpairedFilesTab:
             # Umieść maksymalnie 3 miniaturki w rzędzie
             row, col = divmod(self.unpaired_previews_layout.count(), 3)
 
-        self.unpaired_previews_layout.addWidget(thumbnail_widget, row, col)
+        self.unpaired_previews_layout.addWidget(tile_frame, row, col)
 
-        # Zaznacz ten podgląd do parowania, gdy zostanie kliknięty
-        thumbnail_widget.mousePressEvent = (
-            lambda event: self._select_preview_for_pairing(preview_path)
-        )
+    def _on_preview_checkbox_changed(self, checkbox, preview_path, state):
+        """
+        Obsługuje zmianę stanu checkboxa, zapewniając wybór tylko jednego elementu.
+        """
+        # Zablokuj sygnały, aby uniknąć rekurencji
+        checkbox.blockSignals(True)
+
+        if state == Qt.CheckState.Checked.value:
+            # Odznacz wszystkie inne checkboxy
+            for cb in self.preview_checkboxes:
+                if cb is not checkbox and cb.isChecked():
+                    cb.blockSignals(True)
+                    cb.setChecked(False)
+                    cb.blockSignals(False)
+
+            # Zaznacz odpowiedni element na ukrytej liście
+            for i in range(self.unpaired_previews_list_widget.count()):
+                item = self.unpaired_previews_list_widget.item(i)
+                if item.data(Qt.ItemDataRole.UserRole) == preview_path:
+                    self.unpaired_previews_list_widget.setCurrentItem(item)
+                    break
+        else:
+            # Odznacz element na liście, jeśli to on był zaznaczony
+            current_item = self.unpaired_previews_list_widget.currentItem()
+            if current_item and current_item.data(Qt.ItemDataRole.UserRole) == preview_path:
+                self.unpaired_previews_list_widget.setCurrentItem(None)
+
+        # Odblokuj sygnały
+        checkbox.blockSignals(False)
+
+        # Aktualizacja stanu przycisku jest wywoływana przez sygnał
+        # itemSelectionChanged z unpaired_previews_list_widget
 
     def _select_preview_for_pairing(self, preview_path):
         """
@@ -385,13 +458,25 @@ class UnpairedFilesTab:
         # UŻYWAMY BEZPOŚREDNIO ATRYBUTÓW Z MANAGERA
         self.unpaired_archives_list_widget.clear()
         self.unpaired_previews_list_widget.clear()
+        self.preview_checkboxes.clear()
 
         # Wyczyść kontener miniaturek
         while self.unpaired_previews_layout.count():
-            widget_to_remove = self.unpaired_previews_layout.itemAt(0).widget()
-            if widget_to_remove:
-                widget_to_remove.setParent(None)
-                self.unpaired_previews_layout.removeWidget(widget_to_remove)
+            item_to_remove = self.unpaired_previews_layout.takeAt(0)
+            if item_to_remove:
+                widget_to_remove = item_to_remove.widget()
+                if widget_to_remove:
+                    widget_to_remove.setParent(None)
+                    widget_to_remove.deleteLater()
+                else:
+                    # Jeśli to layout, wyczyść go rekurencyjnie
+                    layout_to_remove = item_to_remove.layout()
+                    if layout_to_remove:
+                        while layout_to_remove.count():
+                            child = layout_to_remove.takeAt(0)
+                            if child.widget():
+                                child.widget().setParent(None)
+                                child.widget().deleteLater()
 
         # Aktualizuj listę archiwów - stan z Controller
         for archive_path in self.main_window.controller.unpaired_archives:
@@ -444,8 +529,11 @@ class UnpairedFilesTab:
         """
         # Deleguj obsługę do FileOperationsUI
         if hasattr(self.main_window, "file_operations_ui"):
+            current_directory = self.main_window.controller.current_directory
             self.main_window.file_operations_ui.handle_manual_pairing(
-                self.unpaired_archives_list_widget, self.unpaired_previews_list_widget
+                self.unpaired_archives_list_widget,
+                self.unpaired_previews_list_widget,
+                current_directory,
             )
 
     def _refresh_unpaired_files(self):
