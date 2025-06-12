@@ -5,6 +5,8 @@
 **Data rozpoczęcia ETAPU 2:** Audyt zgodny z \_audyt.md  
 **Status:** ETAP 2 W TRAKCIE - FAZA 1 (🔴) ZAKOŃCZONA | FAZA 2 (🟡) ROZPOCZĘTA
 
+**OSTATNIA POPRAWKA:** Naprawiono wyświetlanie nazw folderów w drzewie katalogów - teraz pokazuje nazwę folderu wraz ze statystykami (pojemność GB, liczba par)
+
 ---
 
 ## 📋 PLAN REALIZACJI

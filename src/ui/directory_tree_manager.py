@@ -306,14 +306,19 @@ class StatsProxyModel(QSortFilterProxyModel):
 
         source_index = self.mapToSource(index)
         if not source_index.isValid():
-            return None
+            return super().data(index, role)
 
-        # Pobierz ścieżkę folderu
+        # Pobierz nazwę folderu z oryginalnego modelu
+        folder_name = self.sourceModel().fileName(source_index)
+        if not folder_name:
+            return super().data(index, role)
+
+        # Pobierz ścieżkę folderu dla statystyk
         folder_path = self.sourceModel().filePath(source_index)
         if not folder_path:
-            return None
+            return folder_name
 
-        # Sprawdź cache
+        # Sprawdź cache statystyk
         current_time = time.time()
         last_update = self._last_update.get(folder_path, 0)
 
@@ -322,17 +327,21 @@ class StatsProxyModel(QSortFilterProxyModel):
             and (current_time - last_update) < self._update_interval
         ):
             stats = self._stats_cache[folder_path]
-            return f"{stats.total_size_gb:.1f} GB, {stats.total_pairs} par"
+            return (
+                f"{folder_name} ({stats.total_size_gb:.1f} GB, {stats.total_pairs} par)"
+            )
 
         # Jeśli nie ma w cache lub minął interwał, pobierz statystyki
         stats = self.directory_tree_manager.get_cached_folder_statistics(folder_path)
         if stats:
             self._stats_cache[folder_path] = stats
             self._last_update[folder_path] = current_time
-            return f"{stats.total_size_gb:.1f} GB, {stats.total_pairs} par"
+            return (
+                f"{folder_name} ({stats.total_size_gb:.1f} GB, {stats.total_pairs} par)"
+            )
 
-        # Jeśli nie ma statystyk, zwróć placeholder
-        return "Obliczanie..."
+        # Jeśli nie ma statystyk, zwróć nazwę folderu z placeholderem
+        return f"{folder_name} (obliczanie...)"
 
 
 # Definicja delegata do podświetlania celu upuszczenia
