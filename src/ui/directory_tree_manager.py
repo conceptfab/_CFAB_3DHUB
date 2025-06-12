@@ -12,11 +12,8 @@ from typing import List, Optional
 
 from PyQt6.QtCore import (
     QDir,
-    QEvent,
-    QMimeData,
     QModelIndex,
     QObject,
-    QRunnable,
     QSortFilterProxyModel,
     Qt,
     QThreadPool,
@@ -24,24 +21,20 @@ from PyQt6.QtCore import (
     pyqtSignal,
 )
 from PyQt6.QtGui import (
-    QAction,
     QColor,
     QDragEnterEvent,
     QDragLeaveEvent,
     QDragMoveEvent,
     QDropEvent,
     QFileSystemModel,
-    QMouseEvent,
 )
 from PyQt6.QtWidgets import (
-    QApplication,
     QHBoxLayout,
     QInputDialog,
     QMenu,
     QMessageBox,
     QProgressDialog,
     QStyledItemDelegate,
-    QStyleOptionViewItem,
     QToolBar,
     QTreeView,
     QWidget,
@@ -711,26 +704,6 @@ class DirectoryTreeManager:
         worker.custom_signals.error.connect(on_error)
 
         QThreadPool.globalInstance().start(worker)
-
-    def refresh_folder_only(self, folder_path: str):
-        """Odświeża tylko konkretny folder zamiast całego drzewa."""
-        try:
-            # Używając proxy model
-            source_index = self.model.index(folder_path)
-            if source_index.isValid():
-                proxy_index = self.proxy_model.mapFromSource(source_index)
-                if proxy_index.isValid():
-                    # Trigger refresh tylko dla tego węzła
-                    self.proxy_model.invalidate()
-                    logger.debug(f"Odświeżono folder: {folder_path}")
-                    return
-
-            # Fallback - pełne odświeżenie tylko jeśli selektywne nie działa
-            self.model.refresh()
-            logger.debug("Fallback - pełne odświeżenie drzewa")
-        except Exception as e:
-            logger.error(f"Błąd odświeżania folderu {folder_path}: {e}")
-            self.model.refresh()
 
     def init_directory_tree_async(self, current_working_directory: str):
         """Asynchroniczna wersja inicjalizacji drzewa katalogów."""
