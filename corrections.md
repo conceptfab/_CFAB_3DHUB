@@ -475,23 +475,250 @@ Aplikacja jest w pełni funkcjonalna, architektura MVC działa, wszystkie proble
 
 ---
 
-## ETAP 4: SRC/UI/DELEGATES/WORKERS.PY (skrót)
+## ETAP 4: SRC/UI/DELEGATES/WORKERS.PY
 
 ### 📋 Identyfikacja
 
-- **Plik:** `src/ui/delegates/workers.py` | **Priorytet:** 🔴 | **Rozmiar:** 2067 linii (NAJWIĘKSZY!)
+- **Plik główny:** `src/ui/delegates/workers.py`
+- **Priorytet:** 🔴 **WYSOKI PRIORYTET**
+- **Rozmiar:** **2084 linii** - NAJWIĘKSZY PLIK W PROJEKCIE (wzrost z 2067 linii)
+- **Klasy:** **20 klas** w jednym pliku - KRYTYCZNY MEGA-MONOLITH
+- **Zależności:** PyQt6, src.logic, src.models, src.utils, src.ui.delegates.scanner_worker
 
-### 🔍 Problemy krytyczne
+### 🔍 Analiza problemów - SZCZEGÓŁOWA
 
-❌ **MEGA-MONOLITH** - Wszystkie workery w jednym pliku, 15+ klas  
-❌ **DUPLIKACJA KODU** - BaseWorker + UnifiedBaseWorker + TransactionalWorker  
-❌ **MIESZANIE ABSTRAKCJI** - Low-level I/O + high-level business logic
+#### 1. **Błędy krytyczne architektury:**
 
-### 🎯 Rekomendacje
+❌ **MEGA-MONOLITH NAJWIĘKSZY W PROJEKCIE** (2084 linii)
 
-1. **Podział na 6 plików:** base_workers.py, file_workers.py, scan_workers.py, etc.
-2. **Jedna hierarchia workerów** zamiast 3 konkurujących
-3. **Factory pattern** dla tworzenia workerów
+- **20 klas** w jednym pliku: 3 klasy bazowe + 14 konkretnych workerów + 3 pomocnicze
+- **Hierarchie workerów:** BaseWorker → UnifiedBaseWorker → TransactionalWorker (3 poziomy dziedziczenia)
+- **Specjalne przypadki:** DataProcessingWorker (dziedziczy QObject zamiast QRunnable)
+- **Duplikacja funkcjonalności:** BaseWorker vs UnifiedBaseWorker - podobne metody, różne implementacje
+
+❌ **CHAOS W DZIEDZICZENIU** (linie 31-193)
+
+- **BaseWorker** (linie 31-98): Podstawowa funkcjonalność, ale nie używana konsekwentnie
+- **UnifiedBaseWorker** (linie 100-191): Rozszerza BaseWorker ale duplikuje kod
+- **TransactionalWorker** (linie 192-249): Dodaje rollback ale nie wszystkie workery go używają
+- **Inconsistency:** Różne workery używają różnych klas bazowych bez jasnego wzorca
+
+❌ **KRYTYCZNY PROBLEM MINIATUREK** (linie 1310-1445) 🎯 **KLUCZOWA FUNKCJONALNOŚĆ**
+
+- **ThumbnailGenerationWorker:** Serce aplikacji - odpowiedzialny za generowanie miniaturek w galerii
+- **Problem z factorym** (linie 2025-2050): `create_thumbnail_worker()` ma błędny priorytet - tylko `setAutoDelete(True)` niezależnie od priority
+- **Duplikacja cache checks:** Worker sprawdza cache dwukrotnie - raz przed startem i raz w środku `run()`
+- **KRYTYCZNY błąd składniowy (linia 2051):** `@ staticmethod` zamiast `@staticmethod` - popsuje całą klasę!
+
+❌ **DUPLIKACJA SYGNAŁÓW** (linie 20-30, 1298-1308, 1456-1465)
+
+- **BaseWorkerSignals:** finished, error, progress, interrupted
+- **ThumbnailWorkerSignals:** finished z innymi parametrami (QPixmap, str, int, int)
+- **ScanFolderSignals:** finished z innymi parametrami (list, list, list)
+- **DataProcessingWorker:** Ma własne sygnały bezpośrednio w klasie
+
+❌ **INCONSISTENT VALIDATION** (różne implementacje \_validate_inputs)
+
+- **CreateFolderWorker** (linie 262-268): Sprawdza parent_directory i folder_name
+- **DeleteFolderWorker** (linie 428-436): Sprawdza folder_path i czy exists
+- **ManuallyPairFilesWorker** (linie 528-537): Rozbudowana walidacja 3 parametrów
+- **Brak standardu:** Każdy worker implementuje walidację inaczej
+
+#### 2. **Problemy wydajności:**
+
+🔧 **NADMIERNE LOGOWANIE** (każda metoda emit\_\*)
+
+- Każdy `emit_progress()`, `emit_error()`, `emit_finished()` loguje
+- Przy tysiącach plików = tysiące logów debug
+- Brak batching/throttling dla logów
+
+🔧 **SYNCHRONICZNE I/O W NIEKTÓRYCH WORKERACH**
+
+- **SaveMetadataWorker** (linie 1882-1938): `metadata_manager.save_metadata()` synchronicznie
+- **CreateFolderWorker** (linie 270-320): `os.makedirs()` bez async
+- **DeleteFolderWorker** (linie 438-514): `shutil.rmtree()` może blokować
+
+🔧 **KRYTYCZNE PROBLEMY WYDAJNOŚCI MINIATUREK** 🎯 **KLUCZOWE DLA APLIKACJI**
+
+- **ThumbnailGenerationWorker** (linie 1348-1445): Synchroniczne operacje `Image.open()` i `crop_to_square()` bez chunking
+- **Brak batch processing:** Każda miniatura tworzona indywidualnie zamiast w grupach
+- **Nadmierne logowanie:** Każda miniatura loguje 3-5 linii (start, cache hit/miss, finish)
+- **Thread pool saturation:** Tysiące ThumbnailWorkerów może nasycić QThreadPool
+- **Memory leaks potential:** `PIL.Image.open()` bez proper context management w niektórych ścieżkach
+
+🔧 **BRAK BATCHING** dla operacji bulk
+
+- **BulkDeleteWorker** (linie 1713-1759): Usuwa pliki jeden po drugim z progress po każdym
+- **BulkMoveWorker** (linie 1789-1847): Analogicznie - brak grupowania operacji I/O
+- **Optymalizacja:** Można grupować operacje na tym samym dysku
+
+#### 3. **Problemy thread-safety:**
+
+🔧 **MIESZANIE QRUNNABLE I QOBJECT**
+
+- **Większość workerów:** QRunnable - do QThreadPool
+- **DataProcessingWorker:** QObject - do moveToThread()
+- **Problem:** Różne modele threading w jednym pliku
+
+🔧 **DOSTĘP DO WSPÓŁDZIELONYCH ZASOBÓW**
+
+- **metadata_manager** wywoływany z różnych workerów bez synchronizacji
+- **normalize_path()** używane bez cache lokalnego
+- **file operations** mogą kolidować przy bulk operations
+
+#### 4. **Refaktoryzacja - problemy strukturalne:**
+
+🏗️ **BRAK SEPARACJI ODPOWIEDZIALNOŚCI**
+
+- **File operations:** Create/Rename/Delete/Move folders i files w jednym pliku
+- **Data processing:** Thumbnail, Metadata, Scanning w tym samym miejscu
+- **Bulk operations:** Oddzielne klasy ale podobna logika
+
+🏗️ **FACTORY PATTERN NIEPEŁNY** (linie 1946-2084)
+
+- WorkerFactory ma metody create\_\* ale nie obsługuje wszystkich workerów
+- Brak konfiguracji priorytetów dla większości workerów
+- Błąd składniowy w linii 2051: `@ staticmethod` (spacja)
+
+🏗️ **HARDCODOWANE WARTOŚCI**
+
+- Progress interval: `_progress_interval_ms = 100` (linia 116)
+- Batch size dla DataProcessingWorker: `20` (nie konfigurowalny)
+- Timeouts: Brak timeout'ów dla długotrwałych operacji
+
+### 📊 **METRYKI PROBLEMU:**
+
+- **Liczba klas:** 20 (KRYTYCZNIE DUŻO)
+- **Linie kodu:** 2084 (NAJWIĘKSZY PLIK)
+- **Poziomy dziedziczenia:** 3 (zbyt głębokie)
+- **Duplikacja kodu:** ~200 linii powtarzających się metod
+- **Niekonsystentnych implementacji:** 14 różnych \_validate_inputs()
+
+### 🧪 Plan testów
+
+**Test funkcjonalności podstawowej:**
+
+- Test każdego workera z minimalnymi danymi
+- Test przerwania długotrwałych operacji (interrupt())
+- Test progress reporting dla różnych rozmiarów danych
+- Test error handling i recovery
+
+**Test wydajności:**
+
+- Benchmark bulk operations (1000+ plików)
+- Test memory usage podczas długotrwałych operacji
+- Test thread pool saturation
+- Test współbieżnego wykonywania różnych typów workerów
+
+**Test thread-safety:**
+
+- Test równoczesnego dostępu do metadata_manager
+- Test DataProcessingWorker vs QRunnable workers
+- Test interrupt podczas wykonywania rollback operations
+
+### 📊 Status tracking
+
+- ✅ **Kod przeanalizowany** - UKOŃCZONE
+- ⏳ **Testy podstawowe przeprowadzone** - DO ZROBIENIA
+- ⏳ **Refaktoryzacja architektury** - DO ZROBIENIA
+- ⏳ **Performance benchmarks** - DO ZROBIENIA
+- ⏳ **Dokumentacja zaktualizowana** - DO ZROBIENIA
+
+### 🎯 Rekomendacje poprawek
+
+#### **🚨 KRYTYCZNY PRIORYTET - MINIATURKI (KLUCZOWA FUNKCJONALNOŚĆ) - NATYCHMIAST:**
+
+1. **NAPRAW BŁĄD SKŁADNIOWY (linia 2051):**
+
+   - **Zmień** `@ staticmethod` na `@staticmethod` - aplikacja może nie działać z tym błędem!
+
+2. **OPTYMALIZACJA ThumbnailGenerationWorker (linie 1310-1445):**
+
+   - **Napraw** `create_thumbnail_worker()` priority handling (linie 2025-2050)
+   - **Usuń** duplikację cache checks (sprawdzenie przed i w środku run())
+   - **Dodaj** batch processing dla wielu miniaturek naraz
+   - **Ograniczenie** logowania - tylko ERROR i WARNING, nie DEBUG dla każdej miniatury
+
+3. **ThumbnailCache performance (kluczowe dla galerii):**
+   - **Verify** thread-safety - ThumbnailCache wywołane z wielu workerów równocześnie
+   - **Monitor** memory usage - cache może rosnąć bez kontroli przy tysiącach miniaturek
+
+#### **WYSOKI PRIORYTET - ARCHITEKTURA:**
+
+4. **Podział mega-monolithu na 6 modułów:**
+
+   - `workers/base_workers.py` - BaseWorker, UnifiedBaseWorker, TransactionalWorker
+   - `workers/file_workers.py` - Create/Rename/Delete/Move FilePair
+   - `workers/folder_workers.py` - Create/Rename/Delete Folder
+   - `workers/bulk_workers.py` - BulkDelete, BulkMove
+   - `workers/processing_workers.py` - DataProcessing, SaveMetadata, **🎯 Thumbnail**
+   - `workers/scan_workers.py` - ScanFolder
+
+5. **Zunifikowanie hierarchii dziedziczenia:**
+
+   - **USUNĄĆ BaseWorker** - zastąpić UnifiedBaseWorker jako jedyną klasę bazową
+   - **Uprościć do 2 poziomów:** UnifiedBaseWorker → ConcreteWorker
+   - **TransactionalWorker** jako mixin zamiast klasy bazowej
+
+6. **Zunifikowanie sygnałów:**
+
+   - **Jedna klasa WorkerSignals** z unified finished(result: Any)
+   - **Type hints** dla rezultatów zamiast różnych sygnałów
+   - **Usunąć** ThumbnailWorkerSignals, ScanFolderSignals
+
+7. **Optymalizacja wydajności (po naprawie miniaturek):**
+
+   - **Batch operations** dla bulk delete/move
+   - **Async I/O** dla SaveMetadata i folder operations
+   - **Progress throttling** - maksymalnie co 100ms
+   - **Logowanie:** DEBUG tylko w development, batch logging
+
+8. **Thread-safety improvements:**
+   - **Jednolity model:** Tylko QRunnable + QThreadPool
+   - **Shared resource protection** - locks dla metadata_manager
+   - **Timeout handling** dla długotrwałych operacji
+
+#### **ŚREDNI PRIORYTET:**
+
+6. **WorkerFactory refactoring:**
+   - **Kompletny factory** dla wszystkich workerów
+   - **Configuration objects** zamiast długich list parametrów
+   - **Priority management** dla QThreadPool
+   - **Error recovery strategies**
+
+#### **NISKI PRIORYTET:**
+
+7. **Konfiguracja i monitoring:**
+   - **app_config integration** dla hardcodowanych wartości
+   - **Worker metrics** - czas wykonania, success rate
+   - **Memory monitoring** dla długotrwałych operacji
+   - **Complete API documentation**
+
+### 💡 **ARCHITEKTURA DOCELOWA:**
+
+```
+workers/
+├── base_workers.py        (~200 linii)
+├── file_workers.py        (~400 linii)
+├── folder_workers.py      (~300 linii)
+├── bulk_workers.py        (~300 linii)
+├── processing_workers.py  (~400 linii)
+├── scan_workers.py        (~300 linii)
+└── worker_factory.py      (~100 linii)
+```
+
+**REDUKCJA:** z 2084 linii w 1 pliku → ~2000 linii w 7 plikach (łatwiejsze w utrzymaniu)
+
+### 🚨 **WPŁYW NA INNE KOMPONENTY:**
+
+**Pliki wymagające aktualizacji po refaktoryzacji:**
+
+- `src/ui/main_window.py` - importy workerów
+- `src/controllers/main_window_controller.py` - factory calls
+- `src/ui/directory_tree_manager.py` - worker dependencies
+- Wszystkie pliki UI używające workerów
+
+**Szacowany czas refaktoryzacji:** 2-3 tygodnie pełnego czasu
 
 ---
 
