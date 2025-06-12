@@ -18,84 +18,27 @@ from src.utils.path_utils import normalize_path
 logger = logging.getLogger(__name__)
 
 
-class BaseWorkerSignals(QObject):
+class UnifiedWorkerSignals(QObject):
     """
-    Bazowe sygnały dla wszystkich workerów.
+    ZUNIFIKOWANE sygnały dla wszystkich workerów.
+    Obsługuje zarówno standardowe workery jak i thumbnail workery.
     """
-
+    
+    # Standardowe sygnały dla wszystkich workerów
     finished = pyqtSignal(object)  # uniwersalny typ wyniku
     error = pyqtSignal(str)  # komunikat błędu
     progress = pyqtSignal(int, str)  # procent, wiadomość
     interrupted = pyqtSignal()  # sygnał przerwania
+    
+    # Rozszerzone sygnały dla thumbnail workerów
+    thumbnail_finished = pyqtSignal(QPixmap, str, int, int)  # pixmap, path, width, height
+    thumbnail_error = pyqtSignal(str, str, int, int)  # error_message, path, width, height
+    
+    # Rozszerzone sygnały dla scan workerów 
+    scan_finished = pyqtSignal(list, list, list)  # found_pairs, unpaired_archives, unpaired_previews
 
 
-class BaseWorker(QRunnable):
-    """
-    Bazowa klasa dla wszystkich workerów obsługujących zadania w tle.
-
-    Zapewnia wspólną logikę dla:
-    - Obsługi przerwań
-    - Sygnałów komunikacji z UI
-    - Logowania
-    - Podstawowej obsługi błędów
-    """
-
-    def __init__(self):
-        super().__init__()
-        self.signals = BaseWorkerSignals()
-        self._interrupted = False
-        self._worker_name = self.__class__.__name__
-
-    def check_interruption(self) -> bool:
-        """
-        Sprawdza czy worker został przerwany.
-
-        Returns:
-            True jeśli przerwano, False w przeciwnym razie
-        """
-        if self._interrupted:
-            logger.debug(f"{self._worker_name}: Operacja przerwana")
-            self.signals.interrupted.emit()
-            return True
-        return False
-
-    def interrupt(self):
-        """Przerywa wykonywanie workera."""
-        self._interrupted = True
-        logger.debug(f"{self._worker_name}: Otrzymano żądanie przerwania")
-
-    def emit_progress(self, percent: int, message: str):
-        """Emituje sygnał postępu z logowaniem."""
-        logger.debug(f"{self._worker_name}: Postęp {percent}% - {message}")
-        self.signals.progress.emit(percent, message)
-
-    def emit_error(self, message: str, exception: Exception = None):
-        """Emituje sygnał błędu z logowaniem."""
-        if exception:
-            logger.error(f"{self._worker_name}: {message}", exc_info=True)
-        else:
-            logger.error(f"{self._worker_name}: {message}")
-        self.signals.error.emit(message)
-
-    def emit_finished(self, result=None):
-        """Emituje sygnał zakończenia z logowaniem."""
-        logger.info(f"{self._worker_name}: Zakończono pomyślnie")
-        self.signals.finished.emit(result)
-
-    def emit_interrupted(self):
-        """Emituje sygnał przerwania z logowaniem."""
-        logger.info(f"{self._worker_name}: Operacja przerwana")
-        self.signals.interrupted.emit()
-
-    def run(self):
-        """
-        Główna metoda workera - do implementacji w klasach pochodnych.
-
-        Powinny używać metod check_interruption(), emit_progress(), emit_error(), emit_finished()
-        """
-        raise NotImplementedError(
-            "Metoda run() musi być zaimplementowana w klasie pochodnej"
-        )
+# BaseWorker USUNIĘTY - dead code cleanup ukończony
 
 
 class UnifiedBaseWorker(QRunnable):
@@ -110,7 +53,7 @@ class UnifiedBaseWorker(QRunnable):
 
     def __init__(self):
         super().__init__()
-        self.signals = BaseWorkerSignals()
+        self.signals = UnifiedWorkerSignals()  # ZUNIFIKOWANE sygnały
         self._interrupted = False
         self._worker_name = self.__class__.__name__
         self._last_progress_time = 0
@@ -1296,16 +1239,7 @@ class MoveFilePairWorker(TransactionalWorker):
         )
 
 
-class ThumbnailWorkerSignals(QObject):
-    """
-    Dedykowane sygnały dla ThumbnailGenerationWorker.
-    """
-
-    finished = pyqtSignal(QPixmap, str, int, int)  # pixmap, path, width, height
-    error = pyqtSignal(str, str, int, int)  # error_message, path, width, height
-    progress = pyqtSignal(int, str)  # procent, wiadomość
-    interrupted = pyqtSignal()  # sygnał przerwania
-
+# ThumbnailWorkerSignals USUNIĘTE - zastąpione UnifiedWorkerSignals
 
 class ThumbnailGenerationWorker(UnifiedBaseWorker):
     """
@@ -1320,8 +1254,7 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
 
     def __init__(self, path: str, width: int, height: int):
         super().__init__()
-        # Specjalne sygnały dla thumbnail workera
-        self.signals = ThumbnailWorkerSignals()
+        # Używa zunifikowanych sygnałów
         self.path = path
         self.width = width
         self.height = height
@@ -1338,15 +1271,17 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
     def emit_finished(self, pixmap: QPixmap):
         """Emituje sygnał zakończenia z pixmap."""
         logger.debug(f"{self._worker_name}: Zakończono pomyślnie dla {self.path}")
-        self.signals.finished.emit(pixmap, self.path, self.width, self.height)
+        # Używa zunifikowanych sygnałów thumbnail_finished
+        self.signals.thumbnail_finished.emit(pixmap, self.path, self.width, self.height)
 
     def emit_error(self, message: str):
         """Emituje sygnał błędu."""
         logger.error(f"{self._worker_name}: {message}")
-        self.signals.error.emit(message, self.path, self.width, self.height)
+        # Używa zunifikowanych sygnałów thumbnail_error
+        self.signals.thumbnail_error.emit(message, self.path, self.width, self.height)
 
     def run(self):
-        """Wykonuje ładowanie miniatury w tle."""
+        """Wykonuje ładowanie miniatury w tle - ZOPTYMALIZOWANE."""
         from PIL import Image
 
         from src.ui.widgets.thumbnail_cache import ThumbnailCache
@@ -1356,24 +1291,16 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
             pillow_image_to_qpixmap,
         )
 
-        logger.debug(
-            f"ThumbnailWorker: Rozpoczęcie ładowania {self.path} ({self.width}x{self.height})"
-        )
+        # OPTYMALIZACJA: Ograniczenie logowania - usuń DEBUG dla każdej miniatury
+        # logger.debug usunięte - były to tysiące niepotrzebnych logów
 
         try:
-            # Sprawdź cache ponownie (może inny worker już załadował)
             cache = ThumbnailCache.get_instance()
-            cached_pixmap = cache.get_thumbnail(self.path, self.width, self.height)
-
-            if cached_pixmap:
-                logger.debug(f"ThumbnailWorker: Cache HIT dla {self.path}")
-                self.signals.finished.emit(
-                    cached_pixmap, self.path, self.width, self.height
-                )
-                return
-
+            
+            # OPTYMALIZACJA: Usuń duplikację cache checks - sprawdzanie już było przed workerem
+            # Bezpośrednio przejdź do ładowania obrazu
+            
             if self.check_interruption():
-                logger.debug(f"ThumbnailWorker: Przerwano ładowanie {self.path}")
                 return
 
             # Sprawdź czy plik istnieje
@@ -1389,7 +1316,7 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
                     self.emit_error(f"Plik nie istnieje: {self.path}")
                 return
 
-            # Ładuj i przetwarzaj obraz
+            # Ładuj i przetwarzaj obraz - ZOPTYMALIZOWANA ŚCIEŻKA
             try:
                 if self.width == self.height:
                     # Kwadratowa miniatura - użyj crop_to_square
@@ -1411,9 +1338,7 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
                 if pixmap and not pixmap.isNull():
                     # Dodaj do cache i wyślij sygnał
                     cache.add_thumbnail(self.path, self.width, self.height, pixmap)
-                    logger.debug(
-                        f"ThumbnailWorker: Załadowano i dodano do cache {self.path}"
-                    )
+                    # OPTYMALIZACJA: Usuń DEBUG logging dla każdej miniatury
                     self.emit_finished(pixmap)
                 else:
                     raise ValueError("Wygenerowany QPixmap jest pusty")
@@ -1440,19 +1365,108 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
             self.emit_error(f"Nieoczekiwany błąd: {e}")
 
 
+class BatchThumbnailWorker(UnifiedBaseWorker):
+    """
+    NOWY: Worker do przetwarzania wielu miniaturek w jednym batch'u.
+    OPTYMALIZACJA: Zmniejsza obciążenie QThreadPool przy tysiącach miniaturek.
+    """
+
+    def __init__(self, thumbnail_requests: list[tuple[str, int, int]]):
+        """
+        Args:
+            thumbnail_requests: Lista (path, width, height) dla miniaturek do przetworzenia
+        """
+        super().__init__()
+        self.thumbnail_requests = thumbnail_requests or []
+        # Używa zunifikowanych sygnałów
+
+    def _validate_inputs(self):
+        if not self.thumbnail_requests:
+            raise ValueError("Lista miniaturek do przetworzenia nie może być pusta")
+
+    def emit_finished(self, pixmap, path, width, height):
+        """Emituje sygnał dla pojedynczej miniatury w batch'u."""
+        # Używa zunifikowanych sygnałów thumbnail_finished
+        self.signals.thumbnail_finished.emit(pixmap, path, width, height)
+
+    def emit_error(self, message, path, width, height):
+        """Emituje sygnał błędu dla pojedynczej miniatury."""
+        # Używa zunifikowanych sygnałów thumbnail_error
+        self.signals.thumbnail_error.emit(message, path, width, height)
+
+    def run(self):
+        """Przetwarza batch miniaturek - ZOPTYMALIZOWANE dla wydajności."""
+        from PIL import Image
+        from src.ui.widgets.thumbnail_cache import ThumbnailCache
+        from src.utils.image_utils import crop_to_square, pillow_image_to_qpixmap
+
+        if not self.thumbnail_requests:
+            return
+
+        cache = ThumbnailCache.get_instance()
+        total_requests = len(self.thumbnail_requests)
+        
+        # OPTYMALIZACJA: Batch processing zmniejsza overhead
+        for i, (path, width, height) in enumerate(self.thumbnail_requests):
+            if self.check_interruption():
+                return
+
+            # Progress reporting co 10% batch'a
+            if i % max(1, total_requests // 10) == 0:
+                progress = int((i / total_requests) * 100)
+                self.emit_progress(progress, f"Przetwarzanie miniaturek: {i}/{total_requests}")
+
+            try:
+                # Sprawdź cache dla tej miniatury
+                cached_pixmap = cache.get_thumbnail(path, width, height)
+                if cached_pixmap:
+                    self.emit_finished(cached_pixmap, path, width, height)
+                    continue
+
+                # Sprawdź czy plik istnieje
+                if not path or not os.path.exists(path):
+                    error_pixmap = cache.get_error_icon(width, height)
+                    if error_pixmap:
+                        cache.add_thumbnail(path, width, height, error_pixmap)
+                        self.emit_finished(error_pixmap, path, width, height)
+                    else:
+                        self.emit_error(f"Plik nie istnieje", path, width, height)
+                    continue
+
+                # Przetwórz miniaturę
+                if width == height:
+                    with Image.open(path) as img:
+                        cropped_img = crop_to_square(img, width)
+                        pixmap = pillow_image_to_qpixmap(cropped_img)
+                else:
+                    with Image.open(path) as img:
+                        img.thumbnail((width, height), Image.Resampling.LANCZOS)
+                        pixmap = pillow_image_to_qpixmap(img)
+
+                if pixmap and not pixmap.isNull():
+                    cache.add_thumbnail(path, width, height, pixmap)
+                    self.emit_finished(pixmap, path, width, height)
+                else:
+                    error_pixmap = cache.get_error_icon(width, height)
+                    if error_pixmap:
+                        cache.add_thumbnail(path, width, height, error_pixmap)
+                        self.emit_finished(error_pixmap, path, width, height)
+
+            except Exception as e:
+                logger.error(f"BatchThumbnailWorker: Błąd przetwarzania {path}: {e}")
+                error_pixmap = cache.get_error_icon(width, height)
+                if error_pixmap:
+                    self.emit_finished(error_pixmap, path, width, height)
+                else:
+                    self.emit_error(f"Błąd: {str(e)}", path, width, height)
+
+        self.emit_progress(100, f"Zakończono przetwarzanie {total_requests} miniaturek")
+
+
 # Koniec dodawania ThumbnailGenerationWorker
 
 
-class ScanFolderSignals(QObject):
-    """Dedykowane sygnały dla ScanFolderWorker."""
-
-    finished = pyqtSignal(
-        list, list, list
-    )  # found_pairs, unpaired_archives, unpaired_previews
-    error = pyqtSignal(str)  # komunikat błędu
-    progress = pyqtSignal(int, str)  # procent, wiadomość
-    interrupted = pyqtSignal()  # sygnał przerwania
-
+# ScanFolderSignals USUNIĘTE - zastąpione UnifiedWorkerSignals
 
 class ScanFolderWorker(UnifiedBaseWorker):
     """
@@ -1464,8 +1478,7 @@ class ScanFolderWorker(UnifiedBaseWorker):
 
     def __init__(self, directory_to_scan=None):
         super().__init__()
-        # Specjalne sygnały dla scan folder workera
-        self.custom_signals = ScanFolderSignals()
+        # Używa zunifikowanych sygnałów zamiast custom_signals
         self.directory_to_scan = directory_to_scan
         self._thread_pool = QThreadPool()
         self._current_worker = None
@@ -1479,11 +1492,11 @@ class ScanFolderWorker(UnifiedBaseWorker):
         Wewnętrznie używa ScanFolderWorkerQRunnable uruchamianego w QThreadPool.
         """
         if not self.directory_to_scan:
-            self.custom_signals.error.emit("Nie określono folderu do skanowania.")
+            self.signals.error.emit("Nie określono folderu do skanowania.")
             return
 
         if self.check_interruption():
-            self.custom_signals.interrupted.emit()
+            self.signals.interrupted.emit()
             return
 
         try:
@@ -1516,31 +1529,32 @@ class ScanFolderWorker(UnifiedBaseWorker):
 
         except Exception as e:
             logging.error(f"Błąd podczas uruchamiania skanowania: {e}", exc_info=True)
-            self.custom_signals.error.emit(
+            self.signals.error.emit(
                 f"Wystąpił błąd podczas uruchamiania skanowania: {str(e)}"
             )
 
     def _on_worker_finished(self, found_pairs, unpaired_archives, unpaired_previews):
         """Obsługuje sygnał zakończenia pracy workera."""
         if not self._interrupted:
-            self.custom_signals.finished.emit(
+            # Używa zunifikowanych sygnałów scan_finished
+            self.signals.scan_finished.emit(
                 found_pairs, unpaired_archives, unpaired_previews
             )
             self.emit_finished((found_pairs, unpaired_archives, unpaired_previews))
 
     def _on_worker_error(self, error_message):
         """Obsługuje sygnał błędu z workera."""
-        self.custom_signals.error.emit(error_message)
+        self.signals.error.emit(error_message)
         self.emit_error(error_message)
 
     def _on_worker_progress(self, percent, message):
         """Obsługuje sygnał postępu z workera."""
-        self.custom_signals.progress.emit(percent, message)
+        self.signals.progress.emit(percent, message)
         self.emit_progress(percent, message)
 
     def _on_worker_interrupted(self):
         """Obsługuje sygnał przerwania z workera."""
-        self.custom_signals.interrupted.emit()
+        self.signals.interrupted.emit()
         self.emit_interrupted()
 
     def stop(self):
@@ -2040,14 +2054,37 @@ class WorkerFactory:
         """
         worker = ThumbnailGenerationWorker(path, width, height)
 
-        # Ustawienie priorytetu QRunnable
-        if priority == WorkerPriority.HIGH:
-            worker.setAutoDelete(True)
-        elif priority == WorkerPriority.LOW:
-            worker.setAutoDelete(True)
+        # Ustawienie priorytetu QRunnable - NAPRAWKA: różne priorytety
+        worker.setAutoDelete(True)  # Zawsze włącz auto-delete dla workerów
+        
+        # Ustaw priorytet w QThreadPool (jeśli dostępne w Qt6)
+        # WYSOKI = 2, NORMAL = 1, NISKI = 0
+        if hasattr(worker, 'setPriority'):
+            if priority == WorkerPriority.HIGH:
+                worker.setPriority(2)
+            elif priority == WorkerPriority.LOW:
+                worker.setPriority(0)
+            else:  # NORMAL
+                worker.setPriority(1)
 
-        return worker @ staticmethod
+        return worker
 
+    @staticmethod
+    def create_batch_thumbnail_worker(
+        thumbnail_requests: list[tuple[str, int, int]]
+    ) -> BatchThumbnailWorker:
+        """
+        NOWY: Tworzy worker do batch processing miniaturek.
+        OPTYMALIZACJA: Użyj zamiast tysięcy pojedynczych ThumbnailGenerationWorker.
+        
+        Args:
+            thumbnail_requests: Lista tupli (path, width, height)
+        """
+        worker = BatchThumbnailWorker(thumbnail_requests)
+        worker.setAutoDelete(True)
+        return worker
+
+    @staticmethod
     def create_save_metadata_worker(
         working_directory: str,
         file_pairs: list[FilePair],
