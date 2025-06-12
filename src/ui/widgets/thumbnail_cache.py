@@ -5,7 +5,7 @@ from collections import OrderedDict
 from typing import Optional
 
 from PIL import Image
-from PyQt6.QtCore import QDir, QSize, Qt, QTimer
+from PyQt6.QtCore import QDir, QSize, Qt, QTimer, QMetaObject, Q_ARG, QObject, pyqtSlot
 from PyQt6.QtGui import QIcon, QImage, QPixmap
 
 from src.app_config import config
@@ -19,15 +19,16 @@ from src.utils.path_utils import normalize_path
 logger = logging.getLogger(__name__)
 
 
-class ThumbnailCache:
+class ThumbnailCache(QObject):
     _instance = None
+    _error_icon = None  # Klasa statyczna dla error icon - NAPRAWKA błędu AttributeError
 
     def __init__(self):
+        super().__init__()
         # Używamy OrderedDict dla mechanizmu LRU
         self._cache = (
             OrderedDict()
         )  # key: (normalized_path, width, height) -> (QPixmap, timestamp, size_bytes)
-        self._error_icon = None  # Cache for a generic error icon
         self._total_memory_bytes = 0  # Przybliżony rozmiar cache w bajtach
         self._cleanup_pending = False  # Flaga zapobiegająca zbyt częstym cleanupom
 
@@ -183,9 +184,8 @@ class ThumbnailCache:
         self._cache.clear()
         self._total_memory_bytes = 0
         self._cleanup_pending = False
-        # Zatrzymaj timer cleanup jeśli jest aktywny
-        if self._cleanup_timer.isActive():
-            self._cleanup_timer.stop()
+        # Bezpiecznie zatrzymaj timer z dowolnego wątku
+        QMetaObject.invokeMethod(self, "_stop_cleanup_timer", Qt.ConnectionType.QueuedConnection)
         logger.info("Pamięć podręczna miniatur została wyczyszczona.")
 
     def remove_thumbnail(self, path: str, width: int, height: int):
@@ -263,15 +263,30 @@ class ThumbnailCache:
 
         # Jeśli przekroczony krytyczny poziom, wykonaj czyszczenie natychmiast
         if critical_cleanup:
-            if self._cleanup_timer.isActive():
-                self._cleanup_timer.stop()
-            self._perform_cleanup()
+            # Bezpiecznie zatrzymaj timer z dowolnego wątku
+            QMetaObject.invokeMethod(self, "_stop_cleanup_timer", Qt.ConnectionType.QueuedConnection)
+            # Bezpiecznie wykonaj cleanup z głównego wątku
+            QMetaObject.invokeMethod(self, "_perform_cleanup", Qt.ConnectionType.QueuedConnection)
         # W przeciwnym razie zaplanuj czyszczenie, tylko jeśli jest potrzebne i nie jest już zaplanowane
-        elif needs_cleanup and not self._cleanup_pending and not self._cleanup_timer.isActive():
+        elif needs_cleanup and not self._cleanup_pending:
             logger.debug(f"Zaplanowano cleanup cache za {self._cleanup_interval_ms/1000}s")
             self._cleanup_pending = True
+            # Bezpiecznie zaplanuj cleanup z głównego wątku
+            QMetaObject.invokeMethod(self, "_start_cleanup_timer", Qt.ConnectionType.QueuedConnection)
+
+    @pyqtSlot()
+    def _stop_cleanup_timer(self):
+        """Zatrzymuje timer cleanup - wywoływane tylko z głównego wątku."""
+        if self._cleanup_timer.isActive():
+            self._cleanup_timer.stop()
+
+    @pyqtSlot()
+    def _start_cleanup_timer(self):
+        """Startuje timer cleanup - wywoływane tylko z głównego wątku."""
+        if not self._cleanup_timer.isActive():
             self._cleanup_timer.start(self._cleanup_interval_ms)
 
+    @pyqtSlot()
     def _perform_cleanup(self):
         """Wykonuje faktyczne czyszczenie cache według strategii LRU."""
         self._cleanup_pending = False
