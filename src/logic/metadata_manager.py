@@ -441,6 +441,7 @@ def save_metadata(
 def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) -> bool:
     """
     Aktualizuje obiekty FilePair na podstawie metadanych z pliku JSON.
+    OPTYMALIZACJA: Cache dla normalizowanych ścieżek bazowych.
 
     Args:
         working_directory (str): Ścieżka do folderu roboczego.
@@ -468,7 +469,18 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
         )
         applied_count = 0
 
-        for file_pair in file_pairs_list:
+        # OPTYMALIZACJA: Cache dla normalizacji ścieżek - unikaj powtarzania
+        normalized_working_dir = normalize_path(working_directory)
+        
+        # OPTYMALIZACJA: Batch processing z progress reportingiem
+        total_files = len(file_pairs_list)
+        batch_size = 50  # Przetwarzaj w batches dla lepszego progressu
+        
+        for i, file_pair in enumerate(file_pairs_list):
+            # Progress reporting co batch_size plików
+            if i % batch_size == 0:
+                logger.debug(f"Przetwarzanie metadanych: {i}/{total_files} plików...")
+            
             if not all(
                 hasattr(file_pair, attr)
                 for attr in [
@@ -485,14 +497,16 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
                 )
                 continue
 
-            relative_archive_path = get_relative_path(
-                file_pair.archive_path, working_directory
-            )
-
-            if relative_archive_path is None:
+            # OPTYMALIZACJA: Użyj prostszego sposobu na obliczenie ścieżki względnej
+            # zamiast pełnej get_relative_path która robi zbyt dużo pracy
+            try:
+                normalized_archive_path = normalize_path(file_pair.archive_path)
+                relative_archive_path = os.path.relpath(normalized_archive_path, normalized_working_dir)
+                relative_archive_path = normalize_path(relative_archive_path)
+            except (ValueError, OSError) as e:
                 logger.warning(
                     f"Nie można uzyskać ścieżki względnej dla {file_pair.archive_path} (nazwa bazowa: {file_pair.get_base_name()}) "
-                    "podczas stosowania metadanych. Pomijam."
+                    f"podczas stosowania metadanych: {e}. Pomijam."
                 )
                 continue
 
@@ -504,8 +518,6 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
                     if file_pair.get_stars() != pair_metadata["stars"]:
                         file_pair.set_stars(pair_metadata["stars"])
                         updated = True
-                # else:
-                #     logger.debug(f"Brak 'stars' lub nieprawidłowy typ dla {relative_archive_path}")
 
                 if "color_tag" in pair_metadata and (
                     isinstance(pair_metadata["color_tag"], str)
@@ -514,17 +526,14 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
                     if file_pair.get_color_tag() != pair_metadata["color_tag"]:
                         file_pair.set_color_tag(pair_metadata["color_tag"])
                         updated = True
-                # else:
-                #     logger.debug(f"Brak 'color_tag' lub nieprawidłowy typ dla {relative_archive_path}")
 
                 if updated:
                     applied_count += 1
-                    logger.debug(
-                        f"Zastosowano metadane dla '{relative_archive_path}' (nazwa bazowa: {file_pair.get_base_name()}): "
-                        f"Gwiazdki={file_pair.get_stars()}, Kolor='{file_pair.get_color_tag()}'"
-                    )
-            # else:
-            #     logger.debug(f"Brak metadanych w pliku dla pary: {relative_archive_path} (nazwa bazowa: {file_pair.get_base_name()})")
+                    # Zmniejsz verbose logging dla lepszej wydajności
+                    if applied_count % 10 == 0:  # Log co 10 zaktualizowanych plików
+                        logger.debug(
+                            f"Zastosowano metadane dla {applied_count} plików (ostatni: '{relative_archive_path}')"
+                        )
 
         logger.info(
             f"Zakończono stosowanie metadanych. Zaktualizowano {applied_count} z {len(file_pairs_list)} par plików."
