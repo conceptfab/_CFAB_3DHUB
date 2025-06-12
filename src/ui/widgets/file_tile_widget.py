@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 
 # Local imports
 from src.models.file_pair import FilePair
-from src.ui.delegates.workers import ThumbnailGenerationWorker
+from src.ui.delegates.workers.processing_workers import ThumbnailGenerationWorker
 from src.ui.widgets.metadata_controls_widget import MetadataControlsWidget
 from src.ui.widgets.thumbnail_cache import ThumbnailCache
 from src.ui.widgets.tile_styles import (

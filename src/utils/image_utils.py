@@ -3,6 +3,7 @@ Funkcje pomocnicze do operacji na obrazach.
 """
 
 import logging
+import os
 from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageFont
@@ -151,3 +152,49 @@ def crop_to_square(pil_image, size):
         logging.error(f"Błąd podczas przycinania obrazu do kwadratu: {e}")
         # W przypadku błędu, zwróć oryginalny obraz przeskalowany (fallback)
         return pil_image.resize((size, size), Image.LANCZOS)
+
+
+def create_thumbnail_from_file(file_path, width, height):
+    """
+    Tworzy miniaturkę (QPixmap) na podstawie pliku graficznego.
+    
+    Wykorzystuje proper context management dla obrazów PIL i optymalizuje
+    generowanie miniatur.
+    
+    Args:
+        file_path: Ścieżka do pliku graficznego
+        width: Szerokość miniaturki w pikselach
+        height: Wysokość miniaturki w pikselach
+        
+    Returns:
+        QPixmap: Utworzona miniaturka lub pusty QPixmap w przypadku błędu
+    """
+    try:
+        # Sprawdzenie czy plik istnieje
+        if not os.path.exists(file_path):
+            logging.warning(f"Plik nie istnieje: {file_path}")
+            return create_placeholder_pixmap(width, height, text="Brak pliku")
+        
+        # Utworzenie miniaturki z proper context management
+        with Image.open(file_path) as img:
+            # Jeśli miniaturka ma być kwadratowa, przytnij obraz
+            if width == height:
+                img_resized = crop_to_square(img, width)
+            else:
+                # W przeciwnym razie zachowaj proporcje
+                img_resized = img.copy()
+                img_resized.thumbnail((width, height), Image.LANCZOS)
+            
+            # Konwersja na QPixmap
+            pixmap = pillow_image_to_qpixmap(img_resized)
+            
+            if pixmap and not pixmap.isNull():
+                return pixmap
+            else:
+                # W przypadku nieudanej konwersji
+                return create_placeholder_pixmap(width, height, text="Błąd konwersji")
+                
+    except Exception as e:
+        logging.error(f"Błąd podczas tworzenia miniatury dla {file_path}: {e}")
+        # Zwróć placeholder w przypadku błędu
+        return create_placeholder_pixmap(width, height, text="Błąd")
