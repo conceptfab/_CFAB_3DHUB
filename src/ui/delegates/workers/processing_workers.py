@@ -10,10 +10,11 @@ from typing import List, Tuple
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QPixmap
 
-from .base_workers import UnifiedBaseWorker
-from src.models.file_pair import FilePair
 from src.logic import metadata_manager
+from src.models.file_pair import FilePair
 from src.utils.image_utils import create_thumbnail_from_file
+
+from .base_workers import AsyncUnifiedBaseWorker, UnifiedBaseWorker, WorkerPriority
 
 # Usuwamy import ThumbnailCache z poziomu modułu
 # from src.ui.widgets.thumbnail_cache import ThumbnailCache
@@ -23,15 +24,19 @@ logger = logging.getLogger(__name__)
 
 class ThumbnailGenerationWorker(UnifiedBaseWorker):
     """
-    Worker do generowania miniaturek w tle.
+    Worker do generowania miniaturek w tle z optymalizacjami.
 
     Ta klasa jest zoptymalizowaną wersją, która:
     1. Używa proper context management dla obiektów PIL.Image
     2. Ogranicza nadmierne logowanie
     3. Sprawdza cache tylko raz przed tworzeniem miniatury
+    4. Używa resource protection dla thumbnail cache
+    5. Obsługuje timeout dla długotrwałych operacji
     """
 
-    def __init__(self, path: str, width: int, height: int):
+    def __init__(
+        self, path: str, width: int, height: int, priority: int = WorkerPriority.NORMAL
+    ):
         """
         Inicjalizuje worker do generowania miniaturek.
 
@@ -39,8 +44,10 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
             path: Ścieżka do pliku graficznego
             width: Pożądana szerokość miniaturki
             height: Pożądana wysokość miniaturki
+            priority: Priorytet workera
         """
-        super().__init__()
+        # Timeout 30s dla pojedynczej miniaturki
+        super().__init__(timeout_seconds=30, priority=priority)
         self.path = path
         self.width = width
         self.height = height
@@ -50,7 +57,9 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
         if not self.path or not os.path.exists(self.path):
             raise ValueError(f"Plik nie istnieje: {self.path}")
         if self.width <= 0 or self.height <= 0:
-            raise ValueError(f"Nieprawidłowe wymiary miniaturki: {self.width}x{self.height}")
+            raise ValueError(
+                f"Nieprawidłowe wymiary miniaturki: {self.width}x{self.height}"
+            )
 
     def emit_finished(self, pixmap: QPixmap):
         """Emituje sygnał zakończenia generowania miniaturki."""
@@ -62,43 +71,58 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
         logger.error(f"Błąd generowania miniatury: {message}")
         self.signals.thumbnail_error.emit(message, self.path, self.width, self.height)
 
-    def run(self):
+    def _run_implementation(self):
         """Generuje miniaturkę dla określonego pliku."""
         try:
             self._validate_inputs()
 
             # Opóźniony import ThumbnailCache
             from src.ui.widgets.thumbnail_cache import ThumbnailCache
-            
-            # Sprawdź w cache
-            cache = ThumbnailCache.get_instance()
-            cached_pixmap = cache.get_thumbnail(self.path, self.width, self.height)
-            
+
+            # Sprawdź w cache z resource protection
+            def get_from_cache():
+                cache = ThumbnailCache.get_instance()
+                return cache.get_thumbnail(self.path, self.width, self.height)
+
+            cached_pixmap = self.with_thumbnail_cache_lock(get_from_cache)
+
             if cached_pixmap is not None:
-                logger.debug(f"Użyto miniatury z cache dla {os.path.basename(self.path)}")
+                logger.debug(
+                    f"Użyto miniatury z cache dla {os.path.basename(self.path)}"
+                )
                 self.emit_finished(cached_pixmap)
                 return
 
             # Nie znaleziono w cache, generuj miniaturkę
-            self.emit_progress(10, f"Generowanie miniatury dla {os.path.basename(self.path)}...")
-            
+            self.emit_progress(
+                10, f"Generowanie miniatury dla {os.path.basename(self.path)}..."
+            )
+
+            # Sprawdź timeout przed długotrwałą operacją
+            if self.check_interruption():
+                return
+
             # Generowanie miniaturki z proper context management
             try:
                 pixmap = create_thumbnail_from_file(self.path, self.width, self.height)
-                
+
                 if pixmap.isNull():
                     self.emit_error(f"Nie udało się utworzyć miniatury dla {self.path}")
                     return
-                
-                # Zapisz do cache
-                cache.add_thumbnail(self.path, self.width, self.height, pixmap)
-                
+
+                # Zapisz do cache z resource protection
+                def save_to_cache():
+                    cache = ThumbnailCache.get_instance()
+                    cache.add_thumbnail(self.path, self.width, self.height, pixmap)
+
+                self.with_thumbnail_cache_lock(save_to_cache)
+
                 self.emit_progress(100, "Miniatura wygenerowana pomyślnie.")
                 self.emit_finished(pixmap)
-                
+
             except Exception as e:
                 self.emit_error(f"Błąd podczas generowania miniatury: {str(e)}")
-        
+
         except ValueError as ve:
             self.emit_error(f"Błąd walidacji: {str(ve)}")
         except Exception as e:
@@ -107,20 +131,26 @@ class ThumbnailGenerationWorker(UnifiedBaseWorker):
 
 class BatchThumbnailWorker(UnifiedBaseWorker):
     """
-    Worker do generowania wielu miniaturek jednocześnie.
-    
+    Worker do generowania wielu miniaturek jednocześnie z optymalizacjami.
+
     Optymalizuje wydajność przetwarzając wiele miniaturek w jednym zadaniu,
     co eliminuje overhead tworzenia nowych wątków dla każdej miniaturki.
     """
 
-    def __init__(self, thumbnail_requests: list[tuple[str, int, int]]):
+    def __init__(
+        self,
+        thumbnail_requests: List[Tuple[str, int, int]],
+        priority: int = WorkerPriority.HIGH,
+    ):
         """
         Inicjalizuje worker do generowania wsadowego miniaturek.
 
         Args:
             thumbnail_requests: Lista krotek (ścieżka, szerokość, wysokość)
+            priority: Priorytet workera (domyślnie HIGH dla batch operations)
         """
-        super().__init__()
+        # Timeout 5 minut dla batch operations
+        super().__init__(timeout_seconds=300, priority=priority)
         self.thumbnail_requests = thumbnail_requests
 
     def _validate_inputs(self):
@@ -138,18 +168,19 @@ class BatchThumbnailWorker(UnifiedBaseWorker):
         logger.error(f"Błąd generowania miniatury w batch: {message}")
         self.signals.thumbnail_error.emit(message, path, width, height)
 
-    def run(self):
+    def _run_implementation(self):
         """Generuje wszystkie miniaturki z listy żądań."""
         try:
             self._validate_inputs()
 
             # Opóźniony import ThumbnailCache
             from src.ui.widgets.thumbnail_cache import ThumbnailCache
-            
-            total_requests = len(self.thumbnail_requests)
-            self.emit_progress(0, f"Rozpoczęto generowanie {total_requests} miniatur...")
 
-            cache = ThumbnailCache.get_instance()
+            total_requests = len(self.thumbnail_requests)
+            self.emit_progress(
+                0, f"Rozpoczęto generowanie {total_requests} miniatur..."
+            )
+
             processed_count = 0
 
             for idx, (path, width, height) in enumerate(self.thumbnail_requests):
@@ -159,11 +190,18 @@ class BatchThumbnailWorker(UnifiedBaseWorker):
                 # Emituj progress co 10% lub co 5 miniaturek
                 if idx % max(1, total_requests // 10) == 0 or idx % 5 == 0:
                     percent = int((idx / total_requests) * 100)
-                    self.emit_progress(percent, f"Generowanie miniatur: {idx}/{total_requests}...")
+                    self.emit_progress(
+                        percent, f"Generowanie miniatur: {idx}/{total_requests}..."
+                    )
 
                 try:
-                    # Sprawdź w cache
-                    cached_pixmap = cache.get_thumbnail(path, width, height)
+                    # Sprawdź w cache z resource protection
+                    def get_from_cache():
+                        cache = ThumbnailCache.get_instance()
+                        return cache.get_thumbnail(path, width, height)
+
+                    cached_pixmap = self.with_thumbnail_cache_lock(get_from_cache)
+
                     if cached_pixmap is not None:
                         self.emit_finished(cached_pixmap, path, width, height)
                         processed_count += 1
@@ -175,25 +213,32 @@ class BatchThumbnailWorker(UnifiedBaseWorker):
                         continue
 
                     pixmap = create_thumbnail_from_file(path, width, height)
-                    
+
                     if pixmap.isNull():
-                        self.emit_error("Nie udało się utworzyć miniatury", path, width, height)
+                        self.emit_error(
+                            "Nie udało się utworzyć miniatury", path, width, height
+                        )
                         continue
-                    
-                    # Zapisz do cache
-                    cache.add_thumbnail(path, width, height, pixmap)
-                    
+
+                    # Zapisz do cache z resource protection
+                    def save_to_cache():
+                        cache = ThumbnailCache.get_instance()
+                        cache.add_thumbnail(path, width, height, pixmap)
+
+                    self.with_thumbnail_cache_lock(save_to_cache)
+
                     # Wyemituj sygnał dla każdej miniaturki osobno
                     self.emit_finished(pixmap, path, width, height)
                     processed_count += 1
-                    
+
                 except Exception as e:
                     self.emit_error(f"Błąd: {str(e)}", path, width, height)
-            
+
             # Zakończ cały worker
             self.emit_progress(
-                100, 
-                f"Zakończono generowanie miniatur. Sukces: {processed_count}/{total_requests}"
+                100,
+                f"Zakończono generowanie miniatur. "
+                f"Sukces: {processed_count}/{total_requests}",
             )
             self.emit_finished(processed_count)
 
@@ -209,7 +254,8 @@ class DataProcessingWorker(QObject):
     1. Zastosowanie metadanych do par plików (operacja I/O).
     2. Emitowanie sygnałów do tworzenia kafelków w głównym wątku.
 
-    Ta klasa dziedziczy po QObject aby umożliwić przenoszenie do wątku za pomocą moveToThread.
+    UWAGA: Ta klasa nadal dziedziczy po QObject dla kompatybilności z moveToThread.
+    W przyszłości powinna zostać zunifikowana z UnifiedBaseWorker.
     """
 
     # Bezpośrednie sygnały
@@ -219,14 +265,21 @@ class DataProcessingWorker(QObject):
     error = pyqtSignal(str)
     progress = pyqtSignal(int, str)
     interrupted = pyqtSignal()
+    timeout = pyqtSignal(str)  # Nowy sygnał timeout
 
-    def __init__(self, working_directory: str, file_pairs: list[FilePair]):
+    def __init__(
+        self,
+        working_directory: str,
+        file_pairs: list[FilePair],
+        timeout_seconds: int = 600,
+    ):
         """
         Inicjalizuje worker do przetwarzania danych.
-        
+
         Args:
             working_directory: Katalog roboczy aplikacji
             file_pairs: Lista par plików do przetworzenia
+            timeout_seconds: Timeout dla całej operacji (domyślnie 10 minut)
         """
         super().__init__()
         self.working_directory = working_directory
@@ -234,18 +287,35 @@ class DataProcessingWorker(QObject):
         self._interrupted = False
         self._last_progress_time = 0
         self._progress_interval_ms = 100  # Minimalny odstęp między sygnałami (ms)
+        self._start_time = None
+        self._timeout_seconds = timeout_seconds
 
     def check_interruption(self) -> bool:
         """
-        Sprawdza czy worker został przerwany.
-        
+        Sprawdza czy worker został przerwany lub przekroczył timeout.
+
         Returns:
-            True jeśli przerwano, False w przeciwnym razie
+            True jeśli przerwano lub timeout, False w przeciwnym razie
         """
         if self._interrupted:
             logger.debug("DataProcessingWorker: Operacja przerwana")
             self.interrupted.emit()
             return True
+
+        # Sprawdź timeout
+        if self._timeout_seconds and self._start_time:
+            elapsed = time.time() - self._start_time
+            if elapsed > self._timeout_seconds:
+                logger.warning(
+                    f"DataProcessingWorker: Przekroczono timeout "
+                    f"({self._timeout_seconds}s)"
+                )
+                self.timeout.emit(
+                    f"Przetwarzanie danych przekroczyło limit czasu "
+                    f"({self._timeout_seconds}s)"
+                )
+                return True
+
         return False
 
     def interrupt(self):
@@ -285,57 +355,65 @@ class DataProcessingWorker(QObject):
 
     def emit_finished(self, result=None):
         """Emituje sygnał zakończenia z logowaniem."""
-        logger.info("DataProcessingWorker: Zakończono pomyślnie")
+        if self._start_time:
+            elapsed = time.time() - self._start_time
+            logger.info(f"DataProcessingWorker: Zakończono pomyślnie w {elapsed:.2f}s")
+        else:
+            logger.info("DataProcessingWorker: Zakończono pomyślnie")
         self.finished.emit(result)
 
     @pyqtSlot()
     def run(self):
         """Przetwarza dane i emituje sygnały dla kafelków."""
+        self._start_time = time.time()
+
         try:
             processed_pairs = []
             total_pairs = len(self.file_pairs)
-            
+
             # Przetwarzanie wsadowe - generuj kafelki w grupach
             batch_size = 10  # Rozmiar wsadu
             current_batch = []
-            
+
             for i, file_pair in enumerate(self.file_pairs):
                 if self.check_interruption():
                     return
-                
+
                 # Emituj progress co 10% lub co 5 plików
-                self.emit_progress_batched(i, total_pairs, f"Przetwarzanie: {i}/{total_pairs}")
-                
-                try:
-                    # Dodaj parę do bieżącej partii
-                    current_batch.append(file_pair)
-                    processed_pairs.append(file_pair)
-                    
-                    # Jeśli osiągnięto rozmiar partii lub jest to ostatni element, wyemituj sygnał
-                    if len(current_batch) >= batch_size or i == total_pairs - 1:
-                        # Wyślij sygnał z całą partią
-                        self.tiles_batch_ready.emit(current_batch)
-                        # Wyczyść partię
-                        current_batch = []
-                    
-                except Exception as e:
-                    self.emit_error(f"Błąd przetwarzania pliku {file_pair}: {str(e)}", e)
-            
-            # Zakończ przetwarzanie
-            self.emit_progress(100, f"Zakończono przetwarzanie {len(processed_pairs)}/{total_pairs} plików")
+                if i % max(1, total_pairs // 10) == 0 or i % 5 == 0:
+                    self.emit_progress_batched(
+                        i,
+                        total_pairs,
+                        f"Przetwarzanie: {i}/{total_pairs} par plików...",
+                    )
+
+                # Dodaj do batch'a
+                current_batch.append(file_pair)
+                processed_pairs.append(file_pair)
+
+                # Wyemituj batch gdy osiągnie odpowiedni rozmiar
+                if len(current_batch) >= batch_size:
+                    self.tiles_batch_ready.emit(current_batch.copy())
+                    current_batch.clear()
+
+            # Wyemituj pozostałe pliki w batch'u
+            if current_batch:
+                self.tiles_batch_ready.emit(current_batch)
+
+            self.emit_progress(100, f"Przetworzono {len(processed_pairs)} par plików")
             self.emit_finished(processed_pairs)
-            
+
         except Exception as e:
-            self.emit_error(f"Nieoczekiwany błąd: {str(e)}", e)
+            self.emit_error(f"Błąd podczas przetwarzania danych: {str(e)}", e)
 
     def stop(self):
-        """Zatrzymuje wykonywanie workera."""
+        """Zatrzymuje worker - kompatybilność z main_window."""
         self.interrupt()
 
 
-class SaveMetadataWorker(UnifiedBaseWorker):
+class SaveMetadataWorker(AsyncUnifiedBaseWorker):
     """
-    Worker do zapisywania metadanych w tle.
+    Worker do zapisywania metadanych z obsługą operacji asynchronicznych.
     """
 
     def __init__(
@@ -347,53 +425,53 @@ class SaveMetadataWorker(UnifiedBaseWorker):
     ):
         """
         Inicjalizuje worker do zapisywania metadanych.
-        
+
         Args:
-            working_directory: Katalog roboczy aplikacji
+            working_directory: Katalog roboczy
             file_pairs: Lista par plików
-            unpaired_archives: Lista niepowiązanych archiwów
-            unpaired_previews: Lista niepowiązanych podglądów
+            unpaired_archives: Lista niesparowanych archiwów
+            unpaired_previews: Lista niesparowanych podglądów
         """
-        super().__init__()
+        # Timeout 2 minuty dla operacji metadanych
+        super().__init__(timeout_seconds=120, priority=WorkerPriority.HIGH)
         self.working_directory = working_directory
-        self.file_pairs = file_pairs
+        self.file_pairs = file_pairs or []
         self.unpaired_archives = unpaired_archives or []
         self.unpaired_previews = unpaired_previews or []
 
     def _validate_inputs(self):
         """Waliduje parametry wejściowe."""
-        if not os.path.isdir(self.working_directory):
-            raise ValueError(f"Katalog roboczy nie istnieje: {self.working_directory}")
+        if not self.working_directory:
+            raise ValueError("Katalog roboczy nie może być pusty")
 
-    def run(self):
-        """Zapisuje metadane w pliku JSON."""
+    def _run_implementation(self):
+        """Zapisuje metadane z resource protection."""
         try:
             self._validate_inputs()
-            
-            # Normalizacja ścieżki katalogu roboczego
-            working_dir = self.working_directory
-            
-            # Liczba par i plików do zapisania
-            total_items = len(self.file_pairs) + len(self.unpaired_archives) + len(self.unpaired_previews)
-            
-            self.emit_progress(10, f"Zapisywanie metadanych dla {total_items} elementów...")
-            
-            try:
-                # Główna operacja zapisywania metadanych
+
+            self.emit_progress(0, "Rozpoczęto zapisywanie metadanych...")
+
+            # Zapisz metadane z resource protection
+            def save_metadata():
+                from src.logic.metadata_manager import MetadataManager
+
+                metadata_manager = MetadataManager(self.working_directory)
+
                 metadata_manager.save_metadata(
-                    working_dir,
-                    self.file_pairs,
-                    self.unpaired_archives,
-                    self.unpaired_previews
+                    self.file_pairs, self.unpaired_archives, self.unpaired_previews
                 )
-                
-                self.emit_progress(100, "Metadane zapisane pomyślnie.")
-                self.emit_finished(True)
-                
-            except Exception as e:
-                self.emit_error(f"Błąd podczas zapisywania metadanych: {str(e)}", e)
-                
+                return True
+
+            # Użyj resource protection dla metadata_manager
+            result = self.with_metadata_lock(save_metadata)
+
+            if result:
+                self.emit_progress(100, "Metadane zapisane pomyślnie")
+                self.emit_finished("Metadane zapisane pomyślnie")
+            else:
+                self.emit_error("Nie udało się zapisać metadanych")
+
         except ValueError as ve:
             self.emit_error(f"Błąd walidacji: {str(ve)}")
         except Exception as e:
-            self.emit_error(f"Nieoczekiwany błąd: {str(e)}", e) 
+            self.emit_error(f"Błąd podczas zapisywania metadanych: {str(e)}", e)

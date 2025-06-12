@@ -8,6 +8,7 @@ import logging
 import os
 import shutil
 import tempfile
+import time
 from typing import Any, Dict, List, Optional
 
 from filelock import FileLock, Timeout
@@ -23,6 +24,108 @@ LOCK_TIMEOUT = 1  # Czas oczekiwania na blokadę w sekundach (zmniejszone)
 
 # Konfiguracja loggera dla tego modułu
 logger = logging.getLogger(__name__)
+
+
+class MetadataManager:
+    """
+    Klasa zarządzająca metadanymi aplikacji.
+    Opakowuje funkcje związane z operacjami na metadanych.
+    """
+
+    def __init__(self, working_directory: str):
+        """
+        Inicjalizuje menedżer metadanych.
+
+        Args:
+            working_directory (str): Ścieżka do folderu roboczego
+        """
+        self.working_directory = working_directory
+        self._changes_buffer = {}  # Bufor zmian
+        self._last_save_time = 0
+        self._save_delay = 2.0  # Opóźnienie zapisu w sekundach
+
+    def get_metadata_path(self) -> str:
+        """Zwraca ścieżkę do pliku metadanych."""
+        return get_metadata_path(self.working_directory)
+
+    def get_lock_path(self) -> str:
+        """Zwraca ścieżkę do pliku blokady."""
+        return get_lock_path(self.working_directory)
+
+    def load_metadata(self) -> Dict[str, Any]:
+        """Wczytuje metadane z pliku."""
+        return load_metadata(self.working_directory)
+
+    def _should_save(self) -> bool:
+        """Sprawdza czy należy zapisać zmiany."""
+        current_time = time.time()
+        return (current_time - self._last_save_time) >= self._save_delay
+
+    def _flush_changes(self):
+        """Zapisuje wszystkie zmiany z bufora."""
+        if not self._changes_buffer:
+            return
+
+        try:
+            # Wczytaj aktualne metadane
+            current_metadata = load_metadata(self.working_directory)
+
+            # Zastosuj zmiany z bufora
+            for key, value in self._changes_buffer.items():
+                current_metadata[key] = value
+
+            # Zapisz zmiany
+            save_metadata(
+                self.working_directory,
+                current_metadata.get("file_pairs", []),
+                current_metadata.get("unpaired_archives", []),
+                current_metadata.get("unpaired_previews", []),
+            )
+
+            # Wyczyść bufor
+            self._changes_buffer.clear()
+            self._last_save_time = time.time()
+
+        except Exception as e:
+            logger.error(f"Błąd podczas zapisywania metadanych: {e}", exc_info=True)
+
+    def save_metadata(
+        self,
+        file_pairs_list: List,
+        unpaired_archives: List[str],
+        unpaired_previews: List[str],
+    ) -> bool:
+        """Zapisuje metadane do pliku z buforowaniem."""
+        try:
+            # Dodaj zmiany do bufora
+            self._changes_buffer["file_pairs"] = file_pairs_list
+            self._changes_buffer["unpaired_archives"] = unpaired_archives
+            self._changes_buffer["unpaired_previews"] = unpaired_previews
+
+            # Sprawdź czy należy zapisać
+            if self._should_save():
+                self._flush_changes()
+            return True
+
+        except Exception as e:
+            logger.error(f"Błąd podczas buforowania metadanych: {e}", exc_info=True)
+            return False
+
+    def apply_metadata_to_file_pairs(self, file_pairs_list: List) -> bool:
+        """Aplikuje metadane do listy par plików."""
+        return apply_metadata_to_file_pairs(self.working_directory, file_pairs_list)
+
+    def remove_metadata_for_file(self, relative_archive_path: str) -> bool:
+        """Usuwa metadane dla pliku."""
+        return remove_metadata_for_file(self.working_directory, relative_archive_path)
+
+    def get_metadata_for_relative_path(
+        self, relative_archive_path: str
+    ) -> Optional[Dict[str, Any]]:
+        """Pobiera metadane dla ścieżki względnej."""
+        return get_metadata_for_relative_path(
+            self.working_directory, relative_archive_path
+        )
 
 
 def get_metadata_path(working_directory: str) -> str:
@@ -471,16 +574,16 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
 
         # OPTYMALIZACJA: Cache dla normalizacji ścieżek - unikaj powtarzania
         normalized_working_dir = normalize_path(working_directory)
-        
+
         # OPTYMALIZACJA: Batch processing z progress reportingiem
         total_files = len(file_pairs_list)
         batch_size = 50  # Przetwarzaj w batches dla lepszego progressu
-        
+
         for i, file_pair in enumerate(file_pairs_list):
             # Progress reporting co batch_size plików
             if i % batch_size == 0:
                 logger.debug(f"Przetwarzanie metadanych: {i}/{total_files} plików...")
-            
+
             if not all(
                 hasattr(file_pair, attr)
                 for attr in [
@@ -501,7 +604,9 @@ def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) 
             # zamiast pełnej get_relative_path która robi zbyt dużo pracy
             try:
                 normalized_archive_path = normalize_path(file_pair.archive_path)
-                relative_archive_path = os.path.relpath(normalized_archive_path, normalized_working_dir)
+                relative_archive_path = os.path.relpath(
+                    normalized_archive_path, normalized_working_dir
+                )
                 relative_archive_path = normalize_path(relative_archive_path)
             except (ValueError, OSError) as e:
                 logger.warning(

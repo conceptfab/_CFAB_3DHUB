@@ -54,7 +54,7 @@ from src.logic.file_operations import (
     RenameFolderWorker,
 )
 from src.logic.scanner import scan_folder_for_pairs
-from src.ui.delegates.workers import UnifiedWorkerSignals, UnifiedBaseWorker
+from src.ui.delegates.workers import UnifiedBaseWorker, UnifiedWorkerSignals
 from src.utils.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
@@ -125,8 +125,8 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
                     return
 
                 # Sprawdź czy to główny folder czy podfolder
-                is_main_folder = (root == self.folder_path)
-                
+                is_main_folder = root == self.folder_path
+
                 folder_size = 0
                 for file in files:
                     file_path = os.path.join(root, file)
@@ -138,7 +138,7 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
                             main_folder_files += 1
                     except (OSError, FileNotFoundError):
                         continue
-                
+
                 if is_main_folder:
                     main_folder_size += folder_size
                 else:
@@ -159,14 +159,14 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
                     self.folder_path, max_depth=0, pair_strategy="first_match"
                 )
                 stats.pairs_count = len(main_pairs)
-                
+
                 # Pary we wszystkich podfolderach (z głębokością)
                 all_pairs, _, _ = scan_folder_for_pairs(
                     self.folder_path, max_depth=None, pair_strategy="first_match"
                 )
                 # Odejmij pary z głównego folderu aby otrzymać tylko pary z podfolderów
                 stats.subfolders_pairs = len(all_pairs) - len(main_pairs)
-                
+
             except Exception as e:
                 logger.warning(f"Błąd obliczania par plików: {e}")
                 stats.pairs_count = 0
@@ -273,78 +273,66 @@ class FolderStatsDelegate(QStyledItemDelegate):
 
 
 class StatsProxyModel(QSortFilterProxyModel):
-    """Proxy model który dodaje statystyki do nazw folderów."""
+    """Model proxy do wyświetlania statystyk folderów."""
 
     def __init__(self, directory_tree_manager, parent=None):
         super().__init__(parent)
         self.directory_tree_manager = directory_tree_manager
-        self._filter_function = None
-        logger.info("StatsProxyModel zainicjalizowany!")
+        self._stats_cache = {}  # Cache statystyk
+        self._last_update = {}  # Ostatnia aktualizacja dla każdego folderu
+        self._update_interval = 5.0  # Minimalny odstęp między aktualizacjami (sekundy)
 
     def setSourceModel(self, sourceModel):
-        """Override setSourceModel aby zalogować co się dzieje."""
-        logger.info(f"StatsProxyModel.setSourceModel wywoływane z: {type(sourceModel)}")
+        """Ustawia model źródłowy."""
         super().setSourceModel(sourceModel)
-        logger.info(
-            f"StatsProxyModel.setSourceModel ukończone, sourceModel: {self.sourceModel()}"
-        )
+        self._stats_cache.clear()
+        self._last_update.clear()
 
     def set_filter_function(self, filter_func):
-        """Ustawia funkcję filtrującą."""
-        self._filter_function = filter_func
-        logger.debug("Ustawiono funkcję filtrującą w StatsProxyModel")
+        """Ustawia funkcję filtrowania."""
+        self._filter_func = filter_func
+        self.invalidateFilter()
 
     def filterAcceptsRow(self, source_row, source_parent):
-        """Filtruje wiersze na podstawie ustawionej funkcji."""
-        if self._filter_function:
-            return self._filter_function(source_row, source_parent)
-        return super().filterAcceptsRow(source_row, source_parent)
+        """Filtruje wiersze na podstawie funkcji filtrowania."""
+        if not hasattr(self, "_filter_func"):
+            return True
+        return self._filter_func(source_row, source_parent)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        """Zwraca dane z dodanymi statystykami."""
-        logger.debug(
-            f"StatsProxyModel.data() wywoływane - role: {role}, index: {index.isValid()}"
-        )
+        """Zwraca dane dla indeksu."""
+        if role != Qt.ItemDataRole.DisplayRole:
+            return super().data(index, role)
 
-        if role == Qt.ItemDataRole.DisplayRole:
-            logger.debug("StatsProxyModel.data() - przetwarzam DisplayRole")
-            # Pobierz source index
-            source_index = self.mapToSource(index)
-            if not source_index.isValid():
-                logger.debug("StatsProxyModel.data() - source_index nieważny")
-                return super().data(index, role)
+        source_index = self.mapToSource(index)
+        if not source_index.isValid():
+            return None
 
-            # Pobierz ścieżkę i nazwę folderu
-            folder_path = self.sourceModel().filePath(source_index)
-            folder_name = self.sourceModel().fileName(source_index)
+        # Pobierz ścieżkę folderu
+        folder_path = self.sourceModel().filePath(source_index)
+        if not folder_path:
+            return None
 
-            logger.debug(
-                f"StatsProxyModel.data() - folder: {folder_name} ({folder_path})"
-            )
+        # Sprawdź cache
+        current_time = time.time()
+        last_update = self._last_update.get(folder_path, 0)
 
-            if not folder_path or not os.path.isdir(folder_path):
-                logger.debug("StatsProxyModel.data() - nie jest katalogiem")
-                return super().data(index, role)
+        if (
+            folder_path in self._stats_cache
+            and (current_time - last_update) < self._update_interval
+        ):
+            stats = self._stats_cache[folder_path]
+            return f"{stats.total_size_gb:.1f} GB, {stats.total_pairs} par"
 
-            # Sprawdź cache statystyk
-            stats = self.directory_tree_manager.get_cached_folder_statistics(
-                folder_path
-            )
-            if stats:
-                # Zwróć nazwę ze statystykami używając total_size_gb i total_pairs
-                display_text = (
-                    f"{folder_name} ({stats.total_size_gb:.1f} GB, {stats.total_pairs} par)"
-                )
-                logger.info(f"StatsProxyModel: Zwracam ze statystykami: {display_text}")
-                return display_text
-            else:
-                # Zwróć nazwę z placeholder
-                display_text = f"{folder_name} (... GB, ... par)"
-                logger.info(f"StatsProxyModel: Zwracam placeholder dla: {folder_name}")
-                return display_text
+        # Jeśli nie ma w cache lub minął interwał, pobierz statystyki
+        stats = self.directory_tree_manager.get_cached_folder_statistics(folder_path)
+        if stats:
+            self._stats_cache[folder_path] = stats
+            self._last_update[folder_path] = current_time
+            return f"{stats.total_size_gb:.1f} GB, {stats.total_pairs} par"
 
-        # Dla innych ról zwróć standardowe dane
-        return super().data(index, role)
+        # Jeśli nie ma statystyk, zwróć placeholder
+        return "Obliczanie..."
 
 
 # Definicja delegata do podświetlania celu upuszczenia
@@ -512,33 +500,35 @@ class DirectoryTreeManager:
             root_index = self.model.index(self._main_working_directory)
             if not root_index.isValid():
                 return folders
-                
+
             # Dodaj główny folder
             folders.append(self._main_working_directory)
-            
+
             # Rekurencyjnie przejdź przez wszystkie widoczne foldery w drzewie
             def traverse_model(parent_index, depth=0):
                 if depth > 3:  # Limit głębokości dla wydajności
                     return
-                    
+
                 row_count = self.model.rowCount(parent_index)
                 for row in range(row_count):
                     child_index = self.model.index(row, 0, parent_index)
                     if child_index.isValid():
                         folder_path = self.model.filePath(child_index)
                         folder_name = self.model.fileName(child_index)
-                        
+
                         # Sprawdź czy folder jest widoczny (nie ukryty)
                         if folder_path and self.should_show_folder(folder_name):
                             folders.append(folder_path)
-                            
+
                             # Kontynuuj rekurencyjnie dla podfolderów
                             if self.model.hasChildren(child_index):
                                 traverse_model(child_index, depth + 1)
-            
+
             traverse_model(root_index)
-            
-            logger.info(f"Znaleziono {len(folders)} widocznych folderów do obliczenia statystyk")
+
+            logger.info(
+                f"Znaleziono {len(folders)} widocznych folderów do obliczenia statystyk"
+            )
 
         except Exception as e:
             logger.error(f"Błąd skanowania folderów: {e}")
@@ -1033,11 +1023,15 @@ class DirectoryTreeManager:
 
         # NOWA FUNKCJONALNOŚĆ: Wymuś przeliczenie statystyk
         recalc_stats_action = context_menu.addAction("🔄 Przelicz statystyki")
-        recalc_stats_action.triggered.connect(lambda: self._force_recalculate_folder_stats(folder_path))
+        recalc_stats_action.triggered.connect(
+            lambda: self._force_recalculate_folder_stats(folder_path)
+        )
 
         # NOWA FUNKCJONALNOŚĆ: Przelicz wszystkie statystyki
         recalc_all_action = context_menu.addAction("🔄 Przelicz wszystkie statystyki")
-        recalc_all_action.triggered.connect(lambda: self.force_calculate_all_stats_async())
+        recalc_all_action.triggered.connect(
+            lambda: self.force_calculate_all_stats_async()
+        )
 
         context_menu.addSeparator()
 
@@ -1282,7 +1276,7 @@ class DirectoryTreeManager:
         # Odśwież całe drzewo i invaliduj cache usuniętego folderu
         self.invalidate_folder_cache(deleted_folder_path)
         self.refresh_entire_tree()
-        
+
         # Ustaw indeks na folder nadrzędny
         parent_path = os.path.dirname(deleted_folder_path)
         if parent_path:
@@ -1507,24 +1501,26 @@ class DirectoryTreeManager:
             # Wyczyść cache statystyk
             self._folder_stats_cache.clear()
             logger.info("Wyczyszczono cache statystyk folderów")
-            
+
             # Przeładuj model filesystem
             current_root = self.model.rootPath()
             if current_root:
                 # Zachowaj obecny root i przeładuj
                 self.model.setRootPath("")  # Reset
                 new_root_index = self.model.setRootPath(current_root)
-                
+
                 # Zaktualizuj proxy model
                 if new_root_index.isValid():
                     proxy_root = self.get_proxy_index_from_source(new_root_index)
                     if proxy_root.isValid():
                         self.folder_tree.setRootIndex(proxy_root)
-                        logger.info(f"Odświeżono drzewo folderów dla root: {current_root}")
-                
+                        logger.info(
+                            f"Odświeżono drzewo folderów dla root: {current_root}"
+                        )
+
                 # Restart background stats calculation
                 self.start_background_stats_calculation()
-            
+
         except Exception as e:
             logger.error(f"Błąd podczas odświeżania drzewa: {e}")
 
@@ -1771,12 +1767,16 @@ class DirectoryTreeManager:
 
         # Pobierz wszystkie widoczne foldery
         visible_folders = self._get_visible_folders()
-        
-        logger.info(f"Rozpoczynam wymuszone obliczanie statystyk dla {len(visible_folders)} folderów...")
+
+        logger.info(
+            f"Rozpoczynam wymuszone obliczanie statystyk dla {len(visible_folders)} folderów..."
+        )
 
         # Obliczaj statystyki dla wszystkich folderów (ignoruj cache)
         for i, folder_path in enumerate(visible_folders):
-            logger.debug(f"Kolejkowanie obliczania statystyk ({i+1}/{len(visible_folders)}): {folder_path}")
+            logger.debug(
+                f"Kolejkowanie obliczania statystyk ({i+1}/{len(visible_folders)}): {folder_path}"
+            )
             self._calculate_stats_async_silent(folder_path)
 
     def _force_recalculate_folder_stats(self, folder_path: str):

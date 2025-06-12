@@ -29,12 +29,11 @@ from src import app_config
 from src.controllers.main_window_controller import MainWindowController
 from src.logic import file_operations
 from src.models.file_pair import FilePair
-
 from src.services.thread_coordinator import ThreadCoordinator
 from src.ui.delegates.workers import (
-    UnifiedBaseWorker,
     BulkMoveWorker,
     DataProcessingWorker,
+    UnifiedBaseWorker,
     WorkerFactory,
 )
 from src.ui.directory_tree_manager import DirectoryTreeManager
@@ -74,8 +73,6 @@ class MainWindow(QMainWindow):
 
         # ETAP 2 FINAL: MVC Controller - centralna logika biznesowa
         self.controller = MainWindowController(self)
-
-
 
         # Wątki
         self.scan_thread = None
@@ -117,8 +114,7 @@ class MainWindow(QMainWindow):
         # Konfiguracja okna
         self.setWindowTitle("CFAB_3DHUB")
         self.setMinimumSize(
-            self.app_config.window_min_width, 
-            self.app_config.window_min_height
+            self.app_config.window_min_width, self.app_config.window_min_height
         )
 
         # Inicjalizacja paska statusu
@@ -675,7 +671,9 @@ class MainWindow(QMainWindow):
                     "Kończenie wątku przetwarzania przy zamykaniu aplikacji..."
                 )
                 self.data_processing_thread.quit()
-                if not self.data_processing_thread.wait(self.app_config.thread_wait_timeout_ms):
+                if not self.data_processing_thread.wait(
+                    self.app_config.thread_wait_timeout_ms
+                ):
                     logging.warning(
                         "Wątek przetwarzania nie zakończył się, wymuszam..."
                     )
@@ -864,12 +862,22 @@ class MainWindow(QMainWindow):
         )
         # Deleguj update przycisku parowania do managera unpaired files
         if hasattr(self, "unpaired_files_tab_manager"):
-            logging.info("🔍 Sprawdzam stan unpaired_files_tab_manager w _on_tile_loading_finished...")
-            logging.info(f"📋 unpaired_archives_list_widget: {hasattr(self.unpaired_files_tab_manager, 'unpaired_archives_list_widget')}")
-            if hasattr(self.unpaired_files_tab_manager, 'unpaired_archives_list_widget'):
-                logging.info(f"📋 unpaired_archives_list_widget value: {self.unpaired_files_tab_manager.unpaired_archives_list_widget}")
-            logging.info(f"📋 unpaired_previews_list_widget: {hasattr(self.unpaired_files_tab_manager, 'unpaired_previews_list_widget')}")
-            
+            logging.info(
+                "🔍 Sprawdzam stan unpaired_files_tab_manager w _on_tile_loading_finished..."
+            )
+            logging.info(
+                f"📋 unpaired_archives_list_widget: {hasattr(self.unpaired_files_tab_manager, 'unpaired_archives_list_widget')}"
+            )
+            if hasattr(
+                self.unpaired_files_tab_manager, "unpaired_archives_list_widget"
+            ):
+                logging.info(
+                    f"📋 unpaired_archives_list_widget value: {self.unpaired_files_tab_manager.unpaired_archives_list_widget}"
+                )
+            logging.info(
+                f"📋 unpaired_previews_list_widget: {hasattr(self.unpaired_files_tab_manager, 'unpaired_previews_list_widget')}"
+            )
+
             # BEZPOŚREDNIA AKTUALIZACJA jako FALLBACK
             logging.info("🛠️ FALLBACK: Bezpośrednia aktualizacja niesparowanych plików")
             self._update_unpaired_files_direct()
@@ -880,17 +888,24 @@ class MainWindow(QMainWindow):
         Używana gdy manager nie działa poprawnie.
         """
         try:
-            logging.info("🔧 FALLBACK: Rozpoczynam bezpośrednią aktualizację niesparowanych plików")
-            
+            logging.info(
+                "🔧 FALLBACK: Rozpoczynam bezpośrednią aktualizację niesparowanych plików"
+            )
+
             # Sprawdź czy mamy widgety przypisane do main_window
-            if not hasattr(self, 'unpaired_archives_list_widget') or not self.unpaired_archives_list_widget:
-                logging.warning("⚠️ FALLBACK: Brak widgetów w main_window - pomijam aktualizację")
+            if (
+                not hasattr(self, "unpaired_archives_list_widget")
+                or not self.unpaired_archives_list_widget
+            ):
+                logging.warning(
+                    "⚠️ FALLBACK: Brak widgetów w main_window - pomijam aktualizację"
+                )
                 return
-                
+
             # Wyczyść stare dane
             self.unpaired_archives_list_widget.clear()
             self.unpaired_previews_list_widget.clear()
-            
+
             # Dodaj archiwa
             archives_added = 0
             for archive_path in self.controller.unpaired_archives:
@@ -898,8 +913,10 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole, archive_path)
                 self.unpaired_archives_list_widget.addItem(item)
                 archives_added += 1
-                logging.info(f"📁 FALLBACK: Dodano archiwum {os.path.basename(archive_path)}")
-            
+                logging.info(
+                    f"📁 FALLBACK: Dodano archiwum {os.path.basename(archive_path)}"
+                )
+
             # Dodaj podglądy
             previews_added = 0
             for preview_path in self.controller.unpaired_previews:
@@ -907,10 +924,14 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole, preview_path)
                 self.unpaired_previews_list_widget.addItem(item)
                 previews_added += 1
-                logging.info(f"🖼️ FALLBACK: Dodano podgląd {os.path.basename(preview_path)}")
-            
-            logging.info(f"✅ FALLBACK: Dodano {archives_added} archiwów i {previews_added} podglądów")
-            
+                logging.info(
+                    f"🖼️ FALLBACK: Dodano podgląd {os.path.basename(preview_path)}"
+                )
+
+            logging.info(
+                f"✅ FALLBACK: Dodano {archives_added} archiwów i {previews_added} podglądów"
+            )
+
         except Exception as e:
             logging.error(f"❌ FALLBACK ERROR: {e}")
 
@@ -1015,24 +1036,26 @@ class MainWindow(QMainWindow):
         """
         Tworzy kafelki dla batch'a par plików - OPTYMALIZACJA dla wydajności.
         Zamiast tworzyć po jednym kafelku, tworzy je grupami aby zmniejszyć obciążenie UI.
-        
+
         Args:
             file_pairs_batch: Lista obiektów FilePair do przetworzenia w tym batch'u
         """
         logging.debug(f"Tworzenie batch'a {len(file_pairs_batch)} kafelków...")
-        
+
         # Czasowo wyłącz aktualizacje UI dla lepszej wydajności
         self.gallery_manager.tiles_container.setUpdatesEnabled(False)
-        
+
         try:
             created_count = 0
             for file_pair in file_pairs_batch:
                 tile = self._create_tile_widget_for_pair(file_pair)
                 if tile:
                     created_count += 1
-            
-            logging.debug(f"Utworzono {created_count}/{len(file_pairs_batch)} kafelków w batch'u")
-            
+
+            logging.debug(
+                f"Utworzono {created_count}/{len(file_pairs_batch)} kafelków w batch'u"
+            )
+
         finally:
             # Przywróć aktualizacje UI
             self.gallery_manager.tiles_container.setUpdatesEnabled(True)
@@ -1174,8 +1197,7 @@ class MainWindow(QMainWindow):
             self._select_working_directory(current_folder)
         else:
             logging.warning(
-                "Nie można wymusić odświeżenia - brak bieżącego "
-                "katalogu roboczego."
+                "Nie można wymusić odświeżenia - brak bieżącego " "katalogu roboczego."
             )
 
     def _update_thumbnail_size(self):
@@ -1195,10 +1217,8 @@ class MainWindow(QMainWindow):
     def _save_metadata(self):
         """
         Zapisuje metadane dla wszystkich par plików w osobnym wątku.
+        Używa buforowania zmian.
         """
-        logging.info(
-            f"🔄 _save_metadata wywołane - katalog: {self.controller.current_directory}"
-        )
         if not self.controller.current_directory:
             logging.debug("Brak folderu roboczego lub par plików do zapisu metadanych.")
             return
@@ -1221,6 +1241,18 @@ class MainWindow(QMainWindow):
             f"Zapisywanie metadanych dla {len(self.controller.current_file_pairs)} par plików...",
         )
         self.thread_pool.start(worker)
+
+    def _schedule_metadata_save(self):
+        """Planuje zapis metadanych z opóźnieniem."""
+        if not hasattr(self, "_metadata_save_timer"):
+            self._metadata_save_timer = QTimer()
+            self._metadata_save_timer.setSingleShot(True)
+            self._metadata_save_timer.timeout.connect(self._save_metadata)
+
+        # Zatrzymaj poprzedni timer jeśli istnieje
+        self._metadata_save_timer.stop()
+        # Uruchom nowy timer
+        self._metadata_save_timer.start(2000)  # 2 sekundy opóźnienia
 
     def _on_metadata_saved(self, success):
         """
@@ -1367,8 +1399,9 @@ class MainWindow(QMainWindow):
         # Odśwież widok
         self._apply_filters_and_update_view()
 
-        # Zapisz metadane (to również będzie asynchroniczne)
-        self._save_metadata()
+        # Zaplanuj zapis metadanych
+        self._schedule_metadata_save()
+
         # Wyświetl podsumowanie
         self._show_progress(100, f"Usunięto {len(deleted_pairs)} plików")
         QMessageBox.information(
@@ -1501,7 +1534,7 @@ class MainWindow(QMainWindow):
         )
         if file_pair:
             file_pair.set_stars(new_star_count)
-            self._save_metadata()
+            self._schedule_metadata_save()
             logging.debug(
                 f"Zmieniono liczbę gwiazdek dla "
                 f"{file_pair.get_base_name()} na {new_star_count}."
@@ -1516,7 +1549,7 @@ class MainWindow(QMainWindow):
         )
         if file_pair:
             file_pair.set_color_tag(new_color_tag)
-            self._save_metadata()
+            self._schedule_metadata_save()
             logging.debug(
                 f"Zmieniono tag koloru dla {file_pair.get_base_name()} "
                 f"na {new_color_tag}."
@@ -1565,7 +1598,9 @@ class MainWindow(QMainWindow):
 
         # Jeśli osiągnięto 100%, ukryj pasek po krótkim czasie
         if percent >= 100:
-            QTimer.singleShot(self.app_config.progress_hide_delay_ms, self._hide_progress)
+            QTimer.singleShot(
+                self.app_config.progress_hide_delay_ms, self._hide_progress
+            )
 
     def _hide_progress(self):
         """Ukrywa pasek postępu i resetuje etykietę."""

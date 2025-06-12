@@ -3,11 +3,28 @@ Definicje bazowe dla workerów - klasy abstrakcyjne i pomocnicze.
 """
 
 import logging
+import threading
 import time
+from typing import Any, Callable, Optional
+
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
 from PyQt6.QtGui import QPixmap
 
 logger = logging.getLogger(__name__)
+
+# Globalne locki dla shared resources
+_metadata_manager_lock = threading.RLock()
+_thumbnail_cache_lock = threading.RLock()
+_file_operations_lock = threading.RLock()
+
+
+class WorkerPriority:
+    """Priorytety dla workerów."""
+
+    LOW = 0
+    NORMAL = 1
+    HIGH = 2
+    CRITICAL = 3  # Nowy priorytet dla krytycznych operacji
 
 
 class UnifiedWorkerSignals(QObject):
@@ -15,19 +32,26 @@ class UnifiedWorkerSignals(QObject):
     ZUNIFIKOWANE sygnały dla wszystkich workerów.
     Obsługuje zarówno standardowe workery jak i thumbnail workery.
     """
-    
+
     # Standardowe sygnały dla wszystkich workerów
     finished = pyqtSignal(object)  # uniwersalny typ wyniku
     error = pyqtSignal(str)  # komunikat błędu
     progress = pyqtSignal(int, str)  # procent, wiadomość
     interrupted = pyqtSignal()  # sygnał przerwania
-    
+    timeout = pyqtSignal(str)  # sygnał timeout z opisem
+
     # Rozszerzone sygnały dla thumbnail workerów
-    thumbnail_finished = pyqtSignal(QPixmap, str, int, int)  # pixmap, path, width, height
-    thumbnail_error = pyqtSignal(str, str, int, int)  # error_message, path, width, height
-    
-    # Rozszerzone sygnały dla scan workerów 
-    scan_finished = pyqtSignal(list, list, list)  # found_pairs, unpaired_archives, unpaired_previews
+    thumbnail_finished = pyqtSignal(
+        QPixmap, str, int, int
+    )  # pixmap, path, width, height
+    thumbnail_error = pyqtSignal(
+        str, str, int, int
+    )  # error_message, path, width, height
+
+    # Rozszerzone sygnały dla scan workerów
+    scan_finished = pyqtSignal(
+        list, list, list
+    )  # found_pairs, unpaired_archives, unpaired_previews
 
 
 class UnifiedBaseWorker(QRunnable):
@@ -38,16 +62,31 @@ class UnifiedBaseWorker(QRunnable):
     - Walidacja parametrów wejściowych w konstruktorze
     - Batching sygnałów postępu
     - Rozszerzone logowanie
+    - Timeout handling
+    - Resource protection
+    - Priorytetyzacja
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        timeout_seconds: Optional[int] = None,
+        priority: int = WorkerPriority.NORMAL,
+    ):
         super().__init__()
         self.signals = UnifiedWorkerSignals()  # ZUNIFIKOWANE sygnały
         self._interrupted = False
         self._worker_name = self.__class__.__name__
         self._last_progress_time = 0
         self._progress_interval_ms = 100  # Minimalny odstęp między sygnałami (ms)
-        # Walidacja w konstruktorze została przeniesiona do metody run
+        self._start_time = None
+        self._timeout_seconds = timeout_seconds
+        self._priority = priority
+
+        # Ustaw priorytet QRunnable
+        if priority == WorkerPriority.HIGH:
+            self.setAutoDelete(True)
+        elif priority == WorkerPriority.LOW:
+            self.setAutoDelete(True)
 
     def _validate_inputs(self):
         """Override w klasach pochodnych dla walidacji."""
@@ -55,15 +94,29 @@ class UnifiedBaseWorker(QRunnable):
 
     def check_interruption(self) -> bool:
         """
-        Sprawdza czy worker został przerwany.
+        Sprawdza czy worker został przerwany lub przekroczył timeout.
 
         Returns:
-            True jeśli przerwano, False w przeciwnym razie
+            True jeśli przerwano lub timeout, False w przeciwnym razie
         """
         if self._interrupted:
             logger.debug(f"{self._worker_name}: Operacja przerwana")
             self.signals.interrupted.emit()
             return True
+
+        # Sprawdź timeout
+        if self._timeout_seconds and self._start_time:
+            elapsed = time.time() - self._start_time
+            if elapsed > self._timeout_seconds:
+                logger.warning(
+                    f"{self._worker_name}: Przekroczono timeout "
+                    f"({self._timeout_seconds}s)"
+                )
+                self.signals.timeout.emit(
+                    f"Operacja przekroczyła limit czasu ({self._timeout_seconds}s)"
+                )
+                return True
+
         return False
 
     def interrupt(self):
@@ -103,7 +156,11 @@ class UnifiedBaseWorker(QRunnable):
 
     def emit_finished(self, result=None):
         """Emituje sygnał zakończenia z logowaniem."""
-        logger.info(f"{self._worker_name}: Zakończono pomyślnie")
+        if self._start_time:
+            elapsed = time.time() - self._start_time
+            logger.info(f"{self._worker_name}: Zakończono pomyślnie w {elapsed:.2f}s")
+        else:
+            logger.info(f"{self._worker_name}: Zakończono pomyślnie")
         self.signals.finished.emit(result)
 
     def emit_interrupted(self):
@@ -111,15 +168,93 @@ class UnifiedBaseWorker(QRunnable):
         logger.info(f"{self._worker_name}: Operacja przerwana")
         self.signals.interrupted.emit()
 
+    def with_metadata_lock(self, func: Callable, *args, **kwargs) -> Any:
+        """Wykonuje funkcję z lockiem na metadata_manager."""
+        with _metadata_manager_lock:
+            return func(*args, **kwargs)
+
+    def with_thumbnail_cache_lock(self, func: Callable, *args, **kwargs) -> Any:
+        """Wykonuje funkcję z lockiem na thumbnail_cache."""
+        with _thumbnail_cache_lock:
+            return func(*args, **kwargs)
+
+    def with_file_operations_lock(self, func: Callable, *args, **kwargs) -> Any:
+        """Wykonuje funkcję z lockiem na file operations."""
+        with _file_operations_lock:
+            return func(*args, **kwargs)
+
     def run(self):
         """
         Główna metoda workera - do implementacji w klasach pochodnych.
 
-        Powinny używać metod check_interruption(), emit_progress(), emit_error(), emit_finished()
+        Powinny używać metod check_interruption(), emit_progress(),
+        emit_error(), emit_finished()
+        """
+        self._start_time = time.time()
+        logger.info(
+            f"{self._worker_name}: Rozpoczęto wykonywanie "
+            f"(priorytet: {self._priority})"
+        )
+
+        try:
+            self._run_implementation()
+        except Exception as e:
+            self.emit_error(f"Nieoczekiwany błąd: {str(e)}", e)
+        finally:
+            if self._start_time:
+                elapsed = time.time() - self._start_time
+                logger.debug(
+                    f"{self._worker_name}: Całkowity czas wykonania: " f"{elapsed:.2f}s"
+                )
+
+    def _run_implementation(self):
+        """
+        Implementacja konkretnego workera - do override w klasach pochodnych.
         """
         raise NotImplementedError(
-            "Metoda run() musi być zaimplementowana w klasie pochodnej"
+            "Metoda _run_implementation() musi być zaimplementowana "
+            "w klasie pochodnej"
         )
+
+
+class AsyncUnifiedBaseWorker(UnifiedBaseWorker):
+    """
+    Rozszerzona wersja UnifiedBaseWorker z obsługą operacji asynchronicznych.
+    """
+
+    def __init__(
+        self,
+        timeout_seconds: Optional[int] = None,
+        priority: int = WorkerPriority.NORMAL,
+    ):
+        super().__init__(timeout_seconds, priority)
+        self._async_operations = []
+
+    async def run_async_operation(
+        self, operation_func: Callable, *args, **kwargs
+    ) -> Any:
+        """
+        Wykonuje operację asynchroniczną z obsługą timeout i przerwania.
+        """
+        import asyncio
+
+        try:
+            if self._timeout_seconds:
+                result = await asyncio.wait_for(
+                    operation_func(*args, **kwargs), timeout=self._timeout_seconds
+                )
+            else:
+                result = await operation_func(*args, **kwargs)
+            return result
+        except asyncio.TimeoutError:
+            self.signals.timeout.emit(
+                f"Operacja asynchroniczna przekroczyła timeout "
+                f"({self._timeout_seconds}s)"
+            )
+            raise
+        except Exception as e:
+            self.emit_error(f"Błąd operacji asynchronicznej: {str(e)}", e)
+            raise
 
 
 class TransactionalWorker(UnifiedBaseWorker):
@@ -130,8 +265,12 @@ class TransactionalWorker(UnifiedBaseWorker):
     błędu wszystkie wykonane wcześniej operacje zostaną cofnięte w odwrotnej kolejności.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(
+        self,
+        timeout_seconds: Optional[int] = None,
+        priority: int = WorkerPriority.NORMAL,
+    ):
+        super().__init__(timeout_seconds, priority)
         self._operations_log = []  # Log wykonanych operacji
 
     def execute_with_rollback(self, operation_func, rollback_func, *args, **kwargs):
@@ -169,7 +308,8 @@ class TransactionalWorker(UnifiedBaseWorker):
         ):
             try:
                 logger.debug(
-                    f"Wycofywanie operacji {len(self._operations_log)-i}/{len(self._operations_log)}"
+                    f"Wycofywanie operacji "
+                    f"{len(self._operations_log)-i}/{len(self._operations_log)}"
                 )
                 rollback_func(result, *args, **kwargs)
             except Exception as e:
@@ -181,9 +321,40 @@ class TransactionalWorker(UnifiedBaseWorker):
         logger.info("Zakończono wycofywanie operacji")
 
 
-class WorkerPriority:
-    """Priorytety dla workerów."""
+class BatchOperationMixin:
+    """
+    Mixin dla workerów wykonujących operacje wsadowe.
+    Dodaje funkcjonalności grupowania operacji dla lepszej wydajności.
+    """
 
-    LOW = 0
-    NORMAL = 1
-    HIGH = 2 
+    def __init__(self, batch_size: int = 10):
+        self.batch_size = batch_size
+        self._current_batch = []
+
+    def add_to_batch(self, operation_data: Any):
+        """Dodaje operację do aktualnego batch'a."""
+        self._current_batch.append(operation_data)
+
+        if len(self._current_batch) >= self.batch_size:
+            self.process_batch()
+
+    def process_batch(self):
+        """Przetwarza aktualny batch operacji."""
+        if not self._current_batch:
+            return
+
+        try:
+            self._process_batch_implementation(self._current_batch)
+        finally:
+            self._current_batch.clear()
+
+    def finalize_batches(self):
+        """Przetwarza pozostałe operacje w batch'u."""
+        if self._current_batch:
+            self.process_batch()
+
+    def _process_batch_implementation(self, batch_data: list):
+        """Implementacja przetwarzania batch'a - do override."""
+        raise NotImplementedError(
+            "Metoda _process_batch_implementation() musi być zaimplementowana"
+        )
