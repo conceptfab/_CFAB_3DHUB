@@ -974,6 +974,10 @@ class MainWindow(QMainWindow):
         self.data_processing_worker.tile_data_ready.connect(
             self._create_tile_widget_for_pair
         )
+        # NOWY: obsługa batch processing kafelków
+        self.data_processing_worker.tiles_batch_ready.connect(
+            self._create_tile_widgets_batch
+        )
         self.data_processing_worker.finished.connect(self._on_tile_loading_finished)
         self.data_processing_thread.started.connect(self.data_processing_worker.run)
 
@@ -1006,6 +1010,33 @@ class MainWindow(QMainWindow):
             tile.tile_context_menu_requested.connect(self._show_file_context_menu)
 
         return tile
+
+    def _create_tile_widgets_batch(self, file_pairs_batch: list):
+        """
+        Tworzy kafelki dla batch'a par plików - OPTYMALIZACJA dla wydajności.
+        Zamiast tworzyć po jednym kafelku, tworzy je grupami aby zmniejszyć obciążenie UI.
+        
+        Args:
+            file_pairs_batch: Lista obiektów FilePair do przetworzenia w tym batch'u
+        """
+        logging.debug(f"Tworzenie batch'a {len(file_pairs_batch)} kafelków...")
+        
+        # Czasowo wyłącz aktualizacje UI dla lepszej wydajności
+        self.gallery_manager.tiles_container.setUpdatesEnabled(False)
+        
+        try:
+            created_count = 0
+            for file_pair in file_pairs_batch:
+                tile = self._create_tile_widget_for_pair(file_pair)
+                if tile:
+                    created_count += 1
+            
+            logging.debug(f"Utworzono {created_count}/{len(file_pairs_batch)} kafelków w batch'u")
+            
+        finally:
+            # Przywróć aktualizacje UI
+            self.gallery_manager.tiles_container.setUpdatesEnabled(True)
+            self.gallery_manager.tiles_container.update()  # Wymuś odświeżenie
 
     def _on_tile_loading_finished(self):
         """

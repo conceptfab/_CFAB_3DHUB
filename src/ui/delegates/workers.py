@@ -1561,6 +1561,7 @@ class DataProcessingWorker(QObject):
 
     # Bezpośrednie sygnały
     tile_data_ready = pyqtSignal(FilePair)
+    tiles_batch_ready = pyqtSignal(list)  # NOWY: sygnał dla batch'y kafelków
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
     progress = pyqtSignal(int, str)
@@ -1639,25 +1640,37 @@ class DataProcessingWorker(QObject):
                 logging.info("DataProcessingWorker: Zakończono stosowanie metadanych.")
                 self.emit_progress(50, "Zakończono stosowanie metadanych")
 
-            # 2. Emituj sygnały do tworzenia kafelków
+            # 2. OPTYMALIZACJA: Emituj kafelki w batches zamiast pojedynczo
             if self.file_pairs:
                 logging.debug(
                     f"DataProcessingWorker: Rozpoczynam przygotowanie "
-                    f"{len(self.file_pairs)} kafelków."
+                    f"{len(self.file_pairs)} kafelków w batches."
                 )
                 total = len(self.file_pairs)
-                for i, file_pair in enumerate(self.file_pairs):
+                batch_size = 20  # Przetwarzaj po 20 kafelków na raz
+                
+                # Przetwarzaj w batches aby nie przeciążać UI thread
+                for i in range(0, total, batch_size):
                     if self.check_interruption():
                         return
 
-                    # Emituj sygnały
-                    self.tile_data_ready.emit(file_pair)
+                    # Pobierz batch plików
+                    batch_end = min(i + batch_size, total)
+                    batch = self.file_pairs[i:batch_end]
+                    
+                    # Emituj cały batch na raz
+                    self.tiles_batch_ready.emit(batch)
 
-                    # Aktualizuj postęp, ale nie przy każdej iteracji
-                    self.emit_progress_batched(
-                        i + 1, total, f"Przetwarzanie kafelków {i+1}/{total}"
+                    # Aktualizuj postęp
+                    progress_percent = 50 + int((batch_end / total) * 50)  # 50-100%
+                    self.emit_progress(
+                        progress_percent, 
+                        f"Przetwarzanie kafelków {batch_end}/{total} (batch {i//batch_size + 1}/{(total + batch_size - 1)//batch_size})"
                     )
-                self.emit_progress(100, f"Przetworzono wszystkie {total} kafelki")
+                    
+                    logging.debug(f"Wysłano batch {i//batch_size + 1}: pliki {i+1}-{batch_end}")
+
+                self.emit_progress(100, f"Przetworzono wszystkie {total} kafelki w {(total + batch_size - 1)//batch_size} batch'ach")
             else:
                 logging.debug("DataProcessingWorker: Brak par plików do przetworzenia.")
                 self.emit_progress(100, "Brak par plików do przetworzenia")
