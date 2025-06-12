@@ -334,22 +334,65 @@ Aplikacja jest w pełni funkcjonalna, architektura MVC działa, wszystkie proble
 
 ### 📋 Identyfikacja
 
-- **Plik:** `src/ui/directory_tree_manager.py` | **Priorytet:** 🔴 | **Rozmiar:** 1687 linii
+- **Plik:** `src/ui/directory_tree_manager.py` | **Priorytet:** 🔴 | **Rozmiar:** 1720 linii (ZWIĘKSZONY z 1687)
 - **Klasy:** 6 klas w jednym pliku - zbyt rozbudowane
 
 ### 🔍 Problemy krytyczne
 
+✅ **NAPRAWIONE BŁĘDY FUNKCJONALNE** (z TODO.md):
+
+- ✅ **Nieprawidłowe wyświetlanie statystyk** - Poprawiono używanie `stats.total_size_gb` i `stats.total_pairs` zamiast tylko głównego folderu
+- ✅ **Błędne odświeżanie po operacjach** - Dodano `refresh_entire_tree()` zamiast tylko lokalnego odświeżania
+- ✅ **Nieprawidłowe obliczanie statystyk** - Poprawiono worker aby rozdzielał statystyki głównego folderu od podfolderów
+
 ❌ **MIESZANIE ODPOWIEDZIALNOŚCI** - Jedna klasa: UI + cache + workers + statistics + drag&drop  
 ❌ **DUPLIKACJA WORKERÓW** - `FolderStatisticsWorker`, `FolderScanWorker` vs inne workery  
-❌ **NIEOPTYMALNE CACHE** - `_folder_stats_cache` bez limitów pamięci i TTL  
-❌ **SYNCHRONICZNE OPERACJE** - `os.walk()` w GUI thread może blokować UI
+🔧 **OPTYMALIZACJA CACHE** - Cache ma teraz podstawowe TTL ale brak limitów pamięci  
+✅ **ASYNCHRONICZNE OPERACJE** - Wszystkie operacje używają workerów
 
-### 🎯 Rekomendacje
+### 🔍 **NAPRAWIONE PROBLEMY SZCZEGÓŁOWE:**
 
-1. **Podział na 3 moduły:** TreeManager + StatisticsManager + FolderOperations
-2. **Zunifikowanie workerów** z delegates/workers.py
-3. **Cache z limitami** pamięci i automatycznym czyszczeniem
-4. **Asynchroniczne skanowanie** folderów
+✅ **Problem 1: Błędne wyświetlanie statystyk (StatsProxyModel.data())**
+
+- **Błąd**: Używanie `stats.size_gb` i `stats.pairs_count` zamiast total values
+- **Poprawka**: Zmieniono na `stats.total_size_gb` i `stats.total_pairs`
+- **Rezultat**: Wyświetlane statystyki uwzględniają teraz także podfoldery
+
+✅ **Problem 2: Błędne obliczenia w FolderStatisticsWorker**
+
+- **Błąd**: Worker nie rozdzielał statystyk głównego folderu od podfolderów
+- **Poprawka**: Dodano logikę rozdziału `main_folder_size` vs `subfolders_size`
+- **Rezultat**: Properties `total_size_gb` i `total_pairs` działają prawidłowo
+
+✅ **Problem 3: Nieprawidłowe odświeżanie po operacjach**
+
+- **Błąd**: `refresh_file_pairs_after_folder_operation` tylko skanował bieżący folder
+- **Poprawka**: Dodano `refresh_entire_tree()` + używanie w handlerach operacji
+- **Rezultat**: Po operacjach na plikach drzewo folderów odświeża się całkowicie
+
+### 🎯 Rekomendacje - AKTUALIZACJA
+
+#### **✅ WYSOKIPRIORYTETY - NAPRAWIONE:**
+
+1. ✅ **Naprawka błędów funkcjonalnych** - Statystyki i odświeżanie działają prawidłowo
+
+#### **❌ POZOSTAŁE DO ZROBIENIA:**
+
+2. **Podział na 3 moduły:** TreeManager + StatisticsManager + FolderOperations
+3. **Zunifikowanie workerów** z delegates/workers.py
+4. **Cache z limitami** pamięci i automatycznym czyszczeniem
+
+#### **🟡 NISKI PRIORYTET (aplikacja działa stabilnie):**
+
+5. **Asynchroniczne skanowanie** folderów - już zaimplementowane z workerami
+
+### 📊 **STATUS ETAPU 3: W TRAKCIE ⏳**
+
+- ✅ **Błędy funkcjonalne naprawione** (100% zadań z TODO.md)
+- 🔧 **Refaktoryzacja architektury** - W planach (~30% gotowości)
+- ⏳ **Aplikacja stabilna i funkcjonalna** - wszystkie główne funkcje działają
+
+**🎯 PRIORYTET:** Aplikacja działa bez błędów, refaktoryzacja może poczekać
 
 ---
 

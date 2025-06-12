@@ -113,39 +113,64 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
             if self.check_interruption():
                 return
 
-            # Oblicz rozmiar foldera
+            # Oblicz rozmiar foldera - oddzielnie główny folder i podfoldery
             self.emit_progress(25, "Obliczanie rozmiaru folderu...")
-            total_size = 0
-            file_count = 0
+            main_folder_size = 0
+            subfolders_size = 0
+            main_folder_files = 0
+            total_files = 0
 
             for root, dirs, files in os.walk(self.folder_path):
                 if self.check_interruption():
                     return
 
+                # Sprawdź czy to główny folder czy podfolder
+                is_main_folder = (root == self.folder_path)
+                
+                folder_size = 0
                 for file in files:
                     file_path = os.path.join(root, file)
                     try:
-                        total_size += os.path.getsize(file_path)
-                        file_count += 1
+                        file_size = os.path.getsize(file_path)
+                        folder_size += file_size
+                        total_files += 1
+                        if is_main_folder:
+                            main_folder_files += 1
                     except (OSError, FileNotFoundError):
                         continue
+                
+                if is_main_folder:
+                    main_folder_size += folder_size
+                else:
+                    subfolders_size += folder_size
 
-            stats.size_gb = total_size / (1024**3)
-            stats.total_files = file_count
+            stats.size_gb = main_folder_size / (1024**3)
+            stats.subfolders_size_gb = subfolders_size / (1024**3)
+            stats.total_files = total_files
 
-            # Oblicz liczbę par plików
+            # Oblicz liczbę par plików - główny folder vs podfoldery
             self.emit_progress(75, "Obliczanie liczby par plików...")
             if self.check_interruption():
                 return
 
             try:
-                found_pairs, _, _ = scan_folder_for_pairs(
+                # Pary w głównym folderze (bez głębokości)
+                main_pairs, _, _ = scan_folder_for_pairs(
                     self.folder_path, max_depth=0, pair_strategy="first_match"
                 )
-                stats.pairs_count = len(found_pairs)
+                stats.pairs_count = len(main_pairs)
+                
+                # Pary we wszystkich podfolderach (z głębokością)
+                all_pairs, _, _ = scan_folder_for_pairs(
+                    self.folder_path, max_depth=None, pair_strategy="first_match"
+                )
+                # Odejmij pary z głównego folderu aby otrzymać tylko pary z podfolderów
+                stats.subfolders_pairs = len(all_pairs) - len(main_pairs)
+                
             except Exception as e:
                 logger.warning(f"Błąd obliczania par plików: {e}")
                 stats.pairs_count = 0
+                stats.subfolders_pairs = 0
 
             self.emit_progress(100, "Zakończono obliczanie statystyk")
             self.custom_signals.finished.emit(stats)
@@ -306,9 +331,9 @@ class StatsProxyModel(QSortFilterProxyModel):
                 folder_path
             )
             if stats:
-                # Zwróć nazwę ze statystykami
+                # Zwróć nazwę ze statystykami używając total_size_gb i total_pairs
                 display_text = (
-                    f"{folder_name} ({stats.size_gb:.1f} GB, {stats.pairs_count} par)"
+                    f"{folder_name} ({stats.total_size_gb:.1f} GB, {stats.total_pairs} par)"
                 )
                 logger.info(f"StatsProxyModel: Zwracam ze statystykami: {display_text}")
                 return display_text
@@ -483,14 +508,37 @@ class DirectoryTreeManager:
             return folders
 
         try:
-            for root, dirs, files in os.walk(self._main_working_directory):
-                # Filtruj ukryte foldery
-                dirs[:] = [d for d in dirs if self.should_show_folder(d)]
-                folders.append(root)
-
-                # Ogranicz do pierwszych 20 folderów aby nie przeciążać
-                if len(folders) >= 20:
-                    break
+            # Przejdź przez widoczne foldery w modelu proxy zamiast os.walk
+            root_index = self.model.index(self._main_working_directory)
+            if not root_index.isValid():
+                return folders
+                
+            # Dodaj główny folder
+            folders.append(self._main_working_directory)
+            
+            # Rekurencyjnie przejdź przez wszystkie widoczne foldery w drzewie
+            def traverse_model(parent_index, depth=0):
+                if depth > 3:  # Limit głębokości dla wydajności
+                    return
+                    
+                row_count = self.model.rowCount(parent_index)
+                for row in range(row_count):
+                    child_index = self.model.index(row, 0, parent_index)
+                    if child_index.isValid():
+                        folder_path = self.model.filePath(child_index)
+                        folder_name = self.model.fileName(child_index)
+                        
+                        # Sprawdź czy folder jest widoczny (nie ukryty)
+                        if folder_path and self.should_show_folder(folder_name):
+                            folders.append(folder_path)
+                            
+                            # Kontynuuj rekurencyjnie dla podfolderów
+                            if self.model.hasChildren(child_index):
+                                traverse_model(child_index, depth + 1)
+            
+            traverse_model(root_index)
+            
+            logger.info(f"Znaleziono {len(folders)} widocznych folderów do obliczenia statystyk")
 
         except Exception as e:
             logger.error(f"Błąd skanowania folderów: {e}")
@@ -979,11 +1027,17 @@ class DirectoryTreeManager:
             lambda: self.open_folder_in_explorer(folder_path)
         )
 
-        context_menu.addSeparator()
-
         # NOWA FUNKCJONALNOŚĆ: Statystyki folderu
         stats_action = context_menu.addAction("📊 Pokaż statystyki")
         stats_action.triggered.connect(lambda: self.show_folder_statistics(folder_path))
+
+        # NOWA FUNKCJONALNOŚĆ: Wymuś przeliczenie statystyk
+        recalc_stats_action = context_menu.addAction("🔄 Przelicz statystyki")
+        recalc_stats_action.triggered.connect(lambda: self._force_recalculate_folder_stats(folder_path))
+
+        # NOWA FUNKCJONALNOŚĆ: Przelicz wszystkie statystyki
+        recalc_all_action = context_menu.addAction("🔄 Przelicz wszystkie statystyki")
+        recalc_all_action.triggered.connect(lambda: self.force_calculate_all_stats_async())
 
         context_menu.addSeparator()
 
@@ -1144,9 +1198,8 @@ class DirectoryTreeManager:
         logger.info(f"Pomyślnie utworzono folder: {created_folder_path}")
         progress_dialog.accept()  # Zamknij okno dialogowe
 
-        # Użyj wydajniejszego odświeżenia tylko folderu nadrzędnego
-        parent_folder = os.path.dirname(created_folder_path)
-        self.refresh_folder_only(parent_folder)
+        # Odśwież całe drzewo aby pokazać nowy folder
+        self.refresh_entire_tree()
 
         # Opcjonalnie: zaznacz nowo utworzony folder
         source_index = self.model.index(created_folder_path)
@@ -1169,9 +1222,9 @@ class DirectoryTreeManager:
         if progress_dialog.isVisible():
             progress_dialog.reject()  # Zamknij okno dialogowe
         QMessageBox.critical(self.parent_window, title, error_message)
-        # Użyj delikatniejszego odświeżenia tylko w przypadku błędu
+        # Odśwież całe drzewo po błędzie aby zapewnić spójność
         if self._main_working_directory:
-            self.refresh_folder_only(self._main_working_directory)
+            self.refresh_entire_tree()
 
     def _handle_operation_progress(
         self, percent: int, message: str, progress_dialog: QProgressDialog
@@ -1191,9 +1244,9 @@ class DirectoryTreeManager:
         if progress_dialog.isVisible():
             progress_dialog.reject()  # Zamknij okno dialogowe
         QMessageBox.information(self.parent_window, "Operacja przerwana", message)
-        # Użyj delikatniejszego odświeżenia po przerwaniu
+        # Odśwież całe drzewo po przerwaniu aby zapewnić spójność
         if self._main_working_directory:
-            self.refresh_folder_only(self._main_working_directory)
+            self.refresh_entire_tree()
 
     def _handle_rename_folder_finished(
         self, old_path: str, new_path: str, progress_dialog: QProgressDialog
@@ -1201,9 +1254,8 @@ class DirectoryTreeManager:
         logger.info(f"Pomyślnie zmieniono nazwę folderu z '{old_path}' na '{new_path}'")
         progress_dialog.accept()
 
-        # Odśwież folder nadrzędny i invaliduj cache
-        parent_folder = os.path.dirname(new_path)
-        self.refresh_folder_only(parent_folder)
+        # Odśwież całe drzewo i invaliduj cache
+        self.refresh_entire_tree()
         self.invalidate_folder_cache(old_path)
         self.invalidate_folder_cache(new_path)
 
@@ -1227,25 +1279,18 @@ class DirectoryTreeManager:
         logger.info(f"Pomyślnie usunięto folder: {deleted_folder_path}")
         progress_dialog.accept()
 
-        # Invaliduj cache usuniętego folderu i odśwież folder nadrzędny
+        # Odśwież całe drzewo i invaliduj cache usuniętego folderu
         self.invalidate_folder_cache(deleted_folder_path)
+        self.refresh_entire_tree()
+        
+        # Ustaw indeks na folder nadrzędny
         parent_path = os.path.dirname(deleted_folder_path)
         if parent_path:
-            self.refresh_folder_only(parent_path)
-            # Ustaw indeks na folder nadrzędny
             source_index = self.model.index(parent_path)
             if source_index.isValid():
                 proxy_index = self.get_proxy_index_from_source(source_index)
                 if proxy_index.isValid():
-                    self.folder_tree.setRootIndex(proxy_index)
-        else:
-            # Jeśli nie ma ścieżki nadrzędnej, odśwież cały model
-            self.model.setRootPath("")
-            root_index = self.model.setRootPath(self._main_working_directory or "")
-            if root_index.isValid():
-                proxy_root = self.get_proxy_index_from_source(root_index)
-                if proxy_root.isValid():
-                    self.folder_tree.setRootIndex(proxy_root)
+                    self.folder_tree.setCurrentIndex(proxy_index)
 
         QMessageBox.information(
             self.parent_window,
@@ -1454,13 +1499,46 @@ class DirectoryTreeManager:
                     QMessageBox.StandardButton.Ok,
                 )
 
+    def refresh_entire_tree(self):
+        """
+        Odświeża całe drzewo folderów invalidując cache i przeładowując model.
+        """
+        try:
+            # Wyczyść cache statystyk
+            self._folder_stats_cache.clear()
+            logger.info("Wyczyszczono cache statystyk folderów")
+            
+            # Przeładuj model filesystem
+            current_root = self.model.rootPath()
+            if current_root:
+                # Zachowaj obecny root i przeładuj
+                self.model.setRootPath("")  # Reset
+                new_root_index = self.model.setRootPath(current_root)
+                
+                # Zaktualizuj proxy model
+                if new_root_index.isValid():
+                    proxy_root = self.get_proxy_index_from_source(new_root_index)
+                    if proxy_root.isValid():
+                        self.folder_tree.setRootIndex(proxy_root)
+                        logger.info(f"Odświeżono drzewo folderów dla root: {current_root}")
+                
+                # Restart background stats calculation
+                self.start_background_stats_calculation()
+            
+        except Exception as e:
+            logger.error(f"Błąd podczas odświeżania drzewa: {e}")
+
     def refresh_file_pairs_after_folder_operation(self, current_working_directory: str):
         """
         Odświeża listę par plików po operacjach na folderach.
+        Teraz także odświeża całe drzewo folderów.
         """
         if not current_working_directory:
             logging.warning("Brak bieżącego folderu roboczego do odświeżenia.")
             return None
+
+        # Najpierw odśwież całe drzewo folderów
+        self.refresh_entire_tree()
 
         # Skanuj folder na nowo
         found_pairs, unpaired_archives, unpaired_previews = scan_folder_for_pairs(
@@ -1684,3 +1762,24 @@ class DirectoryTreeManager:
         if cache_key in self._folder_stats_cache:
             del self._folder_stats_cache[cache_key]
             logger.debug(f"Invalidowano cache dla: {folder_path}")
+
+    def force_calculate_all_stats_async(self):
+        """Wymusza obliczenie statystyk dla wszystkich folderów (ignoruje cache)."""
+        if not self._main_working_directory:
+            logger.warning("Brak _main_working_directory do obliczenia statystyk")
+            return
+
+        # Pobierz wszystkie widoczne foldery
+        visible_folders = self._get_visible_folders()
+        
+        logger.info(f"Rozpoczynam wymuszone obliczanie statystyk dla {len(visible_folders)} folderów...")
+
+        # Obliczaj statystyki dla wszystkich folderów (ignoruj cache)
+        for i, folder_path in enumerate(visible_folders):
+            logger.debug(f"Kolejkowanie obliczania statystyk ({i+1}/{len(visible_folders)}): {folder_path}")
+            self._calculate_stats_async_silent(folder_path)
+
+    def _force_recalculate_folder_stats(self, folder_path: str):
+        """Wymusza ponowne obliczenie statystyk dla danego folderu."""
+        self.invalidate_folder_cache(folder_path)
+        self._calculate_stats_async_silent(folder_path)
