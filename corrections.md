@@ -224,6 +224,7 @@ class DirectoryTreeManager:
    - **Tight coupling:** Bezpośrednie odwołania do wszystkich managerów i widgetów
    - **Brak separacji warstw:** Logika biznesowa zmieszana z logiką UI
    - **Potencjalne wycieki pamięci:** Brak czyszczenia referencji do workerów
+   - **🚨 EXCESSIVE LOGGING (TODO.md):** Nadmierne logowanie z emoji w main_window spowalnia aplikację - widoczne w logach startowych
 
 2. **Optymalizacje:**
 
@@ -231,12 +232,15 @@ class DirectoryTreeManager:
    - **Threading:** Używa globalnego thread pool bez kontroli zasobów
    - **Memory:** Przechowuje referencje do wszystkich widgetów jako atrybuty klasy
    - **Performance:** Metoda `refresh_all_views()` odświeża wszystko bez sprawdzania co się zmieniło
+   - **🚨 LOGGING PERFORMANCE (TODO.md):** Konfigurowalny system logowania bez emoji dla lepszej wydajności
 
 3. **Refaktoryzacja:**
    - **Podział odpowiedzialności:** Wydzielić logikę UI do osobnych managerów
    - **Wzorzec Command:** Implementować dla operacji bulk
    - **Event Bus:** Zastąpić bezpośrednie wywołania systemem zdarzeń
    - **Lazy Loading:** Ładować widgety dopiero gdy są potrzebne
+   - **🚨 TRZECIA ZAKŁADKA (TODO.md):** Dodanie trzeciej zakładki "Eksplorator plików" do main_window
+   - **🚨 LOGGING REFACTOR (TODO.md):** Refaktoryzacja systemu logowania w main_window
 
 ### 🔧 Szczegółowe poprawki
 
@@ -328,7 +332,116 @@ class MainWindow(QMainWindow):
         return self._get_or_create_widget("gallery_tab")
 ```
 
-#### Poprawka 4: Optymalizacja refresh_all_views
+#### Poprawka 4: 🚨 ZADANIE TODO-1: Optymalizacja systemu logowania (z TODO.md)
+
+**Lokalizacja:** Cały main_window.py i system logowania
+**Problem:** Nadmierne logowanie z emoji spowalnia aplikację (widoczne w logach startowych)
+**Rozwiązanie:**
+
+```python
+# src/utils/logging_config.py - nowy moduł
+class OptimizedLogger:
+    """Zoptymalizowany logger bez emoji dla main_window."""
+
+    def __init__(self, name: str = "MainWindow"):
+        self.logger = logging.getLogger(name)
+        self.use_emoji = False  # Domyślnie bez emoji
+        self.setup_logger()
+
+    def setup_logger(self):
+        """Konfiguracja loggera bez emoji."""
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%H:%M:%S'  # Krótszy timestamp
+        )
+
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO)
+
+    def info(self, message: str):
+        """Log info bez emoji."""
+        # Usuń emoji z message dla wydajności
+        clean_message = self._remove_emoji(message)
+        self.logger.info(clean_message)
+
+    def _remove_emoji(self, text: str) -> str:
+        """Usuń emoji z tekstu."""
+        import re
+        emoji_pattern = re.compile(
+            "[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251]+",
+            flags=re.UNICODE
+        )
+        return emoji_pattern.sub('', text).strip()
+
+# Zastosowanie w main_window.py:
+from src.utils.logging_config import OptimizedLogger
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.logger = OptimizedLogger("MainWindow")
+
+        # PRZED (problematyczne z TODO.md):
+        # logging.info("🏗️ CREATE_UNPAIRED_FILES_TAB - rozpoczynam tworzenie")
+
+        # PO (zoptymalizowane):
+        self.logger.info("Creating unpaired files tab")
+
+        # PRZED (problematyczne z TODO.md):
+        # logging.info("🎛️ PREFERENCJE WCZYTANE POMYŚLNIE!")
+
+        # PO (zoptymalizowane):
+        self.logger.info("Preferences loaded successfully")
+```
+
+#### Poprawka 5: 🚨 ZADANIE TODO-2: Trzecia zakładka - Eksplorator plików (z TODO.md)
+
+**Lokalizacja:** MainWindow.\_init_tabs()
+**Problem:** Brak trzeciej zakładki z eksploratorem plików
+**Rozwiązanie:**
+
+```python
+def _init_tabs(self):
+    """Inicjalizuje wszystkie zakładki włącznie z eksploratorem."""
+    # Istniejące zakładki
+    self.gallery_tab = GalleryTab(self)
+    self.unpaired_files_tab = UnpairedFilesTab(self)
+
+    # 🚨 NOWA ZAKŁADKA Z TODO.md:
+    from src.ui.widgets.file_explorer_tab import FileExplorerTab
+    self.file_explorer_tab = FileExplorerTab(self)
+
+    # Dodanie zakładek do tab widget
+    self.tab_widget.addTab(self.gallery_tab, "Galeria")
+    self.tab_widget.addTab(self.unpaired_files_tab, "Niesparowane pliki")
+    self.tab_widget.addTab(self.file_explorer_tab, "Eksplorator plików")  # NOWA ZAKŁADKA
+
+    # Połączenie sygnałów
+    self.file_explorer_tab.folder_changed.connect(self.on_explorer_folder_changed)
+    self.file_explorer_tab.file_selected.connect(self.on_explorer_file_selected)
+
+def on_explorer_folder_changed(self, path: str):
+    """Obsługa zmiany folderu w eksploratorze."""
+    self.logger.info(f"Explorer folder changed to: {path}")
+    # Opcjonalnie synchronizuj z głównym folderem roboczym
+
+def on_explorer_file_selected(self, file_path: str):
+    """Obsługa wyboru pliku w eksploratorze."""
+    self.logger.info(f"Explorer file selected: {file_path}")
+    # Opcjonalnie otwórz plik lub pokaż podgląd
+
+def set_working_directory(self, directory: str):
+    """Ustawia folder roboczy dla wszystkich zakładek."""
+    # Istniejący kod...
+
+    # 🚨 NOWE: Ustaw ścieżkę dla eksploratora plików
+    if hasattr(self, 'file_explorer_tab'):
+        self.file_explorer_tab.set_root_path(directory)
+```
+
+#### Poprawka 6: Optymalizacja refresh_all_views
 
 **Lokalizacja:** Metoda `refresh_all_views()`
 **Problem:** Odświeża wszystko bez sprawdzania zmian
@@ -2427,3 +2540,923 @@ _performance_monitor = PerformanceMonitor()
 **WSZYSTKIE 25 PLIKÓW ŚREDNIEGO PRIORYTETU ZOSTAŁO SZCZEGÓŁOWO PRZEANALIZOWANYCH!**
 
 Gotowe do implementacji lub przejścia do analizy plików niskiego priorytetu!
+
+---
+
+## 🚨 ZADANIA Z TODO.md - WYSOKIE PRIORYTETY
+
+### ZADANIE TODO-1: Optymalizacja systemu logowania (🔴 WYSOKI PRIORYTET)
+
+### 📋 Identyfikacja
+
+- **Problem główny:** Zbyt szczegółowe logowanie z emoji spowalnia aplikację
+- **Pliki dotknięte:** Wszystkie pliki używające loggera
+- **Priorytet:** 🔴 WYSOKI (wpływa na wydajność całej aplikacji)
+- **Przykład problemu:**
+
+```
+2025-06-13 00:31:46,927 - root - INFO - 🏗️ CREATE_UNPAIRED_FILES_TAB - rozpoczynam tworzenie
+2025-06-13 00:31:46,928 - root - INFO - ✅ Utworzono podstawowy widget i layout
+2025-06-13 00:31:46,929 - root - INFO - ✅ Utworzono splitter
+2025-06-13 00:31:46,930 - root - INFO - 🔧 Tworzę listę archiwów...
+```
+
+### 🔍 Analiza problemów
+
+1. **Błędy krytyczne:**
+
+   - **Performance impact:** Emoji w logach spowalniają aplikację
+   - **Log flooding:** Nadmierne logowanie szczegółów DEBUG jako INFO
+   - **No log levels:** Brak konfigurowalnych poziomów logowania
+   - **Memory usage:** Duże logi zużywają pamięć
+
+2. **Optymalizacje:**
+
+   - **Configurable logging:** System konfigurowalny przez preferencje
+   - **Log levels:** Proper DEBUG/INFO/WARNING/ERROR levels
+   - **Performance logging:** Usunięcie emoji z production logs
+   - **Log rotation:** Rotacja logów dla długotrwałego działania
+
+3. **Refaktoryzacja:**
+   - **Centralized logging:** Centralny system logowania
+   - **Context logging:** Logowanie z kontekstem bez emoji
+   - **Performance monitoring:** Monitoring wydajności zamiast verbose logs
+
+### 🔧 Szczegółowe poprawki
+
+#### Poprawka 1: Konfigurowalny system logowania
+
+**Lokalizacja:** Nowy moduł `src/utils/logging_config.py`
+**Problem:** Brak konfigurowalnego systemu logowania
+**Rozwiązanie:**
+
+```python
+import logging
+import sys
+from enum import Enum
+from typing import Dict, Any
+
+class LogLevel(Enum):
+    """Log levels for application."""
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+class OptimizedLogger:
+    """Optimized logger without emoji and with configurable levels."""
+
+    def __init__(self, name: str = "CFAB_3DHUB"):
+        self.name = name
+        self.logger = logging.getLogger(name)
+        self.current_level = LogLevel.INFO
+        self.use_emoji = False  # Default: no emoji for performance
+        self.setup_logger()
+
+    def setup_logger(self):
+        """Setup logger with optimized configuration."""
+        # Clear existing handlers
+        self.logger.handlers.clear()
+
+        # Create formatter without emoji
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%H:%M:%S'  # Shorter timestamp for performance
+        )
+
+        # Console handler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        self.logger.addHandler(console_handler)
+
+        # Set level
+        self.logger.setLevel(getattr(logging, self.current_level.value))
+
+        # Prevent propagation to root logger
+        self.logger.propagate = False
+
+    def set_level(self, level: LogLevel):
+        """Set logging level."""
+        self.current_level = level
+        self.logger.setLevel(getattr(logging, level.value))
+
+    def enable_emoji(self, enabled: bool = True):
+        """Enable/disable emoji in logs (for development only)."""
+        self.use_emoji = enabled
+
+    def debug(self, message: str, **kwargs):
+        """Log debug message."""
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(self._format_message(message), **kwargs)
+
+    def info(self, message: str, **kwargs):
+        """Log info message."""
+        if self.logger.isEnabledFor(logging.INFO):
+            self.logger.info(self._format_message(message), **kwargs)
+
+    def warning(self, message: str, **kwargs):
+        """Log warning message."""
+        self.logger.warning(self._format_message(message), **kwargs)
+
+    def error(self, message: str, **kwargs):
+        """Log error message."""
+        self.logger.error(self._format_message(message), **kwargs)
+
+    def critical(self, message: str, **kwargs):
+        """Log critical message."""
+        self.logger.critical(self._format_message(message), **kwargs)
+
+    def _format_message(self, message: str) -> str:
+        """Format message (remove emoji for performance)."""
+        if not self.use_emoji:
+            # Remove emoji from message for performance
+            import re
+            # Remove emoji pattern
+            emoji_pattern = re.compile(
+                "["
+                "\U0001F600-\U0001F64F"  # emoticons
+                "\U0001F300-\U0001F5FF"  # symbols & pictographs
+                "\U0001F680-\U0001F6FF"  # transport & map symbols
+                "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                "\U00002702-\U000027B0"
+                "\U000024C2-\U0001F251"
+                "]+", flags=re.UNICODE)
+            message = emoji_pattern.sub('', message).strip()
+
+        return message
+
+# Global optimized logger
+_optimized_logger = OptimizedLogger()
+
+# Convenience functions
+def get_logger(name: str = None) -> OptimizedLogger:
+    """Get optimized logger instance."""
+    if name:
+        return OptimizedLogger(name)
+    return _optimized_logger
+
+def configure_logging_from_preferences(preferences: Dict[str, Any]):
+    """Configure logging based on user preferences."""
+    log_level = preferences.get('log_level', 'INFO')
+    enable_emoji = preferences.get('enable_emoji_logs', False)
+
+    try:
+        level = LogLevel(log_level.upper())
+        _optimized_logger.set_level(level)
+        _optimized_logger.enable_emoji(enable_emoji)
+
+        _optimized_logger.info(f"Logging configured: level={level.value}, emoji={enable_emoji}")
+
+    except ValueError:
+        _optimized_logger.warning(f"Invalid log level: {log_level}, using INFO")
+        _optimized_logger.set_level(LogLevel.INFO)
+```
+
+#### Poprawka 2: Migracja istniejących logów
+
+**Lokalizacja:** Wszystkie pliki z problematycznym logowaniem
+**Problem:** Nadmierne logowanie z emoji
+**Rozwiązanie:**
+
+```python
+# Przykład migracji dla unpaired_files_tab.py
+from src.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+class UnpairedFilesTab(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        # PRZED (problematyczne):
+        # logging.info("🏗️ CREATE_UNPAIRED_FILES_TAB - rozpoczynam tworzenie")
+
+        # PO (zoptymalizowane):
+        logger.debug("Creating unpaired files tab")
+
+        self._init_ui()
+
+        # PRZED (problematyczne):
+        # logging.info("✅ Utworzono podstawowy widget i layout")
+
+        # PO (zoptymalizowane):
+        logger.debug("Basic widget and layout created")
+
+    def _init_ui(self):
+        """Initialize UI components."""
+        # PRZED (problematyczne):
+        # logging.info("🔧 Tworzę listę archiwów...")
+
+        # PO (zoptymalizowane):
+        logger.debug("Creating archives list")
+
+        # ... kod tworzenia UI ...
+
+        # PRZED (problematyczne):
+        # logging.info("✅ Lista archiwów utworzona. Widget: True")
+
+        # PO (zoptymalizowane):
+        logger.debug("Archives list created successfully")
+
+# Wzorzec migracji dla wszystkich plików:
+# 1. Zastąp import logging -> from src.utils.logging_config import get_logger
+# 2. Utwórz logger = get_logger(__name__)
+# 3. Zamień logging.info z emoji na logger.debug bez emoji
+# 4. Zostaw tylko krytyczne błędy jako logger.error
+# 5. Użyj logger.warning dla ostrzeżeń
+```
+
+#### Poprawka 3: Integracja z preferencjami
+
+**Lokalizacja:** `src/ui/widgets/preferences_dialog.py`
+**Problem:** Brak opcji konfiguracji logowania
+**Rozwiązanie:**
+
+```python
+class LoggingPreferencesTab(QWidget):
+    """Tab for logging preferences."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+
+    def setup_ui(self):
+        """Setup logging preferences UI."""
+        layout = QVBoxLayout(self)
+
+        # Log level selection
+        log_level_group = QGroupBox("Poziom logowania")
+        log_level_layout = QVBoxLayout(log_level_group)
+
+        self.log_level_combo = QComboBox()
+        self.log_level_combo.addItems(["ERROR", "WARNING", "INFO", "DEBUG"])
+        self.log_level_combo.setCurrentText("INFO")
+
+        log_level_layout.addWidget(QLabel("Poziom szczegółowości logów:"))
+        log_level_layout.addWidget(self.log_level_combo)
+
+        # Emoji option (for development)
+        self.emoji_checkbox = QCheckBox("Włącz emoji w logach (tylko dla deweloperów)")
+        self.emoji_checkbox.setChecked(False)
+
+        # Performance warning
+        warning_label = QLabel(
+            "⚠️ UWAGA: Poziom DEBUG i emoji mogą wpływać na wydajność aplikacji!"
+        )
+        warning_label.setStyleSheet("color: orange; font-weight: bold;")
+
+        layout.addWidget(log_level_group)
+        layout.addWidget(self.emoji_checkbox)
+        layout.addWidget(warning_label)
+        layout.addStretch()
+
+    def get_preferences(self) -> Dict[str, Any]:
+        """Get logging preferences."""
+        return {
+            'log_level': self.log_level_combo.currentText(),
+            'enable_emoji_logs': self.emoji_checkbox.isChecked()
+        }
+
+    def set_preferences(self, preferences: Dict[str, Any]):
+        """Set logging preferences."""
+        log_level = preferences.get('log_level', 'INFO')
+        enable_emoji = preferences.get('enable_emoji_logs', False)
+
+        self.log_level_combo.setCurrentText(log_level)
+        self.emoji_checkbox.setChecked(enable_emoji)
+```
+
+### 📊 Status tracking
+
+- [x] **Analiza ukończona**
+- [ ] Kod zaimplementowany
+- [ ] Testy podstawowe przeprowadzone
+- [ ] Testy integracji przeprowadzone
+- [ ] Dokumentacja zaktualizowana
+- [ ] Gotowe do wdrożenia
+
+---
+
+### ZADANIE TODO-2: Trzecia zakładka - Eksplorator plików (🟡 ŚREDNI PRIORYTET)
+
+### 📋 Identyfikacja
+
+- **Funkcjonalność:** Dodanie trzeciej zakładki z podglądem wszystkich plików w stylu eksploratora Windows
+- **Lokalizacja:** `src/ui/widgets/file_explorer_tab.py` (nowy plik)
+- **Integracja:** `src/ui/main_window.py`
+- **Priorytet:** 🟡 ŚREDNI PRIORYTET
+
+### 🔍 Analiza wymagań
+
+1. **Funkcjonalności:**
+
+   - **File tree view:** Widok drzewa plików jak w eksploratorze Windows
+   - **File details:** Szczegóły plików (rozmiar, data, typ)
+   - **File operations:** Podstawowe operacje na plikach
+   - **Integration:** Integracja z istniejącym systemem
+
+2. **UI Components:**
+
+   - **Tree widget:** QTreeWidget dla struktury folderów
+   - **Details view:** QTableWidget dla szczegółów plików
+   - **Toolbar:** Narzędzia do operacji na plikach
+   - **Status bar:** Informacje o wybranym pliku
+
+3. **Funkcjonalności:**
+   - **Navigation:** Nawigacja po folderach
+   - **File preview:** Podgląd plików
+   - **Context menu:** Menu kontekstowe dla plików
+   - **Search:** Wyszukiwanie plików
+
+### 🔧 Szczegółowe poprawki
+
+#### Poprawka 1: Nowa zakładka File Explorer
+
+**Lokalizacja:** `src/ui/widgets/file_explorer_tab.py` (nowy plik)
+**Problem:** Brak trzeciej zakładki z eksploratorem
+**Rozwiązanie:**
+
+```python
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
+import os
+from typing import Optional, List, Dict
+from src.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+class FileExplorerTab(QWidget):
+    """File explorer tab similar to Windows Explorer."""
+
+    # Signals
+    file_selected = pyqtSignal(str)  # file path
+    folder_changed = pyqtSignal(str)  # folder path
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.current_path = ""
+        self.setup_ui()
+        self.setup_connections()
+
+    def setup_ui(self):
+        """Setup file explorer UI."""
+        layout = QVBoxLayout(self)
+
+        # Toolbar
+        self.toolbar = self.create_toolbar()
+        layout.addWidget(self.toolbar)
+
+        # Main splitter
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Left panel - folder tree
+        self.folder_tree = self.create_folder_tree()
+        splitter.addWidget(self.folder_tree)
+
+        # Right panel - file details
+        self.file_table = self.create_file_table()
+        splitter.addWidget(self.file_table)
+
+        # Set splitter proportions
+        splitter.setSizes([300, 700])
+        layout.addWidget(splitter)
+
+        # Status bar
+        self.status_bar = QLabel("Gotowy")
+        layout.addWidget(self.status_bar)
+
+    def create_toolbar(self) -> QToolBar:
+        """Create toolbar with navigation tools."""
+        toolbar = QToolBar()
+
+        # Back button
+        back_action = QAction("⬅️ Wstecz", self)
+        back_action.triggered.connect(self.go_back)
+        toolbar.addAction(back_action)
+
+        # Forward button
+        forward_action = QAction("➡️ Dalej", self)
+        forward_action.triggered.connect(self.go_forward)
+        toolbar.addAction(forward_action)
+
+        # Up button
+        up_action = QAction("⬆️ W górę", self)
+        up_action.triggered.connect(self.go_up)
+        toolbar.addAction(up_action)
+
+        toolbar.addSeparator()
+
+        # Address bar
+        self.address_bar = QLineEdit()
+        self.address_bar.setPlaceholderText("Ścieżka folderu...")
+        self.address_bar.returnPressed.connect(self.navigate_to_path)
+        toolbar.addWidget(self.address_bar)
+
+        toolbar.addSeparator()
+
+        # Refresh button
+        refresh_action = QAction("🔄 Odśwież", self)
+        refresh_action.triggered.connect(self.refresh_current_folder)
+        toolbar.addAction(refresh_action)
+
+        return toolbar
+
+    def create_folder_tree(self) -> QTreeWidget:
+        """Create folder tree widget."""
+        tree = QTreeWidget()
+        tree.setHeaderLabel("Foldery")
+        tree.itemClicked.connect(self.on_folder_selected)
+        return tree
+
+    def create_file_table(self) -> QTableWidget:
+        """Create file details table."""
+        table = QTableWidget()
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(["Nazwa", "Rozmiar", "Typ", "Zmodyfikowano"])
+
+        # Configure table
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setAlternatingRowColors(True)
+        table.setSortingEnabled(True)
+
+        table.itemDoubleClicked.connect(self.on_file_double_clicked)
+        table.itemSelectionChanged.connect(self.on_file_selection_changed)
+
+        return table
+
+    def setup_connections(self):
+        """Setup signal connections."""
+        pass
+
+    def set_root_path(self, path: str):
+        """Set root path for explorer."""
+        if os.path.exists(path):
+            self.current_path = path
+            self.address_bar.setText(path)
+            self.populate_folder_tree(path)
+            self.populate_file_table(path)
+            logger.debug(f"File explorer root set to: {path}")
+
+    def populate_folder_tree(self, root_path: str):
+        """Populate folder tree with directories."""
+        self.folder_tree.clear()
+
+        try:
+            root_item = QTreeWidgetItem([os.path.basename(root_path) or root_path])
+            root_item.setData(0, Qt.ItemDataRole.UserRole, root_path)
+            self.folder_tree.addTopLevelItem(root_item)
+
+            self._add_subdirectories(root_item, root_path)
+            root_item.setExpanded(True)
+
+        except Exception as e:
+            logger.error(f"Error populating folder tree: {e}")
+
+    def _add_subdirectories(self, parent_item: QTreeWidgetItem, path: str):
+        """Add subdirectories to tree item."""
+        try:
+            for item in os.listdir(path):
+                item_path = os.path.join(path, item)
+                if os.path.isdir(item_path):
+                    child_item = QTreeWidgetItem([item])
+                    child_item.setData(0, Qt.ItemDataRole.UserRole, item_path)
+                    parent_item.addChild(child_item)
+
+                    # Add placeholder for lazy loading
+                    if self._has_subdirectories(item_path):
+                        placeholder = QTreeWidgetItem(["..."])
+                        child_item.addChild(placeholder)
+
+        except PermissionError:
+            logger.warning(f"Permission denied accessing: {path}")
+        except Exception as e:
+            logger.error(f"Error adding subdirectories: {e}")
+
+    def _has_subdirectories(self, path: str) -> bool:
+        """Check if directory has subdirectories."""
+        try:
+            for item in os.listdir(path):
+                if os.path.isdir(os.path.join(path, item)):
+                    return True
+            return False
+        except:
+            return False
+
+    def populate_file_table(self, path: str):
+        """Populate file table with files from directory."""
+        self.file_table.setRowCount(0)
+
+        try:
+            files = []
+            for item in os.listdir(path):
+                item_path = os.path.join(path, item)
+                if os.path.isfile(item_path):
+                    stat = os.stat(item_path)
+                    files.append({
+                        'name': item,
+                        'path': item_path,
+                        'size': stat.st_size,
+                        'type': self._get_file_type(item),
+                        'modified': stat.st_mtime
+                    })
+
+            # Sort files by name
+            files.sort(key=lambda x: x['name'].lower())
+
+            # Populate table
+            self.file_table.setRowCount(len(files))
+            for row, file_info in enumerate(files):
+                self._add_file_row(row, file_info)
+
+            self.status_bar.setText(f"{len(files)} plików w {path}")
+
+        except Exception as e:
+            logger.error(f"Error populating file table: {e}")
+            self.status_bar.setText(f"Błąd: {str(e)}")
+
+    def _add_file_row(self, row: int, file_info: Dict):
+        """Add file row to table."""
+        # Name
+        name_item = QTableWidgetItem(file_info['name'])
+        name_item.setData(Qt.ItemDataRole.UserRole, file_info['path'])
+        self.file_table.setItem(row, 0, name_item)
+
+        # Size
+        size_text = self._format_file_size(file_info['size'])
+        self.file_table.setItem(row, 1, QTableWidgetItem(size_text))
+
+        # Type
+        self.file_table.setItem(row, 2, QTableWidgetItem(file_info['type']))
+
+        # Modified
+        from datetime import datetime
+        modified_text = datetime.fromtimestamp(file_info['modified']).strftime('%Y-%m-%d %H:%M')
+        self.file_table.setItem(row, 3, QTableWidgetItem(modified_text))
+
+    def _get_file_type(self, filename: str) -> str:
+        """Get file type description."""
+        ext = os.path.splitext(filename)[1].lower()
+        type_map = {
+            '.zip': 'Archiwum ZIP',
+            '.rar': 'Archiwum RAR',
+            '.7z': 'Archiwum 7-Zip',
+            '.jpg': 'Obraz JPEG',
+            '.jpeg': 'Obraz JPEG',
+            '.png': 'Obraz PNG',
+            '.gif': 'Obraz GIF',
+            '.bmp': 'Obraz BMP',
+            '.txt': 'Plik tekstowy',
+            '.pdf': 'Dokument PDF',
+        }
+        return type_map.get(ext, f'Plik {ext.upper()}' if ext else 'Plik')
+
+    def _format_file_size(self, size: int) -> str:
+        """Format file size in human readable format."""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} TB"
+
+    def on_folder_selected(self, item: QTreeWidgetItem, column: int):
+        """Handle folder selection in tree."""
+        path = item.data(0, Qt.ItemDataRole.UserRole)
+        if path:
+            self.current_path = path
+            self.address_bar.setText(path)
+            self.populate_file_table(path)
+            self.folder_changed.emit(path)
+
+    def on_file_double_clicked(self, item: QTableWidgetItem):
+        """Handle file double click."""
+        if item.column() == 0:  # Name column
+            file_path = item.data(Qt.ItemDataRole.UserRole)
+            if file_path:
+                self.file_selected.emit(file_path)
+                logger.debug(f"File selected: {file_path}")
+
+    def on_file_selection_changed(self):
+        """Handle file selection change."""
+        selected_items = self.file_table.selectedItems()
+        if selected_items:
+            file_path = selected_items[0].data(Qt.ItemDataRole.UserRole)
+            if file_path:
+                file_name = os.path.basename(file_path)
+                self.status_bar.setText(f"Wybrany: {file_name}")
+
+    def navigate_to_path(self):
+        """Navigate to path from address bar."""
+        path = self.address_bar.text().strip()
+        if os.path.exists(path) and os.path.isdir(path):
+            self.set_root_path(path)
+        else:
+            self.status_bar.setText(f"Ścieżka nie istnieje: {path}")
+
+    def go_back(self):
+        """Go back in navigation history."""
+        # TODO: Implement navigation history
+        logger.debug("Go back requested")
+
+    def go_forward(self):
+        """Go forward in navigation history."""
+        # TODO: Implement navigation history
+        logger.debug("Go forward requested")
+
+    def go_up(self):
+        """Go up one directory level."""
+        if self.current_path:
+            parent_path = os.path.dirname(self.current_path)
+            if parent_path != self.current_path:  # Not at root
+                self.set_root_path(parent_path)
+
+    def refresh_current_folder(self):
+        """Refresh current folder contents."""
+        if self.current_path:
+            self.populate_file_table(self.current_path)
+            logger.debug(f"Refreshed folder: {self.current_path}")
+```
+
+#### Poprawka 2: Integracja z głównym oknem
+
+**Lokalizacja:** `src/ui/main_window.py`
+**Problem:** Brak trzeciej zakładki w głównym oknie
+**Rozwiązanie:**
+
+```python
+# Dodanie do MainWindow.__init__()
+def _init_tabs(self):
+    """Initialize all tabs."""
+    # Existing tabs
+    self.gallery_tab = GalleryTab(self)
+    self.unpaired_files_tab = UnpairedFilesTab(self)
+
+    # NEW: File explorer tab
+    self.file_explorer_tab = FileExplorerTab(self)
+
+    # Add tabs to tab widget
+    self.tab_widget.addTab(self.gallery_tab, "Galeria")
+    self.tab_widget.addTab(self.unpaired_files_tab, "Niesparowane pliki")
+    self.tab_widget.addTab(self.file_explorer_tab, "Eksplorator plików")  # NEW TAB
+
+    # Connect signals
+    self.file_explorer_tab.folder_changed.connect(self.on_explorer_folder_changed)
+    self.file_explorer_tab.file_selected.connect(self.on_explorer_file_selected)
+
+def on_explorer_folder_changed(self, path: str):
+    """Handle folder change in file explorer."""
+    logger.debug(f"Explorer folder changed to: {path}")
+    # Optionally sync with main working directory
+
+def on_explorer_file_selected(self, file_path: str):
+    """Handle file selection in file explorer."""
+    logger.debug(f"Explorer file selected: {file_path}")
+    # Optionally open file or show preview
+
+def set_working_directory(self, directory: str):
+    """Set working directory for all tabs."""
+    # Existing code...
+
+    # NEW: Set root path for file explorer
+    self.file_explorer_tab.set_root_path(directory)
+```
+
+### 📊 Status tracking
+
+- [x] **Analiza ukończona**
+- [ ] Kod zaimplementowany
+- [ ] Testy podstawowe przeprowadzone
+- [ ] Testy integracji przeprowadzone
+- [ ] Dokumentacja zaktualizowana
+- [ ] Gotowe do wdrożenia
+
+---
+
+### ZADANIE TODO-3: Integracja random_name.py (🟢 NISKI PRIORYTET)
+
+### 📋 Identyfikacja
+
+- **Funkcjonalność:** Dodanie narzędzia random_name.py do trzeciej zakładki
+- **Lokalizacja:** Integracja z `FileExplorerTab`
+- **Priorytet:** 🟢 NISKI PRIORYTET
+- **Zależność:** Wymaga ukończenia ZADANIA TODO-2
+
+### 🔍 Analiza wymagań
+
+1. **Funkcjonalności:**
+   - **Random name generation:** Generowanie losowych nazw plików
+   - **Batch renaming:** Masowe przemianowywanie plików
+   - **Integration:** Integracja z eksploratorem plików
+   - **Undo support:** Możliwość cofnięcia zmian
+
+### 🔧 Szczegółowe poprawki
+
+#### Poprawka 1: Integracja random_name.py z File Explorer
+
+**Lokalizacja:** Rozszerzenie `FileExplorerTab`
+**Problem:** Brak integracji narzędzia random_name.py
+**Rozwiązanie:**
+
+```python
+# Dodanie do FileExplorerTab.create_toolbar()
+def create_toolbar(self) -> QToolBar:
+    """Create toolbar with navigation tools."""
+    toolbar = QToolBar()
+
+    # ... existing toolbar items ...
+
+    toolbar.addSeparator()
+
+    # Random name tool
+    random_name_action = QAction("🎲 Random Names", self)
+    random_name_action.triggered.connect(self.open_random_name_tool)
+    toolbar.addAction(random_name_action)
+
+    return toolbar
+
+def open_random_name_tool(self):
+    """Open random name generation tool."""
+    selected_files = self.get_selected_files()
+
+    if not selected_files:
+        QMessageBox.information(self, "Random Names", "Wybierz pliki do przemianowania.")
+        return
+
+    dialog = RandomNameDialog(selected_files, self)
+    if dialog.exec() == QDialog.DialogCode.Accepted:
+        self.refresh_current_folder()
+
+class RandomNameDialog(QDialog):
+    """Dialog for random name generation using random_name.py functionality."""
+
+    def __init__(self, files: List[str], parent=None):
+        super().__init__(parent)
+        self.files = files
+        self.setup_ui()
+
+    def setup_ui(self):
+        """Setup random name dialog UI."""
+        self.setWindowTitle("Generator losowych nazw")
+        self.setModal(True)
+        self.resize(600, 400)
+
+        layout = QVBoxLayout(self)
+
+        # Info label
+        info_label = QLabel(f"Przemianuj {len(self.files)} wybranych plików:")
+        layout.addWidget(info_label)
+
+        # Preview table
+        self.preview_table = QTableWidget()
+        self.preview_table.setColumnCount(2)
+        self.preview_table.setHorizontalHeaderLabels(["Obecna nazwa", "Nowa nazwa"])
+        layout.addWidget(self.preview_table)
+
+        # Options
+        options_group = QGroupBox("Opcje generowania")
+        options_layout = QFormLayout(options_group)
+
+        self.pattern_combo = QComboBox()
+        self.pattern_combo.addItems([
+            "random_word_number",
+            "adjective_noun",
+            "color_animal",
+            "custom_pattern"
+        ])
+        options_layout.addRow("Wzorzec:", self.pattern_combo)
+
+        self.preserve_extension = QCheckBox("Zachowaj rozszerzenia")
+        self.preserve_extension.setChecked(True)
+        options_layout.addRow(self.preserve_extension)
+
+        layout.addWidget(options_group)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        preview_btn = QPushButton("Podgląd")
+        preview_btn.clicked.connect(self.generate_preview)
+        button_layout.addWidget(preview_btn)
+
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Anuluj")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        apply_btn = QPushButton("Zastosuj")
+        apply_btn.clicked.connect(self.apply_changes)
+        button_layout.addWidget(apply_btn)
+
+        layout.addWidget(QWidget())  # Spacer
+        layout.addLayout(button_layout)
+
+        # Generate initial preview
+        self.generate_preview()
+
+    def generate_preview(self):
+        """Generate preview of new names."""
+        try:
+            # Import random_name functionality
+            import random_name  # Assuming random_name.py is importable
+
+            pattern = self.pattern_combo.currentText()
+            preserve_ext = self.preserve_extension.isChecked()
+
+            new_names = []
+            for file_path in self.files:
+                old_name = os.path.basename(file_path)
+
+                if preserve_ext:
+                    name, ext = os.path.splitext(old_name)
+                    new_base = random_name.generate_name(pattern)
+                    new_name = f"{new_base}{ext}"
+                else:
+                    new_name = random_name.generate_name(pattern)
+
+                new_names.append((old_name, new_name))
+
+            # Populate preview table
+            self.preview_table.setRowCount(len(new_names))
+            for row, (old_name, new_name) in enumerate(new_names):
+                self.preview_table.setItem(row, 0, QTableWidgetItem(old_name))
+                self.preview_table.setItem(row, 1, QTableWidgetItem(new_name))
+
+        except Exception as e:
+            logger.error(f"Error generating preview: {e}")
+            QMessageBox.warning(self, "Błąd", f"Nie można wygenerować podglądu: {e}")
+
+    def apply_changes(self):
+        """Apply name changes to files."""
+        try:
+            changes_made = 0
+
+            for row in range(self.preview_table.rowCount()):
+                old_name_item = self.preview_table.item(row, 0)
+                new_name_item = self.preview_table.item(row, 1)
+
+                if old_name_item and new_name_item:
+                    old_path = self.files[row]
+                    old_name = old_name_item.text()
+                    new_name = new_name_item.text()
+
+                    if old_name != new_name:
+                        new_path = os.path.join(os.path.dirname(old_path), new_name)
+
+                        # Check if target exists
+                        if os.path.exists(new_path):
+                            logger.warning(f"Target file exists, skipping: {new_path}")
+                            continue
+
+                        # Rename file
+                        os.rename(old_path, new_path)
+                        changes_made += 1
+                        logger.debug(f"Renamed: {old_name} -> {new_name}")
+
+            QMessageBox.information(
+                self,
+                "Ukończono",
+                f"Przemianowano {changes_made} plików."
+            )
+
+            self.accept()
+
+        except Exception as e:
+            logger.error(f"Error applying changes: {e}")
+            QMessageBox.critical(self, "Błąd", f"Błąd podczas przemianowywania: {e}")
+```
+
+### 📊 Status tracking
+
+- [x] **Analiza ukończona**
+- [ ] Kod zaimplementowany
+- [ ] Testy podstawowe przeprowadzone
+- [ ] Testy integracji przeprowadzone
+- [ ] Dokumentacja zaktualizowana
+- [ ] Gotowe do wdrożenia
+
+---
+
+## 🎯 PODSUMOWANIE ZADAŃ Z TODO.md
+
+### ✅ **WSZYSTKIE ZADANIA Z TODO.md UWZGLĘDNIONE:**
+
+1. **✅ ZADANIE TODO-1:** Optymalizacja systemu logowania (🔴 WYSOKI)
+2. **✅ ZADANIE TODO-2:** Trzecia zakładka - Eksplorator plików (🟡 ŚREDNI)
+3. **✅ ZADANIE TODO-3:** Integracja random_name.py (🟢 NISKI)
+
+### 📊 **AKTUALIZOWANE STATYSTYKI AUDYTU:**
+
+- **70 krytycznych błędów** (+3 z TODO)
+- **92 optymalizacji wydajności** (+3 z TODO)
+- **76 refaktoryzacji** (+3 z TODO)
+- **238 ŁĄCZNYCH PROBLEMÓW** (+9 z TODO)
+
+**TERAZ MASZ KOMPLETNY AUDYT UWZGLĘDNIAJĄCY WSZYSTKIE UWAGI Z TODO.md!** 🎉
