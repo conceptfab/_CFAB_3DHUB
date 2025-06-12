@@ -206,9 +206,12 @@ class BulkMoveWorker(UnifiedBaseWorker):
                 
                 # Aktualizacja obiektu FilePair tylko jeśli oba pliki zostały przeniesione
                 if new_archive_path or new_preview_path:
+                    # Pobierz working_directory z oryginalnego obiektu FilePair
+                    working_directory = file_pair.working_directory
                     updated_pair = FilePair(
                         new_archive_path or file_pair.archive_path,
                         new_preview_path or file_pair.preview_path,
+                        working_directory
                     )
                     self.updated_file_pairs.append(updated_pair)
             

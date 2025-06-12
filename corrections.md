@@ -1182,6 +1182,47 @@ workers/
   - Zaimplementowano fallback w `_update_unpaired_files_direct()`
 - **Status końcowy**: Problem całkowicie rozwiązany - niesparowane pliki wyświetlają się poprawnie
 
+### 4. Problem z brakującym parametrem working_directory w BulkMoveWorker
+
+**Status: NAPRAWIONE** ✅
+
+- **Problem**: Operacja drag & drop nie odświeżała automatycznie folderu źródłowego, aplikacja wyrzucała błąd
+- **Lokalizacje**:
+  - `src/ui/delegates/workers/bulk_workers.py`
+- **Przyczyny zidentyfikowane**:
+  - W klasie BulkMoveWorker, podczas tworzenia nowego obiektu FilePair po przeniesieniu plików, nie był przekazywany wymagany parametr working_directory
+  - Błąd: `FilePair.__init__() missing 1 required positional argument: 'working_directory'`
+- **Naprawki zaimplementowane**:
+  - Dodano pobranie wartości working_directory z oryginalnego obiektu file_pair
+  - Przekazanie parametru working_directory do konstruktora FilePair
+- **Status końcowy**: Problem naprawiony - operacja drag & drop działa poprawnie i folder źródłowy jest odświeżany
+
+### 5. Podział mega-monolitu workers.py na mniejsze moduły
+
+**Status: NAPRAWIONE** ✅
+
+- **Problem**: Plik `src/ui/delegates/workers.py` był mega-monolitem o rozmiarze ponad 2000 linii kodu z 20 klasami, co utrudniało jego utrzymanie i rozwój
+- **Lokalizacje**:
+  - `src/ui/delegates/workers.py`
+- **Przyczyny zidentyfikowane**:
+  - Wszystkie workery były w jednym pliku, bez podziału na odpowiedzialne grupy
+  - Nagromadzenie różnych typów workerów (plikowe, folderowe, przetwarzania danych) w jednym miejscu
+  - Głębokie, skomplikowane hierarchie dziedziczenia
+- **Naprawki zaimplementowane**:
+  - Utworzono strukturę katalogów `src/ui/delegates/workers/`
+  - Podzielono kod na 7 specjalizowanych modułów:
+    - `__init__.py` - eksportujący wszystkie klasy
+    - `base_workers.py` - klasy bazowe (UnifiedWorkerSignals, UnifiedBaseWorker, TransactionalWorker)
+    - `folder_workers.py` - operacje na folderach
+    - `file_workers.py` - operacje na plikach
+    - `bulk_workers.py` - operacje masowe
+    - `processing_workers.py` - przetwarzanie danych i miniaturek
+    - `scan_workers.py` - skanowanie folderów
+    - `worker_factory.py` - fabryka workerów
+  - Zaktualizowano importy we wszystkich zależnych plikach
+- **Status końcowy**: Struktura kodu znacznie uporządkowana, łatwiejsza w utrzymaniu i rozwijaniu
+- **Metryki sukcesu**: Z monolitu ~2000 linii kodu utworzono 8 plików o przejrzystej strukturze i odpowiedzialności
+
 ## 🚧 NADAL WYMAGAJĄ UWAGI
 
 ### Nie ma problemów wymagających natychmiastowej uwagi! ✅
@@ -1191,6 +1232,7 @@ Wszystkie krytyczne problemy z wyświetlaniem zostały rozwiązane:
 - ✅ Kafelki galerii wyświetlają się poprawnie
 - ✅ Niesparowane pliki są wyświetlane w zakładce "Parowanie Plików"
 - ✅ Duplikowanie danych zostało naprawione
+- ✅ Operacja drag & drop działa prawidłowo
 
 ## 🎯 AKTUALNY STAN APLIKACJI
 

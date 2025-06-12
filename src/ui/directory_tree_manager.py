@@ -54,7 +54,7 @@ from src.logic.file_operations import (
     RenameFolderWorker,
 )
 from src.logic.scanner import scan_folder_for_pairs
-from src.ui.delegates.workers import UnifiedBaseWorker
+from src.ui.delegates.workers import UnifiedWorkerSignals, UnifiedBaseWorker
 from src.utils.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
