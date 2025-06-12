@@ -13,7 +13,7 @@ from threading import RLock
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 
 from src.logic.scanner import scan_folder_for_pairs
-from src.ui.delegates.workers import UnifiedBaseWorker, BaseWorkerSignals
+from src.ui.delegates.workers import UnifiedBaseWorker, UnifiedWorkerSignals
 from src.utils.path_utils import normalize_path
 from src.app_config import AppConfig
 
@@ -42,8 +42,8 @@ class FolderStatistics:
         return self.pairs_count + self.subfolders_pairs
 
 
-class FolderStatisticsSignals(BaseWorkerSignals):
-    """Sygnały dla workera statystyk folderów - rozszerza BaseWorkerSignals."""
+class FolderStatisticsSignals(UnifiedWorkerSignals):
+    """Sygnały dla workera statystyk folderów - rozszerza UnifiedWorkerSignals."""
     
     statistics_calculated = pyqtSignal(object)  # FolderStatistics
 

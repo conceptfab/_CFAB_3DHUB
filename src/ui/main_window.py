@@ -32,7 +32,7 @@ from src.models.file_pair import FilePair
 
 from src.services.thread_coordinator import ThreadCoordinator
 from src.ui.delegates.workers import (
-    BaseWorker,
+    UnifiedBaseWorker,
     BulkMoveWorker,
     DataProcessingWorker,
     WorkerFactory,
@@ -1572,12 +1572,12 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.progress_label.setText("Gotowy")
 
-    def _setup_worker_connections(self, worker: BaseWorker):
+    def _setup_worker_connections(self, worker: UnifiedBaseWorker):
         """
         Konfiguruje połączenia sygnałów dla workera.
 
         Args:
-            worker: Instancja BaseWorker do skonfigurowania
+            worker: Instancja UnifiedBaseWorker do skonfigurowania
         """
         worker.signals.progress.connect(self._show_progress)
         worker.signals.error.connect(self._handle_worker_error)

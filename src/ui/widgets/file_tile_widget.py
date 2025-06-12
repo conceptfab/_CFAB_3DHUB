@@ -426,14 +426,14 @@ class FileTileWidget(QWidget):
         self._current_thumbnail_worker = worker
 
         # Podłącz sygnały
-        worker.signals.finished.connect(
+        worker.signals.thumbnail_finished.connect(
             lambda pixmap, path, w, h: (
                 self._on_thumbnail_loaded(pixmap, path, w, h)
                 if self._current_thumbnail_worker == worker
                 else None
             )
         )
-        worker.signals.error.connect(
+        worker.signals.thumbnail_error.connect(
             lambda error_msg, path, w, h: (
                 self._on_thumbnail_error(error_msg, path, w, h)
                 if self._current_thumbnail_worker == worker
