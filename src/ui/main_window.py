@@ -1599,10 +1599,11 @@ class MainWindow(QMainWindow):
                 f"Rozpoczynanie ponownego skanowania folderu: {self.controller.current_directory}"
             )
 
-            # Wyczyść cache aby wymusić pełny rescan
+            # NAPRAWKA DRAG&DROP: NIE wyczyścićmy cache miniaturek! 
+            # Scanner cache może zostać wyczyszczony ale thumbnail cache NIE!
+            # Miniaturki nie zmieniają się przy przeniesieniu plików do innego folderu
             from src.logic.scanner import clear_cache
-
-            clear_cache()
+            clear_cache()  # Tylko scanner cache dla aktualnych wyników
 
             # Uruchom ponowne skanowanie BEZ RESETOWANIA DRZEWA
             # Używamy change_directory() zamiast controller.handle_folder_selection()

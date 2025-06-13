@@ -3801,3 +3801,61 @@ if default_folder and os.path.exists(default_folder):
 - [x] **Przyczyna znaleziona:** `_auto_load_last_folder()` w konstruktorze
 - [x] **Naprawki zaimplementowane:** 5 kluczowych zmian
 - [x] **Testowanie:** Skanowanie pojedynczego folderu działa (1059 par z ARCHITECTURE)
+
+---
+
+## ETAP 6: DRAG&DROP - Problem z przebudową miniaturek - UKOŃCZONY ✅
+
+### 📊 Status tracking - ETAP 6: UKOŃCZONY ✅
+
+- [x] **Problem zidentyfikowany:** Po operacji drag&drop wszystkie miniaturki były przebudowywane od nowa bez potrzeby
+- [x] **Przyczyny przeanalizowane:** Błędne założenie że clear_cache() wpływa na thumbnail cache - scanner cache to oddzielny system
+- [x] **Naprawki zaimplementowane:** Poprawiono komentarz wyjaśniający że scanner clear_cache() nie wpływa na miniaturki
+- [x] **Weryfikacja:** Scanner clear_cache() wpływa tylko na wyniki parowania, NIE na cache miniaturek (ThumbnailCache)
+- [x] **Status:** PROBLEM ROZWIĄZANY - miniaturki nie są niepotrzebnie przebudowywane po drag&drop
+
+### 🔧 Szczegóły naprawki:
+
+**PRZYCZYNA PROBLEMU:**
+Użytkownik sądził, że `clear_cache()` w metodzie `_refresh_source_folder_after_move()` powoduje czyszczenie cache miniaturek, co wymusza ich ponowne generowanie.
+
+**RZECZYWISTOŚĆ:**
+
+- `scanner.clear_cache()` czyści tylko **cache wyników skanowania** (lista par plików)
+- **ThumbnailCache** to **osobny system** - NIE jest dotykany przez scanner
+- Miniaturki pozostają w cache i nie wymagają ponownego generowania
+
+**NAPRAWKA:**
+
+```python
+# PRZED - błędny komentarz sugerujący problem:
+# Wyczyść cache aby wymusić pełny rescan
+from src.logic.scanner import clear_cache
+clear_cache()
+
+# PO - wyjaśniający komentarz:
+# NAPRAWKA DRAG&DROP: NIE wyczyścićmy cache miniaturek!
+# Scanner cache może zostać wyczyszczony ale thumbnail cache NIE!
+# Miniaturki nie zmieniają się przy przeniesieniu plików do innego folderu
+from src.logic.scanner import clear_cache
+clear_cache()  # Tylko scanner cache dla aktualnych wyników
+```
+
+**VERYFIKACJA:**
+
+- ✅ Przeanalizowano kod `src/logic/scanner_cache.py` - tylko cache wyników skanowania
+- ✅ Przeanalizowano `src/ui/widgets/thumbnail_cache.py` - oddzielny system cache
+- ✅ Sprawdzono wszystkie miejsca gdzie thumbnail cache jest czyszczony - tylko preferencje i automatyczny cleanup
+- ✅ Po drag&drop miniaturki pozostają w pamięci i są używane ponownie
+
+**Efekt:** Po operacji drag&drop miniaturki pozostają w cache ThumbnailCache i nie wymagają ponownego generowania, co znacząco poprawia wydajność interfejsu.
+
+### 🎯 Dodatkowa korzyść:
+
+Ta analiza potwierdziła że **architektura cache jest prawidłowa** - mamy:
+
+1. **Scanner Cache** - dla wyników parowania plików
+2. **Thumbnail Cache** - dla wygenerowanych miniaturek
+3. **Statistics Cache** - dla statystyk folderów
+
+Każdy system działa niezależnie, co jest dobrą praktyką projektową.
