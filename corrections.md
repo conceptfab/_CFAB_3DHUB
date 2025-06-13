@@ -3859,3 +3859,66 @@ Ta analiza potwierdziła że **architektura cache jest prawidłowa** - mamy:
 3. **Statistics Cache** - dla statystyk folderów
 
 Każdy system działa niezależnie, co jest dobrą praktyką projektową.
+
+---
+
+## ETAP 7: BŁĄD READONLY PROPERTIES - Problem z FolderStatistics - UKOŃCZONY ✅
+
+### 📊 Status tracking - ETAP 7: UKOŃCZONY ✅
+
+- [x] **Problem zidentyfikowany:** FolderStatisticsWorker wyrzucał błędy "property 'total_size_gb' of 'FolderStatistics' object has no setter"
+- [x] **Przyczyny przeanalizowane:** Próba ustawienia readonly properties total_size_gb i total_pairs w klasie FolderStatistics
+- [x] **Naprawki zaimplementowane:** Usunięto błędne przypisania do readonly properties w workers.py linie 104, 133, 142
+- [x] **Weryfikacja:** Aplikacja uruchamia się bez błędów, properties działają jako readonly obliczane automatycznie
+- [x] **Status:** PROBLEM ROZWIĄZANY - błędy statystyk folderów wyeliminowane
+
+### 🔧 Szczegóły naprawki:
+
+**PRZYCZYNA PROBLEMU:**
+W `src/ui/directory_tree/workers.py` kod próbował ustawić właściwości `total_size_gb` i `total_pairs` które są zdefiniowane jako readonly properties w klasie `FolderStatistics`.
+
+**ANALIZA ARCHITEKTURY:**
+
+```python
+@dataclass
+class FolderStatistics:
+    size_gb: float = 0.0
+    pairs_count: int = 0
+    subfolders_size_gb: float = 0.0
+    subfolders_pairs: int = 0
+
+    @property  # READONLY - obliczane automatycznie
+    def total_size_gb(self) -> float:
+        return self.size_gb + self.subfolders_size_gb
+
+    @property  # READONLY - obliczane automatycznie
+    def total_pairs(self) -> int:
+        return self.pairs_count + self.subfolders_pairs
+```
+
+**NAPRAWKA:**
+
+```python
+# PRZED - błędne przypisania:
+stats.total_size_gb = (main_folder_size + subfolders_size) / (1024**3)  # BŁĄD!
+stats.total_pairs = pairs_count  # BŁĄD!
+
+# PO - usunięto przypisania, properties obliczane automatycznie:
+stats.size_gb = main_folder_size / (1024**3)
+stats.subfolders_size_gb = subfolders_size / (1024**3)
+# total_size_gb obliczane automatycznie przez property
+stats.pairs_count = pairs_count
+stats.subfolders_pairs = 0
+# total_pairs obliczane automatycznie przez property
+```
+
+**EFEKT:**
+
+- ✅ Wyeliminowano wszystkie błędy "has no setter"
+- ✅ Statystyki folderów obliczane poprawnie
+- ✅ Aplikacja działa stabilnie bez błędów w logach
+- ✅ Architektura readonly properties zachowana
+
+### 🎯 Wnioski projektowe:
+
+Ta naprawka pokazuje wagę **consistent data model design** - readonly properties powinny być używane dla wartości obliczanych automatycznie, aby zapobiec błędom logicznym i niespójnościom danych.

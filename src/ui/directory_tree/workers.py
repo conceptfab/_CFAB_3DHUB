@@ -102,7 +102,8 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
             # Ustaw podstawowe statystyki
             stats.size_gb = main_folder_size / (1024**3)
             stats.subfolders_size_gb = subfolders_size / (1024**3)
-            stats.total_size_gb = (main_folder_size + subfolders_size) / (1024**3)
+            # NAPRAWKA: total_size_gb to readonly property - usuń przypisanie
+            # stats.total_size_gb = (main_folder_size + subfolders_size) / (1024**3)  # BŁĄD - to property!
             stats.total_files = total_files
 
             self.emit_progress(70, "Obliczanie par plików (szybka metoda)...")
@@ -130,7 +131,8 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
                         pairs_count += 1
                 
                 stats.pairs_count = pairs_count
-                stats.total_pairs = pairs_count  # Uproszczenie
+                # NAPRAWKA: total_pairs to readonly property - usuń przypisanie
+                # stats.total_pairs = pairs_count  # BŁĄD - to property!
                 stats.subfolders_pairs = 0  # Można rozszerzyć w przyszłości
                 
                 logger.debug(f"📊 OPTYMALIZOWANE statystyki {os.path.basename(self.folder_path)}: "
@@ -139,7 +141,8 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
             except Exception as e:
                 logger.warning(f"Błąd szybkiego obliczania par: {e}")
                 stats.pairs_count = 0
-                stats.total_pairs = 0
+                # NAPRAWKA: total_pairs to readonly property - usuń przypisanie
+                # stats.total_pairs = 0  # BŁĄD - to property!
                 stats.subfolders_pairs = 0
 
             self.emit_progress(100, "Zakończono zoptymalizowane obliczanie statystyk")
