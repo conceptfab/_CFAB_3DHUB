@@ -154,6 +154,64 @@ def start_background_stats_calculation(self):
 
 ---
 
+## 🚨 ETAP 4: NAPRAWA KRYTYCZNEGO PROBLEMU - ZNIKAJĄCE DRZEWO FOLDERÓW
+
+### 📋 Problem zgłoszony przez użytkownika
+
+**Główny problem:** Po operacji ręcznego parowania plików drzewo folderów całkowicie znikało!
+
+### 🔍 Analiza przyczyn
+
+**Źródło problemu:** W `src/ui/file_operations_ui.py` linia 383, metoda `_handle_manual_pairing_finished()` wywoływała:
+
+```python
+self.parent_window.force_full_refresh()
+```
+
+**Łańcuch problemowy:**
+
+1. Operacja parowania → `_handle_manual_pairing_finished()`
+2. `force_full_refresh()` → `_select_working_directory()`
+3. `_start_folder_scanning()` → `controller.handle_folder_selection()`
+4. `_on_tile_loading_finished()` → `init_directory_tree_without_expansion()`
+5. **RESET CAŁEGO DRZEWA KATALOGÓW!**
+
+### 🔧 Implementowane naprawki
+
+**Lokalizacja 1:** `src/ui/file_operations_ui.py` linia 383
+
+```python
+# PRZED (problematyczne):
+self.parent_window.force_full_refresh()
+
+# PO (naprawione):
+self.parent_window.refresh_all_views(new_file_pair)
+```
+
+**Lokalizacja 2:** `src/ui/widgets/unpaired_files_tab.py` linia 734
+
+```python
+# PRZED (problematyczne):
+self.main_window.force_full_refresh()
+
+# PO (naprawione):
+self.main_window.refresh_all_views()
+```
+
+### ✅ Rezultat naprawki
+
+**PRZED:** ❌ Drzewo folderów znikało po każdej operacji parowania
+**PO:** ✅ Drzewo folderów pozostaje nietknięte, pełna nawigacja zachowana
+
+### 📊 Status tracking - ETAP 4: UKOŃCZONY ✅
+
+- [x] **Problem zidentyfikowany:** force_full_refresh() resetuje drzewo folderów
+- [x] **Przyczyna zlokalizowana:** Niepotrzebne pełne odświeżenie po operacji parowania
+- [x] **Naprawki zaimplementowane:** Zastąpiono force_full_refresh() → refresh_all_views()
+- [x] **Testy:** Operacja parowania zachowuje drzewo folderów
+
+---
+
 ## ETAP 1: src/ui/directory_tree_manager.py
 
 ### 📋 Identyfikacja

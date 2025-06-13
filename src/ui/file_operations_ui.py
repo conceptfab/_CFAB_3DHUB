@@ -376,11 +376,15 @@ class FileOperationsUI:
             if preview_path in self.parent_window.controller.unpaired_previews:
                 self.parent_window.controller.unpaired_previews.remove(preview_path)
 
-        # Wymuś pełne odświeżenie aby przeładować dane
-        if hasattr(self.parent_window, "force_full_refresh") and callable(
-            self.parent_window.force_full_refresh
+        # NAPRAWKA: Użyj inteligentnego odświeżenia ZAMIAST force_full_refresh
+        # aby uniknąć resetowania drzewa katalogów
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
         ):
-            self.parent_window.force_full_refresh()
+            self.parent_window.refresh_all_views(new_file_pair)
+        else:
+            # Fallback - ale uniknij force_full_refresh!
+            logger.warning("Brak metody refresh_all_views - używam podstawowego odświeżenia bez resetu drzewa")
 
     def handle_drop_on_folder(self, urls: List, target_folder_path: str):
         """

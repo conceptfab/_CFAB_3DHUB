@@ -731,9 +731,13 @@ class UnpairedFilesTab:
         # Ponowne skanowanie folderu
         current_folder = self.main_window.controller.current_directory
         if current_folder and os.path.isdir(current_folder):
-            # Deleguj do głównego okna
-            if hasattr(self.main_window, "force_full_refresh"):
-                self.main_window.force_full_refresh()
+            # NAPRAWKA: Użyj inteligentnego odświeżenia ZAMIAST force_full_refresh
+            # aby uniknąć resetowania drzewa katalogów
+            if hasattr(self.main_window, "refresh_all_views"):
+                self.main_window.refresh_all_views()
+            else:
+                # Fallback - ale uniknij force_full_refresh!
+                logging.warning("Brak metody refresh_all_views - używam podstawowego odświeżenia bez resetu drzewa")
         else:
             logging.error(
                 "Nie można odświeżyć widoku - brak poprawnego folderu roboczego"
