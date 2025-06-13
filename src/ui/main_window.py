@@ -832,14 +832,20 @@ class MainWindow(QMainWindow):
                 widget_to_remove.setParent(None)
                 self.unpaired_previews_layout.removeWidget(widget_to_remove)
 
-        # Aktualizuj listę archiwów
-        for archive_path in self.controller.unpaired_archives:
+        # NAPRAWKA: Sortuj alfabetycznie przed wyświetleniem
+        sorted_archives = sorted(self.controller.unpaired_archives, 
+                                key=lambda x: os.path.basename(x).lower())
+        sorted_previews = sorted(self.controller.unpaired_previews, 
+                                key=lambda x: os.path.basename(x).lower())
+
+        # Aktualizuj listę archiwów (posortowane)
+        for archive_path in sorted_archives:
             item = QListWidgetItem(os.path.basename(archive_path))
             item.setData(Qt.ItemDataRole.UserRole, archive_path)
             self.unpaired_archives_list_widget.addItem(item)
 
-        # Aktualizuj miniaturki podglądów
-        for preview_path in self.controller.unpaired_previews:
+        # Aktualizuj miniaturki podglądów (posortowane)
+        for preview_path in sorted_previews:
             # Dodaj do ukrytego QListWidget dla kompatybilności
             item = QListWidgetItem(os.path.basename(preview_path))
             item.setData(Qt.ItemDataRole.UserRole, preview_path)
@@ -898,18 +904,24 @@ class MainWindow(QMainWindow):
             self.unpaired_archives_list_widget.clear()
             self.unpaired_previews_list_widget.clear()
 
-            # Dodaj archiwa
+            # NAPRAWKA FALLBACK: Sortuj alfabetycznie przed wyświetleniem
+            sorted_archives = sorted(self.controller.unpaired_archives, 
+                                    key=lambda x: os.path.basename(x).lower())
+            sorted_previews = sorted(self.controller.unpaired_previews, 
+                                    key=lambda x: os.path.basename(x).lower())
+
+            # Dodaj archiwa (posortowane)
             archives_added = 0
-            for archive_path in self.controller.unpaired_archives:
+            for archive_path in sorted_archives:
                 item = QListWidgetItem(os.path.basename(archive_path))
                 item.setData(Qt.ItemDataRole.UserRole, archive_path)
                 self.unpaired_archives_list_widget.addItem(item)
                 archives_added += 1
                 # Spam logów wyeliminowany - każdy plik nie potrzebuje osobnego loga
 
-            # Dodaj podglądy
+            # Dodaj podglądy (posortowane)
             previews_added = 0
-            for preview_path in self.controller.unpaired_previews:
+            for preview_path in sorted_previews:
                 item = QListWidgetItem(os.path.basename(preview_path))
                 item.setData(Qt.ItemDataRole.UserRole, preview_path)
                 self.unpaired_previews_list_widget.addItem(item)
@@ -1288,6 +1300,13 @@ class MainWindow(QMainWindow):
         """
         # Deleguj do gallery_tab_manager
         self.gallery_tab_manager.update_thumbnail_size()
+        
+        # NAPRAWKA: Deleguj również do unpaired_files_tab_manager dla skalowania
+        if hasattr(self, 'unpaired_files_tab_manager') and self.unpaired_files_tab_manager:
+            # Pobierz aktualny rozmiar z gallery managera
+            if hasattr(self, 'gallery_manager') and self.gallery_manager:
+                current_size = self.gallery_manager._current_size_tuple
+                self.unpaired_files_tab_manager.update_thumbnail_size(current_size)
 
     def resizeEvent(self, event):
         """

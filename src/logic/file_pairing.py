@@ -194,4 +194,8 @@ def identify_unpaired_files(
         elif os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS:
             unpaired_previews.append(f)
 
+    # NAPRAWKA: Sortowanie alfabetyczne po nazwach plików (bez ścieżki)
+    unpaired_archives.sort(key=lambda x: os.path.basename(x).lower())
+    unpaired_previews.sort(key=lambda x: os.path.basename(x).lower())
+
     return unpaired_archives, unpaired_previews

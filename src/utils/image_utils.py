@@ -118,17 +118,17 @@ def crop_to_square(pil_image, size):
         # Oblicz rozmiar kwadratu do wycięcia (minimum z szerokości i wysokości)
         crop_size = min(width, height)
 
-        # Określ pozycję przycinania w zależności od proporcji obrazu
+        # NAPRAWKA: Przycinanie OD KRAWĘDZI jak wymagane!
         if width > height:
             # Obraz SZEROKI - przycinaj OD LEWEJ KRAWĘDZI
             left = 0  # Zaczynaj od lewej krawędzi
-            top = 0  # Zachowaj całą wysokość (która jest mniejsza)
+            top = 0  # Zachowaj całą wysokość
             right = crop_size  # Szerokość = wysokość obrazu
             bottom = height  # Cała wysokość
 
         elif height > width:
-            # Obraz WYSOKI - przycinaj OD GÓRY
-            left = 0  # Zachowaj całą szerokość (która jest mniejsza)
+            # Obraz WYSOKI - przycinaj OD GÓRY  
+            left = 0  # Zachowaj całą szerokość
             top = 0  # Zaczynaj od górnej krawędzi
             right = width  # Cała szerokość
             bottom = crop_size  # Wysokość = szerokość obrazu

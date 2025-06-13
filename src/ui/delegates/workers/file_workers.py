@@ -114,7 +114,7 @@ class ManuallyPairFilesWorker(UnifiedBaseWorker):
                 self.updated_preview_path = preview_path
 
             # Stwórz obiekt FilePair
-            file_pair = FilePair(archive_path, self.updated_preview_path)
+            file_pair = FilePair(archive_path, self.updated_preview_path, working_dir)
 
             # Zapisz metadane
             self.emit_progress(60, "Zapisywanie metadanych pary plików...")

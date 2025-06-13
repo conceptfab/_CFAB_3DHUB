@@ -127,6 +127,10 @@ class MetadataManager:
             self.working_directory, relative_archive_path
         )
 
+    def save_file_pair_metadata(self, file_pair, working_directory: str) -> bool:
+        """Zapisuje metadane dla pojedynczej pary plików."""
+        return save_file_pair_metadata(file_pair, working_directory)
+
 
 def get_metadata_path(working_directory: str) -> str:
     """
@@ -538,6 +542,70 @@ def save_metadata(
                     f"Nie można usunąć tymczasowego pliku metadanych {temp_file_path} po błędzie: {remove_err}",
                     exc_info=True,
                 )
+        return False
+
+
+def save_file_pair_metadata(file_pair, working_directory: str) -> bool:
+    """
+    Zapisuje metadane dla pojedynczej pary plików, zachowując istniejące metadane.
+    
+    Args:
+        file_pair: Obiekt FilePair do zapisania metadanych
+        working_directory: Katalog roboczy
+        
+    Returns:
+        bool: True jeśli zapisano pomyślnie, False w przypadku błędu
+    """
+    try:
+        # Wczytaj aktualne metadane aby zachować istniejące dane
+        current_metadata = load_metadata(working_directory)
+        
+        # Pobierz ścieżkę względną dla pliku archiwum
+        relative_archive_path = get_relative_path(file_pair.archive_path, working_directory)
+        if relative_archive_path is None:
+            logger.warning(f"Nie można uzyskać ścieżki względnej dla {file_pair.archive_path}")
+            return False
+        
+        # Pobierz istniejące metadane par plików
+        file_pairs_metadata = current_metadata.get("file_pairs", {})
+        
+        # Aktualizuj metadane dla tej konkretnej pary
+        file_pairs_metadata[relative_archive_path] = {
+            "stars": file_pair.get_stars(),
+            "color_tag": file_pair.get_color_tag(),
+        }
+        
+        # Zapisz z zachowaniem struktury
+        updated_metadata = current_metadata.copy()
+        updated_metadata["file_pairs"] = file_pairs_metadata
+        
+        # Zapisz do pliku
+        metadata_path = get_metadata_path(working_directory)
+        metadata_dir = os.path.dirname(metadata_path)
+        os.makedirs(metadata_dir, exist_ok=True)
+        
+        # Atomowy zapis przez plik tymczasowy
+        import tempfile
+        import shutil
+        import json
+        
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            delete=False,
+            encoding="utf-8",
+            dir=metadata_dir,
+            suffix=".tmp",
+        ) as temp_file:
+            json.dump(updated_metadata, temp_file, ensure_ascii=False, indent=4)
+            temp_file_path = temp_file.name
+        
+        # Zastąp docelowy plik
+        shutil.move(temp_file_path, metadata_path)
+        logger.info(f"Zapisano metadane dla pary: {relative_archive_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Błąd podczas zapisywania metadanych dla pojedynczej pary: {e}", exc_info=True)
         return False
 
 

@@ -361,11 +361,26 @@ class FileOperationsUI:
             self.parent_window, "Sukces", f"Pomyślnie sparowano plik: {new_file_pair}"
         )
 
-        # Odśwież widoki w MainWindow BEZ resetowania drzewa
-        if hasattr(self.parent_window, "refresh_all_views") and callable(
-            self.parent_window.refresh_all_views
+        # NAPRAWKA: Dodaj nową parę do kontrolera i usuń pliki z list niesparowanych
+        if hasattr(self.parent_window, 'controller') and self.parent_window.controller:
+            # Dodaj nową parę do listy sparowanych
+            self.parent_window.controller.current_file_pairs.append(new_file_pair)
+            
+            # Usuń pliki z list niesparowanych
+            archive_path = new_file_pair.archive_path
+            preview_path = new_file_pair.preview_path
+            
+            if archive_path in self.parent_window.controller.unpaired_archives:
+                self.parent_window.controller.unpaired_archives.remove(archive_path)
+                
+            if preview_path in self.parent_window.controller.unpaired_previews:
+                self.parent_window.controller.unpaired_previews.remove(preview_path)
+
+        # Wymuś pełne odświeżenie aby przeładować dane
+        if hasattr(self.parent_window, "force_full_refresh") and callable(
+            self.parent_window.force_full_refresh
         ):
-            self.parent_window.refresh_all_views()
+            self.parent_window.force_full_refresh()
 
     def handle_drop_on_folder(self, urls: List, target_folder_path: str):
         """

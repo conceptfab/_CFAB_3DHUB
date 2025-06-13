@@ -102,11 +102,11 @@ class TileStylesheet:
             QLabel {{
                 border-radius: 3px;
                 background-color: transparent;
-                border: none;
+                border: 1px solid {TileColorScheme.BORDER};
             }}
             QLabel:hover {{
                 background-color: rgba(90, 159, 212, 0.1);
-                border: none;
+                border: 1px solid {TileColorScheme.BORDER_HOVER};
             }}
         """
 

@@ -6,7 +6,7 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent
 from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QGridLayout,
@@ -26,8 +26,220 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
 )
 
+# Dodaj import stylów z FileTileWidget
+from src.ui.widgets.tile_styles import TileStylesheet, TileColorScheme, TileSizeConstants
+# Dodaj import PreviewDialog
+from src.ui.widgets.preview_dialog import PreviewDialog
+
 if TYPE_CHECKING:
     from src.ui.main_window import MainWindow
+
+
+class UnpairedPreviewTile(QWidget):
+    """
+    Uproszczony kafelek podglądu bez gwiazdek i tagów kolorów.
+    Używa tej samej struktury co FileTileWidget ale bez MetadataControlsWidget.
+    """
+    
+    # Dodaj sygnał jak w FileTileWidget
+    preview_image_requested = pyqtSignal(str)  # ścieżka do pliku podglądu
+    
+    def __init__(self, preview_path: str, parent: QWidget = None):
+        super().__init__(parent)
+        self.preview_path = preview_path
+        self.thumbnail_size = TileSizeConstants.DEFAULT_THUMBNAIL_SIZE
+        
+        # Referencje do widgetów
+        self.thumbnail_frame = None
+        self.thumbnail_label = None
+        self.filename_label = None
+        self.controls_container = None
+        self.checkbox = None
+        self.delete_button = None
+        
+        # NAPRAWKA: Używaj "FileTileWidget" dla odpowiedniej stylizacji tła
+        self.setObjectName("FileTileWidget")
+        self.setStyleSheet(TileStylesheet.get_file_tile_stylesheet())
+        self.setFixedSize(self.thumbnail_size[0], self.thumbnail_size[1])
+        
+        # Włącz wsparcie dla stylowania tła widgetu
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        
+        # Inicjalizacja UI
+        self._init_ui()
+        
+    def _init_ui(self):
+        """Inicjalizuje elementy interfejsu - identyczne z FileTileWidget."""
+        # Główny layout - pionowy, z optymalnimi marginesami
+        self.layout = QVBoxLayout(self)
+        margins = TileSizeConstants.LAYOUT_MARGINS
+        self.layout.setContentsMargins(margins[0], margins[1], margins[2], margins[3])
+        self.layout.setSpacing(TileSizeConstants.LAYOUT_SPACING)
+
+        # --- Frame - kontener na miniaturę z kolorową obwódką ---
+        self.thumbnail_frame = QFrame(self)
+        self.thumbnail_frame.setStyleSheet(TileStylesheet.get_thumbnail_frame_stylesheet())
+
+        # Ustawienie layoutu dla thumbnail_frame - bez odstępów
+        thumbnail_frame_layout = QVBoxLayout(self.thumbnail_frame)
+        thumbnail_frame_layout.setContentsMargins(0, 0, 0, 0)
+        thumbnail_frame_layout.setSpacing(0)
+
+        # Label na miniaturę - umieszczona wewnątrz ramki
+        self.thumbnail_label = QLabel(self)
+        self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Konfiguracja miniatury aby była kwadratowa i skalowała się poprawnie
+        self.thumbnail_label.setMinimumSize(
+            TileSizeConstants.MIN_THUMBNAIL_WIDTH,
+            TileSizeConstants.MIN_THUMBNAIL_HEIGHT,
+        )
+
+        # Obliczenie wymiarów dla miniatury kwadratowej
+        thumb_size = min(
+            self.thumbnail_size[0] - TileSizeConstants.TILE_PADDING * 2,
+            self.thumbnail_size[1]
+            - TileSizeConstants.FILENAME_MAX_HEIGHT
+            - TileSizeConstants.METADATA_MAX_HEIGHT,
+        )
+        
+        # Zabezpieczenie przed ujemnymi wymiarami
+        thumb_size = max(thumb_size, TileSizeConstants.MIN_THUMBNAIL_WIDTH)
+        
+        self.thumbnail_label.setFixedSize(thumb_size, thumb_size)
+        self.thumbnail_label.setScaledContents(True)
+        self.thumbnail_label.setFrameShape(QFrame.Shape.NoFrame)
+
+        # Zastosowanie centralnych stylów dla miniatury
+        self.thumbnail_label.setStyleSheet(TileStylesheet.get_thumbnail_label_stylesheet())
+        
+        # Załaduj miniaturkę
+        self._load_thumbnail()
+
+        # Obsługa kliknięcia w miniaturkę
+        self.thumbnail_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        # NAPRAWKA: Dodaj event filter jak w FileTileWidget dla poprawnej obsługi kliknięć
+        self.thumbnail_label.installEventFilter(self)
+
+        # Dodanie thumbnail_label do thumbnail_frame
+        thumbnail_frame_layout.addWidget(self.thumbnail_label)
+
+        # Dodanie ramki z miniaturą do głównego layoutu
+        self.layout.addWidget(self.thumbnail_frame, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        # Etykieta na nazwę pliku
+        file_name = os.path.basename(self.preview_path)
+        self.filename_label = QLabel(
+            file_name if len(file_name) < 25 else file_name[:20] + "...",
+            self
+        )
+        self.filename_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.filename_label.setWordWrap(True)
+        self.filename_label.setMaximumHeight(TileSizeConstants.FILENAME_MAX_HEIGHT)
+        self.filename_label.setToolTip(file_name)
+
+        # Zastosowanie stylu z odpowiednim rozmiarem czcionki
+        self._update_font_size()
+
+        self.layout.addWidget(self.filename_label)
+
+        # --- Kontrolki (checkbox + przycisk usuń) ---
+        self.controls_container = QWidget(self)
+        self.controls_container.setMaximumHeight(TileSizeConstants.METADATA_MAX_HEIGHT)
+        controls_layout = QHBoxLayout(self.controls_container)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(5)
+
+        # Checkbox do zaznaczania
+        self.checkbox = QCheckBox()
+        self.checkbox.setToolTip("Zaznacz ten podgląd do sparowania")
+        controls_layout.addWidget(self.checkbox)
+
+        # Elastyczna przestrzeń
+        controls_layout.addStretch()
+
+        # Przycisk do usuwania podglądu
+        self.delete_button = QPushButton()
+        self.delete_button.setToolTip("Usuń plik podglądu")
+        self.delete_button.setFixedSize(QSize(24, 24))
+        self.delete_button.setIconSize(QSize(16, 16))
+        controls_layout.addWidget(self.delete_button)
+
+        self.layout.addWidget(self.controls_container)
+        
+    def _load_thumbnail(self):
+        """
+        Ładuje miniaturkę do thumbnail_label.
+        NAPRAWKA: Używa create_thumbnail_from_file() jak FileTileWidget dla identycznego formatowania!
+        """
+        from src.utils.image_utils import create_thumbnail_from_file
+        
+        # Użyj tej samej funkcji co FileTileWidget!
+        width = height = self.thumbnail_label.width()
+        pixmap = create_thumbnail_from_file(self.preview_path, width, height)
+        
+        if not pixmap.isNull():
+            self.thumbnail_label.setPixmap(pixmap)
+        else:
+            self.thumbnail_label.setText("Nie można załadować podglądu")
+
+    def _update_font_size(self):
+        """Aktualizuje rozmiar czcionki w zależności od rozmiaru kafelka."""
+        base_font_size = max(8, min(18, int(self.thumbnail_size[0] / 12)))
+        self.filename_label.setStyleSheet(TileStylesheet.get_filename_label_stylesheet(base_font_size))
+
+    def set_thumbnail_size(self, new_size: tuple[int, int]):
+        """Ustawia nowy rozmiar kafelka i dostosowuje jego zawartość."""
+        if self.thumbnail_size != new_size:
+            self.thumbnail_size = new_size
+            
+            # Ustaw stały rozmiar całego widgetu kafelka
+            self.setFixedSize(new_size[0], new_size[1])
+
+            # Oblicz kwadratowy rozmiar dla samej miniatury
+            thumb_dimension = min(
+                new_size[0] - TileSizeConstants.TILE_PADDING * 2,
+                new_size[1]
+                - TileSizeConstants.FILENAME_MAX_HEIGHT
+                - TileSizeConstants.METADATA_MAX_HEIGHT
+                - TileSizeConstants.TILE_PADDING * 2,
+            )
+
+            # Zabezpieczenie przed ujemnymi wymiarami
+            thumb_dimension = max(thumb_dimension, TileSizeConstants.MIN_THUMBNAIL_WIDTH)
+
+            # Ustaw rozmiar etykiety miniatury
+            self.thumbnail_label.setFixedSize(thumb_dimension, thumb_dimension)
+
+            # Skalowanie czcionki w zależności od rozmiaru kafelka
+            self._update_font_size()
+
+            # Przeładuj miniaturkę w nowym rozmiarze
+            self._load_thumbnail()
+
+            # Aktualizuj layout
+            self.updateGeometry()
+
+    def eventFilter(self, obj, event):
+        """
+        NAPRAWKA: Obsługuje kliknięcia na etykiecie miniatury jak w FileTileWidget.
+        """
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.LeftButton:
+                if obj == self.thumbnail_label:
+                    logging.debug(f"Kliknięcie w miniaturkę: {os.path.basename(self.preview_path)}")
+                    # NAPRAWKA: Emituj sygnał zamiast bezpośredniego wywołania
+                    self.preview_image_requested.emit(self.preview_path)
+                    return True
+        return super().eventFilter(obj, event)
+
+    def mousePressEvent(self, event):
+        """Obsługuje kliknięcie w kafelek - zachowana kompatybilność."""
+        super().mousePressEvent(event)
+
+    def thumbnail_clicked(self):
+        """Obsługuje kliknięcie w miniaturkę - do przesłonięcia w klasie nadrzędnej."""
+        pass
 
 
 class UnpairedFilesTab:
@@ -55,6 +267,10 @@ class UnpairedFilesTab:
         self.unpaired_previews_list_widget = None
         self.pair_manually_button = None
         self.preview_checkboxes = []
+        # Przechowywanie referencji do kafelków dla skalowania
+        self.preview_tile_widgets = []
+        # Aktualny rozmiar miniaturek
+        self.current_thumbnail_size = TileSizeConstants.DEFAULT_THUMBNAIL_SIZE
 
     def create_unpaired_files_tab(self) -> QWidget:
         """
@@ -211,6 +427,7 @@ class UnpairedFilesTab:
     def _add_preview_thumbnail(self, preview_path):
         """
         Dodaje miniaturkę podglądu do kontenera podglądów.
+        Używa uproszczonej wersji FileTileWidget bez gwiazdek i tagów kolorów.
 
         Args:
             preview_path: Ścieżka do pliku podglądu
@@ -219,104 +436,69 @@ class UnpairedFilesTab:
         if not os.path.exists(preview_path):
             return
 
-        # Utwórz ramkę, która będzie kontenerem dla kafelka
-        tile_frame = QFrame()
-        tile_frame.setObjectName("UnpairedPreviewTile")
-        tile_frame.setStyleSheet("""
-            QFrame#UnpairedPreviewTile {
-                border: 1px solid #454545;
-                border-radius: 5px;
-                background-color: #2E2E2E;
-            }
-            QFrame#UnpairedPreviewTile:hover {
-                background-color: #383838;
-            }
-        """)
-
-        # Utwórz layout dla ramki
-        thumbnail_layout = QVBoxLayout(tile_frame)
-        thumbnail_layout.setContentsMargins(5, 5, 5, 5)
-        thumbnail_layout.setSpacing(5)
-
-        # --- Wiersz z kontrolkami na dole ---
-        bottom_controls_layout = QHBoxLayout()
-
-        # Checkbox do zaznaczania
-        checkbox = QCheckBox()
-        checkbox.setToolTip("Zaznacz ten podgląd do sparowania")
-        checkbox.stateChanged.connect(
-            lambda state, cb=checkbox, path=preview_path: self._on_preview_checkbox_changed(
+        # Utwórz kafelek podglądu
+        preview_tile = UnpairedPreviewTile(preview_path, self.unpaired_previews_container)
+        preview_tile.set_thumbnail_size(self.current_thumbnail_size)
+        
+        # NAPRAWKA: Podłącz sygnał preview_image_requested do metody wyświetlającej PreviewDialog
+        preview_tile.preview_image_requested.connect(self._show_preview_dialog)
+        preview_tile.checkbox.stateChanged.connect(
+            lambda state, cb=preview_tile.checkbox, path=preview_path: self._on_preview_checkbox_changed(
                 cb, path, state
             )
         )
-        bottom_controls_layout.addWidget(checkbox)
-        self.preview_checkboxes.append(checkbox)
+        preview_tile.delete_button.clicked.connect(lambda: self._delete_preview_file(preview_path))
+        
+        # Ustaw ikonę dla przycisku usuń
+        trash_icon = self.main_window.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        preview_tile.delete_button.setIcon(trash_icon)
+        
+        # Dodaj do listy checkboxów i kafelków
+        self.preview_checkboxes.append(preview_tile.checkbox)
+        self.preview_tile_widgets.append(preview_tile)
 
-        # Elastyczna przestrzeń
-        bottom_controls_layout.addStretch()
+        # Dodaj do siatki - maksymalnie 3 miniaturki w rzędzie
+        row, col = divmod(self.unpaired_previews_layout.count(), 3)
+        self.unpaired_previews_layout.addWidget(preview_tile, row, col)
 
-        # Przycisk do usuwania podglądu
-        delete_button = QPushButton()
-        trash_icon = self.main_window.style().standardIcon(
-            QStyle.StandardPixmap.SP_TrashIcon
-        )
-        delete_button.setIcon(trash_icon)
-        delete_button.setToolTip("Usuń plik podglądu")
-        delete_button.setFixedSize(QSize(32, 32))
-        delete_button.setIconSize(QSize(24, 24))
-        delete_button.clicked.connect(lambda: self._delete_preview_file(preview_path))
-        bottom_controls_layout.addWidget(delete_button)
-
-        # Utwórz etykietę na miniaturkę
-        thumbnail_label = QLabel()
-        thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        thumbnail_label.setStyleSheet(
-            "background-color: #f0f0f0; border: 1px solid #ddd;"
-        )
-
-        # Załaduj i ustaw miniaturkę
-        pixmap = QPixmap(preview_path)
-        if not pixmap.isNull():
-            # Skaluj do rozsądnego rozmiaru
-            pixmap = pixmap.scaled(
-                150,
-                150,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+    def _show_preview_dialog(self, preview_path: str):
+        """
+        NAPRAWKA: Wyświetla okno dialogowe z podglądem obrazu jak w galerii.
+        
+        Args:
+            preview_path: Ścieżka do pliku podglądu
+        """
+        if not preview_path or not os.path.exists(preview_path):
+            QMessageBox.warning(
+                self.main_window,
+                "Brak Podglądu",
+                "Plik podglądu nie istnieje.",
             )
-            thumbnail_label.setPixmap(pixmap)
-        else:
-            # Wyświetl tekst, jeśli nie można załadować obrazu
-            thumbnail_label.setText("Nie można załadować podglądu")
+            return
 
-        thumbnail_label.setFixedSize(150, 150)
-        thumbnail_layout.addWidget(thumbnail_label)
+        try:
+            pixmap = QPixmap(preview_path)
+            if pixmap.isNull():
+                raise ValueError("Nie udało się załadować obrazu do QPixmap.")
 
-        # Dodaj nazwę pliku
-        file_name = os.path.basename(preview_path)
-        name_label = QLabel(
-            file_name if len(file_name) < 25 else file_name[:20] + "..."
-        )
-        name_label.setToolTip(file_name)
-        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        thumbnail_layout.addWidget(name_label)
+            # NAPRAWKA: Używaj PreviewDialog jak w galerii
+            dialog = PreviewDialog(pixmap, self.main_window)
+            dialog.exec()
 
-        # Dodaj kontrolki na dole
-        thumbnail_layout.addLayout(bottom_controls_layout)
+        except Exception as e:
+            error_message = f"Wystąpił błąd podczas ładowania podglądu: {e}"
+            logging.error(error_message)
+            QMessageBox.critical(self.main_window, "Błąd Podglądu", error_message)
 
-        # Przechowuj ścieżkę pliku w danych widgetu
-        tile_frame.setProperty("file_path", preview_path)
-
-        # Dodaj do siatki
-        row = self.unpaired_previews_layout.rowCount()
-        col = self.unpaired_previews_layout.columnCount()
-        if col == 0:
-            col = 0
-        else:
-            # Umieść maksymalnie 3 miniaturki w rzędzie
-            row, col = divmod(self.unpaired_previews_layout.count(), 3)
-
-        self.unpaired_previews_layout.addWidget(tile_frame, row, col)
+    def _on_thumbnail_click(self, preview_path):
+        """
+        Obsługuje kliknięcie w miniaturkę - otwiera podgląd obrazu.
+        DEPRECATED: Zastąpione przez _show_preview_dialog
+        
+        Args:
+            preview_path: Ścieżka do pliku podglądu
+        """
+        self._show_preview_dialog(preview_path)
 
     def _on_preview_checkbox_changed(self, checkbox, preview_path, state):
         """
@@ -413,6 +595,8 @@ class UnpairedFilesTab:
             self.unpaired_archives_list_widget.clear()
         if self.unpaired_previews_list_widget:
             self.unpaired_previews_list_widget.clear()
+        # NAPRAWKA: Wyczyść również listę kafelków
+        self.preview_tile_widgets.clear()
         logging.debug("Wyczyszczono listy niesparowanych plików w UI.")
 
     def update_unpaired_files_lists(self):
@@ -459,6 +643,8 @@ class UnpairedFilesTab:
         self.unpaired_archives_list_widget.clear()
         self.unpaired_previews_list_widget.clear()
         self.preview_checkboxes.clear()
+        # NAPRAWKA: Wyczyść listę kafelków
+        self.preview_tile_widgets.clear()
 
         # Wyczyść kontener miniaturek
         while self.unpaired_previews_layout.count():
@@ -478,15 +664,21 @@ class UnpairedFilesTab:
                                 child.widget().setParent(None)
                                 child.widget().deleteLater()
 
-        # Aktualizuj listę archiwów - stan z Controller
-        for archive_path in self.main_window.controller.unpaired_archives:
+        # NAPRAWKA: Sortuj alfabetycznie przed wyświetleniem (dodatkowe zabezpieczenie)
+        sorted_archives = sorted(self.main_window.controller.unpaired_archives, 
+                                key=lambda x: os.path.basename(x).lower())
+        sorted_previews = sorted(self.main_window.controller.unpaired_previews, 
+                                key=lambda x: os.path.basename(x).lower())
+
+        # Aktualizuj listę archiwów - stan z Controller (posortowany)
+        for archive_path in sorted_archives:
             item = QListWidgetItem(os.path.basename(archive_path))
             item.setData(Qt.ItemDataRole.UserRole, archive_path)
             self.unpaired_archives_list_widget.addItem(item)
             # Spam logów wyeliminowany - każdy plik nie potrzebuje osobnego loga
 
-        # Aktualizuj miniaturki podglądów - stan z Controller
-        for preview_path in self.main_window.controller.unpaired_previews:
+        # Aktualizuj miniaturki podglądów - stan z Controller (posortowany)
+        for preview_path in sorted_previews:
             # Dodaj do ukrytego QListWidget dla kompatybilności
             item = QListWidgetItem(os.path.basename(preview_path))
             item.setData(Qt.ItemDataRole.UserRole, preview_path)
@@ -561,3 +753,17 @@ class UnpairedFilesTab:
             "unpaired_previews_layout": self.unpaired_previews_layout,
             "pair_manually_button": self.pair_manually_button,
         }
+
+    def update_thumbnail_size(self, new_size: tuple):
+        """
+        Aktualizuje rozmiar miniaturek w zakładce unpaired files.
+        
+        Args:
+            new_size: Nowa wielkość kafelka (width, height)
+        """
+        self.current_thumbnail_size = new_size
+        
+        # Aktualizuj wszystkie istniejące kafelki
+        for preview_tile in self.preview_tile_widgets:
+            if isinstance(preview_tile, UnpairedPreviewTile):
+                preview_tile.set_thumbnail_size(new_size)
