@@ -831,12 +831,8 @@ class DirectoryTreeManager:
                         folder_path = self.model.filePath(source_index)
                         if os.path.isdir(folder_path):
                             self._highlighted_drop_target = folder_path
-                            print(f"DRAG&DROP DEBUG: Ustawiono _highlighted_drop_target = {folder_path}")
-                            
-                            # NAPRAWKA: Wymuś ponowne rysowanie WSZYSTKICH elementów
-                            self.folder_tree.viewport().update()  # Całe viewport
-                            self.folder_tree.repaint()  # Natychmiastowe rysowanie
-                            
+                            # Wymuś ponowne rysowanie
+                            self.folder_tree.viewport().update()
                             event.acceptProposedAction()
                             return
 
@@ -850,13 +846,8 @@ class DirectoryTreeManager:
         try:
             # Usuń podświetlenie
             if hasattr(self, '_highlighted_drop_target'):
-                print(f"DRAG&DROP DEBUG: Usuwam podświetlenie z {self._highlighted_drop_target}")
                 delattr(self, '_highlighted_drop_target')
-            
-            # NAPRAWKA: Wymuś ponowne rysowanie po usunięciu podświetlenia
-            self.folder_tree.viewport().update()
-            self.folder_tree.repaint()
-            
+                self.folder_tree.viewport().update()
             event.accept()
         except Exception as e:
             logger.error(f"Błąd drag leave: {e}")
@@ -891,10 +882,7 @@ class DirectoryTreeManager:
             # Usuń podświetlenie
             if hasattr(self, '_highlighted_drop_target'):
                 delattr(self, '_highlighted_drop_target')
-            
-            # NAPRAWKA: Wymuś ponowne rysowanie po drop
-            self.folder_tree.viewport().update()
-            self.folder_tree.repaint()
+                self.folder_tree.viewport().update()
             
         except Exception as e:
             logger.error(f"Błąd drop event: {e}")
