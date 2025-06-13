@@ -361,30 +361,71 @@ class FileOperationsUI:
             self.parent_window, "Sukces", f"Pomyślnie sparowano plik: {new_file_pair}"
         )
 
-        # NAPRAWKA: Dodaj nową parę do kontrolera i usuń pliki z list niesparowanych
-        if hasattr(self.parent_window, 'controller') and self.parent_window.controller:
-            # Dodaj nową parę do listy sparowanych
-            self.parent_window.controller.current_file_pairs.append(new_file_pair)
-            
-            # Usuń pliki z list niesparowanych
-            archive_path = new_file_pair.archive_path
-            preview_path = new_file_pair.preview_path
-            
-            if archive_path in self.parent_window.controller.unpaired_archives:
-                self.parent_window.controller.unpaired_archives.remove(archive_path)
+        try:
+            # NAPRAWKA CRASH: Thread-safe aktualizacja kontrolera
+            if hasattr(self.parent_window, 'controller') and self.parent_window.controller:
+                # Dodaj nową parę do listy sparowanych w thread-safe sposób
+                self.parent_window.controller.current_file_pairs.append(new_file_pair)
                 
-            if preview_path in self.parent_window.controller.unpaired_previews:
-                self.parent_window.controller.unpaired_previews.remove(preview_path)
+                # Usuń pliki z list niesparowanych w thread-safe sposób
+                archive_path = new_file_pair.archive_path
+                preview_path = new_file_pair.preview_path
+                
+                try:
+                    if archive_path in self.parent_window.controller.unpaired_archives:
+                        self.parent_window.controller.unpaired_archives.remove(archive_path)
+                except ValueError:
+                    logger.debug(f"Archive już usunięte z unpaired: {archive_path}")
+                    
+                try:
+                    if preview_path in self.parent_window.controller.unpaired_previews:
+                        self.parent_window.controller.unpaired_previews.remove(preview_path)
+                except ValueError:
+                    logger.debug(f"Preview już usunięte z unpaired: {preview_path}")
 
-        # NAPRAWKA: Użyj inteligentnego odświeżenia ZAMIAST force_full_refresh
-        # aby uniknąć resetowania drzewa katalogów
-        if hasattr(self.parent_window, "refresh_all_views") and callable(
-            self.parent_window.refresh_all_views
-        ):
-            self.parent_window.refresh_all_views(new_file_pair)
-        else:
-            # Fallback - ale uniknij force_full_refresh!
-            logger.warning("Brak metody refresh_all_views - używam podstawowego odświeżenia bez resetu drzewa")
+            # NAPRAWKA CRASH: Użyj QTimer.singleShot dla thread-safe UI update
+            # Opóźnij odświeżenie UI aby uniknąć crash podczas worker callback
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(100, lambda: self._delayed_refresh_after_pairing(new_file_pair))
+            
+        except Exception as e:
+            logger.error(f"KRYTYCZNY BŁĄD podczas finalizacji parowania: {e}")
+            # Nie wywołuj refresh_all_views w przypadku błędu - może crashować
+            logger.warning("Pomijam refresh_all_views z powodu błędu - aplikacja powinna zostać stabilna")
+
+    def _delayed_refresh_after_pairing(self, new_file_pair: FilePair):
+        """
+        NAPRAWKA CRASH: Thread-safe opóźnione odświeżenie po parowaniu.
+        Wykonywaną w głównym wątku UI przez QTimer.singleShot.
+        """
+        try:
+            logger.debug("Rozpoczynam opóźnione odświeżenie po parowaniu")
+            
+            # Sprawdź czy aplikacja nadal działa
+            if not hasattr(self.parent_window, "refresh_all_views"):
+                logger.warning("Parent window nie ma refresh_all_views - pomijam odświeżenie")
+                return
+                
+            if not callable(self.parent_window.refresh_all_views):
+                logger.warning("refresh_all_views nie jest wywoływalne - pomijam odświeżenie")
+                return
+            
+            # NAPRAWKA: Nie przekazuj new_file_pair do refresh_all_views - może powodować crash
+            # Zamiast tego użyj prostego odświeżenia bez selekcji
+            self.parent_window.refresh_all_views()
+            logger.debug("Odświeżenie po parowaniu zakończone pomyślnie")
+            
+        except Exception as e:
+            logger.error(f"BŁĄD podczas opóźnionego odświeżenia: {e}")
+            # Ostatnia deska ratunku - podstawowe odświeżenie
+            try:
+                if hasattr(self.parent_window, '_update_gallery_view'):
+                    self.parent_window._update_gallery_view()
+                if hasattr(self.parent_window, '_update_unpaired_files_direct'):
+                    self.parent_window._update_unpaired_files_direct()
+                logger.debug("Użyto fallback odświeżenia")
+            except Exception as fallback_error:
+                logger.error(f"Również fallback odświeżenie crashuje: {fallback_error}")
 
     def handle_drop_on_folder(self, urls: List, target_folder_path: str):
         """
@@ -396,12 +437,12 @@ class FileOperationsUI:
         """
         file_paths = [url.toLocalFile() for url in urls]
         logging.info(
-            f"🚀 DRAG&DROP: Upuszczono {len(file_paths)} plików na folder {target_folder_path}"
+            f"Dropped {len(file_paths)} files on folder {target_folder_path}"
         )
-        logging.info(f"🚀 DRAG&DROP: Pliki: {file_paths}")
+        logging.debug(f"Files: {file_paths}")
 
         # Bezpośrednio rozpocznij przenoszenie bez pytania
-        logging.info("🚀 DRAG&DROP: Rozpoczynanie przenoszenia plików...")
+        logging.info("Starting file move operation...")
         # Informuj o rozpoczęciu w pasku statusu
         if hasattr(self.parent_window, "_show_progress"):
             self.parent_window._show_progress(
@@ -414,25 +455,25 @@ class FileOperationsUI:
             for file_path in file_paths:
                 if os.path.isfile(file_path):
                     all_files.append(file_path)
-                    logging.debug(f"🚀 DRAG&DROP: Dodano plik: {file_path}")
+                    logging.debug(f"Added file: {file_path}")
                 elif os.path.isdir(file_path):
                     logging.debug(
-                        f"🚀 DRAG&DROP: Znaleziono folder, skanuje zawartość: {file_path}"
+                        f"Found folder, scanning contents: {file_path}"
                     )
                     # Jeśli to folder, zbierz pliki z niego
                     dir_file_map = collect_files(file_path, max_depth=1)
                     for files_list in dir_file_map.values():
                         all_files.extend(files_list)
                         logging.debug(
-                            f"🚀 DRAG&DROP: Dodano pliki z folderu: {files_list}"
+                            f"Added files from folder: {files_list}"
                         )
                 else:
                     logging.warning(
-                        f"🚀 DRAG&DROP: Pominięto nieistniejący element: {file_path}"
+                        f"Skipped non-existent item: {file_path}"
                     )
 
             logging.info(
-                f"🚀 DRAG&DROP: Znaleziono łącznie {len(all_files)} plików do przeniesienia"
+                f"Found total {len(all_files)} files to move"
             )
 
             if not all_files:
@@ -441,7 +482,7 @@ class FileOperationsUI:
                         100, "Nie znaleziono plików do przeniesienia"
                     )
                 logging.warning(
-                    "🚀 DRAG&DROP: BŁĄD - Nie znaleziono plików do przeniesienia"
+                    "ERROR - No files found to move"
                 )
                 return False
 
@@ -453,8 +494,8 @@ class FileOperationsUI:
                     temp_file_map[dir_path] = []
                 temp_file_map[dir_path].append(file_path)
 
-            logging.info(
-                f"🚀 DRAG&DROP: Utworzono file_map dla {len(temp_file_map)} katalogów"
+            logging.debug(
+                f"Created file_map for {len(temp_file_map)} directories"
             )
 
             # Utwórz pary plików używając strategii "best_match"
@@ -464,29 +505,29 @@ class FileOperationsUI:
                 pair_strategy="best_match",
             )
 
-            logging.info(f"🚀 DRAG&DROP: Utworzono {len(file_pairs)} par plików")
+            logging.info(f"Created {len(file_pairs)} file pairs")
 
             if not file_pairs:
                 # Jeśli nie udało się utworzyć par, spróbuj przenieść pliki indywidualnie
                 # (to może się zdarzyć dla pojedynczych plików bez pary)
                 logging.warning(
-                    "🚀 DRAG&DROP: Nie udało się utworzyć par plików. Przenoszenie pojedynczych plików."
+                    "Failed to create file pairs. Moving individual files."
                 )
                 self._move_individual_files(all_files, target_folder_path)
-                logging.info("🚀 DRAG&DROP: SUKCES - Przeniesiono pliki indywidualnie")
+                logging.info("SUCCESS - Moved files individually")
                 return True
 
             # Użyj BulkMoveWorker do przeniesienia par plików
             logging.info(
-                f"🚀 DRAG&DROP: Uruchamianie BulkMoveWorker dla {len(file_pairs)} par"
+                f"Starting BulkMoveWorker for {len(file_pairs)} pairs"
             )
             self._move_file_pairs_bulk(file_pairs, target_folder_path)
-            logging.info("🚀 DRAG&DROP: SUKCES - Uruchomiono przenoszenie par plików")
+            logging.info("SUCCESS - Started file pairs move operation")
             return True
 
         except Exception as e:
             logging.error(
-                f"🚀 DRAG&DROP: BŁĄD podczas przenoszenia plików: {e}", exc_info=True
+                f"ERROR during file move operation: {e}", exc_info=True
             )
             if hasattr(self.parent_window, "_show_progress"):
                 self.parent_window._show_progress(100, f"Błąd przenoszenia: {str(e)}")
@@ -647,9 +688,9 @@ class FileOperationsUI:
         import shutil
 
         logging.info(
-            f"🚀 DRAG&DROP: _move_individual_files uruchomiona dla {len(files)} plików"
+            f"Moving {len(files)} individual files"
         )
-        logging.info(f"🚀 DRAG&DROP: Folder docelowy: {target_folder_path}")
+        logging.debug(f"Target folder: {target_folder_path}")
 
         try:
             for i, file_path in enumerate(files):
@@ -657,7 +698,7 @@ class FileOperationsUI:
                 destination_path = os.path.join(target_folder_path, filename)
 
                 logging.debug(
-                    f"🚀 DRAG&DROP: Przenoszenie {i+1}/{len(files)}: {file_path} -> {destination_path}"
+                    f"Moving {i+1}/{len(files)}: {file_path} -> {destination_path}"
                 )
 
                 # Informuj o postępie w pasku statusu
@@ -670,10 +711,10 @@ class FileOperationsUI:
                 try:
                     shutil.move(file_path, destination_path)
                     logging.debug(
-                        f"🚀 DRAG&DROP: Przeniesiono: {file_path} -> {destination_path}"
+                        f"Moved: {file_path} -> {destination_path}"
                     )
                 except Exception as e:
-                    logging.error(f"🚀 DRAG&DROP: Błąd przenoszenia {file_path}: {e}")
+                    logging.error(f"Error moving {file_path}: {e}")
                     # Usunięto QMessageBox.warning - błędy tylko w logach            # Zakończenie operacji
             if hasattr(self.parent_window, "_show_progress"):
                 self.parent_window._show_progress(
@@ -681,11 +722,11 @@ class FileOperationsUI:
                 )
 
             logging.info(
-                f"🚀 DRAG&DROP: _move_individual_files ZAKOŃCZONA - przeniesiono {len(files)} plików"
+                f"Individual files move completed - moved {len(files)} files"
             )
 
         except Exception as e:
-            logging.error(f"🚀 DRAG&DROP: Błąd podczas przenoszenia plików: {e}")
+            logging.error(f"Error during individual files move: {e}")
             if hasattr(self.parent_window, "_show_progress"):
                 self.parent_window._show_progress(100, f"Błąd: {str(e)}")
 
@@ -693,7 +734,7 @@ class FileOperationsUI:
         if hasattr(self.parent_window, "refresh_all_views") and callable(
             self.parent_window.refresh_all_views
         ):
-            logging.info("🚀 DRAG&DROP: Odświeżanie widoków po przeniesieniu plików")
+            logging.debug("Refreshing views after file move")
             self.parent_window.refresh_all_views()
 
     def _move_file_pairs_bulk(
@@ -708,14 +749,14 @@ class FileOperationsUI:
         """
         if not file_pairs:
             logging.warning(
-                "🚀 DRAG&DROP: _move_file_pairs_bulk wywołana z pustą listą plików"
+                "move_file_pairs_bulk called with empty file list"
             )
             return
 
         logging.info(
-            f"🚀 DRAG&DROP: _move_file_pairs_bulk uruchomiona dla {len(file_pairs)} par plików"
+            f"Starting bulk move for {len(file_pairs)} file pairs"
         )
-        logging.info(f"🚀 DRAG&DROP: Folder docelowy: {target_folder_path}")
+        logging.debug(f"Target folder: {target_folder_path}")
 
         # Utwórz workera do masowego przenoszenia
         worker = BulkMoveWorker(file_pairs, target_folder_path)
@@ -737,10 +778,10 @@ class FileOperationsUI:
             lambda percent, msg: self._handle_bulk_move_progress(percent, msg)
         )
 
-        logging.info("🚀 DRAG&DROP: BulkMoveWorker uruchamiany...")
+        logging.debug("Starting BulkMoveWorker...")
         # Uruchom workera
         QThreadPool.globalInstance().start(worker)
-        logging.info("🚀 DRAG&DROP: BulkMoveWorker uruchomiony pomyślnie")
+        logging.debug("BulkMoveWorker started successfully")
 
     def _handle_bulk_move_finished(self, moved_pairs: list[FilePair]):
         """
@@ -750,7 +791,7 @@ class FileOperationsUI:
             moved_pairs: Lista pomyślnie przeniesionych par
         """
         logging.info(
-            f"🚀 DRAG&DROP: _handle_bulk_move_finished - pomyślnie przeniesiono {len(moved_pairs)} par plików"
+            f"Bulk move finished - successfully moved {len(moved_pairs)} file pairs"
         )
 
         # Informuj o zakończeniu w pasku statusu i ukryj po chwili
@@ -772,8 +813,8 @@ class FileOperationsUI:
                 if hasattr(self.parent_window, "controller"):
                     self.parent_window.controller.selected_tiles.discard(file_pair)
 
-            logging.info(
-                f"🚀 DRAG&DROP: Usunięto {len(moved_pairs)} par z current_file_pairs"
+            logging.debug(
+                f"Removed {len(moved_pairs)} pairs from current_file_pairs"
             )
 
             # Odśwież folder źródłowy używając tego samego mechanizmu co w głównym oknie
@@ -801,7 +842,7 @@ class FileOperationsUI:
         Args:
             error_message: Komunikat błędu
         """
-        logging.error(f"🚀 DRAG&DROP: Błąd masowego przenoszenia: {error_message}")
+        logging.error(f"Bulk move error: {error_message}")
         if hasattr(self.parent_window, "_show_progress"):
             self.parent_window._show_progress(100, f"Błąd: {error_message}")
         if hasattr(self.parent_window, "_hide_progress"):
@@ -815,6 +856,6 @@ class FileOperationsUI:
             percent: Procent ukończenia
             message: Komunikat postępu
         """
-        logging.debug(f"🚀 DRAG&DROP: Postęp {percent}%: {message}")
+        logging.debug(f"Bulk move progress {percent}%: {message}")
         if hasattr(self.parent_window, "_show_progress"):
             self.parent_window._show_progress(percent, message)

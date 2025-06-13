@@ -75,11 +75,17 @@ QPushButton[action="success"]:pressed {
 }
 
 /* --- Zakładki (Tabs) z _apply_material_theme --- */
+QTabWidget {
+    border: none; /* NAPRAWKA: usuń zbędne obramowanie */
+}
+
 QTabWidget::pane {
     border: 1px solid #3F3F46; /* border_color */
     background-color: #252526; /* surface */
     color: #CCCCCC; /* text_color - dziedziczone, ale można jawnie */
     top: -1px; /* Zapobiega podwójnej granicy */
+    margin: 0px; /* NAPRAWKA: usuń nadmierne marginesy */
+    padding: 2px; /* NAPRAWKA: minimalny padding */
 }
 
 QTabBar::tab {

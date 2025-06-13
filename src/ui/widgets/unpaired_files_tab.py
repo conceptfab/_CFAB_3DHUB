@@ -279,30 +279,26 @@ class UnpairedFilesTab:
         Returns:
             Widget zakładki niesparowanych plików
         """
-        logging.info("🏗️ CREATE_UNPAIRED_FILES_TAB - rozpoczynam tworzenie")
+        logging.debug("Creating unpaired files tab")
         
         self.unpaired_files_tab = QWidget()
         self.unpaired_files_layout = QVBoxLayout(self.unpaired_files_tab)
         self.unpaired_files_layout.setContentsMargins(5, 5, 5, 5)
-        logging.info("✅ Utworzono podstawowy widget i layout")
+        logging.debug("Basic widget and layout created")
 
         # Splitter dla dwóch list
         self.unpaired_splitter = QSplitter()
-        logging.info("✅ Utworzono splitter")
+        logging.debug("Splitter created")
 
         # Lista niesparowanych archiwów
-        logging.info("🔧 Tworzę listę archiwów...")
+        logging.debug("Creating archives list")
         self._create_unpaired_archives_list()
-        logging.info(f"✅ Lista archiwów utworzona. Widget: {hasattr(self, 'unpaired_archives_list_widget')}")
-        if hasattr(self, 'unpaired_archives_list_widget'):
-            logging.info(f"✅ Wartość widget archiwów: {self.unpaired_archives_list_widget}")
+        logging.debug("Archives list created successfully")
 
         # Lista niesparowanych podglądów
-        logging.info("🔧 Tworzę listę podglądów...")
+        logging.debug("Creating previews list")
         self._create_unpaired_previews_list()
-        logging.info(f"✅ Lista podglądów utworzona. Widget: {hasattr(self, 'unpaired_previews_list_widget')}")
-        if hasattr(self, 'unpaired_previews_list_widget'):
-            logging.info(f"✅ Wartość widget podglądów: {self.unpaired_previews_list_widget}")
+        logging.debug("Previews list created successfully")
         
         self.unpaired_files_layout.addWidget(self.unpaired_splitter)
 
@@ -607,24 +603,24 @@ class UnpairedFilesTab:
         
         # NAPRAWKA: Sprawdzamy tylko czy atrybut istnieje, nie jego wartość boolean
         if not hasattr(self, 'unpaired_archives_list_widget'):
-            logging.error("❌ KRYTYCZNY BŁĄD: unpaired_archives_list_widget nie istnieje w managerie!")
+            logging.error("CRITICAL ERROR: unpaired_archives_list_widget not found in manager!")
             return
 
         if not hasattr(self, 'unpaired_previews_list_widget'):
-            logging.error("❌ KRYTYCZNY BŁĄD: unpaired_previews_list_widget nie istnieje w managerie!")
+            logging.error("CRITICAL ERROR: unpaired_previews_list_widget not found in manager!")
             return
 
         if not hasattr(self, 'unpaired_previews_layout'):
-            logging.error("❌ KRYTYCZNY BŁĄD: unpaired_previews_layout nie istnieje w managerie!")
+            logging.error("CRITICAL ERROR: unpaired_previews_layout not found in manager!")
             return
 
         # NAPRAWKA: Sprawdzamy czy widget jest None a nie czy jest "falsy"
         if self.unpaired_archives_list_widget is None:
-            logging.error("❌ unpaired_archives_list_widget jest None!")
+            logging.error("unpaired_archives_list_widget is None!")
             return
             
         if self.unpaired_previews_list_widget is None:
-            logging.error("❌ unpaired_previews_list_widget jest None!")
+            logging.error("unpaired_previews_list_widget is None!")
             return
 
         # DEBUG: Sprawdź stan w kontrolerze

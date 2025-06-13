@@ -346,7 +346,7 @@ class DirectoryTreeManager:
     def open_folder_in_explorer(self, folder_path: str):
         """Otwiera folder w eksploratorze Windows."""
         try:
-            logging.info(f"🗂️ EKSPLORATOR: Próba otwarcia folderu: '{folder_path}'")
+            logging.debug(f"Explorer: Opening folder: '{folder_path}'")
 
             # Sprawdź czy folder istnieje
             if not os.path.exists(folder_path):
@@ -373,7 +373,7 @@ class DirectoryTreeManager:
 
             # Normalizuj ścieżkę do formatu Windows
             normalized_path = os.path.normpath(folder_path)
-            logging.info(f"🗂️ EKSPLORATOR: Znormalizowana ścieżka: '{normalized_path}'")
+            logging.debug(f"Explorer: Normalized path: '{normalized_path}'")
 
             # Użyj alternatywnych metod wywołania explorera
             import sys
@@ -387,7 +387,7 @@ class DirectoryTreeManager:
                     )
                     return
                 except Exception as e1:
-                    logging.warning(f"🗂️ EKSPLORATOR: os.startfile nie zadziałało: {e1}")
+                    logging.warning(f"Explorer: os.startfile failed: {e1}")
 
                 # Metoda 2: Przez subprocess z argumentami w liście
                 try:
@@ -418,7 +418,7 @@ class DirectoryTreeManager:
                 )
 
         except Exception as e:
-            logging.error(f"🗂️ EKSPLORATOR: BŁĄD KRYTYCZNY otwierania eksploratora: {e}")
+            logging.error(f"Explorer: CRITICAL ERROR opening explorer: {e}")
             QMessageBox.warning(
                 self.parent_window,
                 "Błąd",

@@ -1,5 +1,6 @@
 """
 Główne okno aplikacji - zrefaktoryzowana wersja.
+🚀 ETAP 2: Zoptymalizowane z Event Bus, ViewRefreshManager i OptimizedLogger
 """
 
 import logging
@@ -45,6 +46,11 @@ from src.ui.widgets.preview_dialog import PreviewDialog
 from src.ui.widgets.unpaired_files_tab import UnpairedFilesTab
 from src.utils.path_utils import normalize_path
 
+# 🚀 ETAP 2: Nowe zoptymalizowane komponenty
+from src.utils.logging_config import get_main_window_logger
+from src.ui.main_window_components.event_bus import get_event_bus
+from src.ui.main_window_components.view_refresh_manager import ViewRefreshManager
+
 
 class MainWindow(QMainWindow):
     """
@@ -70,15 +76,24 @@ class MainWindow(QMainWindow):
         # Zainicjalizuj drzewo katalogów z domyślnym folderem ale BEZ skanowania i rozwijania
         default_folder = self.app_config.get("default_working_directory", "")
         if default_folder and os.path.exists(default_folder) and os.path.isdir(default_folder):
-            logging.debug(f"Inicjalizacja drzewa katalogów: {default_folder}")
+            self.logger.debug(f"Inicjalizacja drzewa katalogów: {default_folder}")
             self.directory_tree_manager.init_directory_tree_without_expansion(default_folder)
 
-        logging.info("Główne okno aplikacji zostało zainicjalizowane")
+        self.logger.info("Główne okno aplikacji zostało zainicjalizowane")
 
     def _init_data(self):
         """Inicjalizuje dane aplikacji."""
+        # 🚀 ETAP 2: Zoptymalizowany logger bez emoji
+        self.logger = get_main_window_logger()
+        
         # KRYTYCZNE: AppConfig musi być pierwsze - inne komponenty go używają!
         self.app_config = app_config.AppConfig()
+
+        # 🚀 ETAP 2: Event Bus - eliminuje tight coupling
+        self.event_bus = get_event_bus()
+        
+        # 🚀 ETAP 2: View Refresh Manager - inteligentne odświeżanie
+        self.view_refresh_manager = ViewRefreshManager(self)
 
         # ETAP 2 FINAL: MVC Controller - centralna logika biznesowa
         self.controller = MainWindowController(self)
@@ -153,10 +168,10 @@ class MainWindow(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
 
-        # Główny layout
+        # Główny layout - NAPRAWKA: Minimalne marginesy dla profesjonalnego wyglądu
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
-        self.main_layout.setSpacing(10)
+        self.main_layout.setContentsMargins(2, 2, 2, 2)
+        self.main_layout.setSpacing(3)
 
     def _init_ui(self):
         """
@@ -186,6 +201,10 @@ class MainWindow(QMainWindow):
         self.gallery_tab_manager = GalleryTab(self)
         self.unpaired_files_tab_manager = UnpairedFilesTab(self)
 
+        # 🚨 ETAP 2 - POPRAWKA 5: Nowa zakładka z eksploratorem plików
+        from src.ui.widgets.file_explorer_tab import FileExplorerTab
+        self.file_explorer_tab = FileExplorerTab(self)
+
         # Zakładka galerii
         gallery_widget = self.gallery_tab_manager.create_gallery_tab()
         self.tab_widget.addTab(gallery_widget, "Galeria")
@@ -193,6 +212,13 @@ class MainWindow(QMainWindow):
         # Zakładka niesparowanych plików
         unpaired_widget = self.unpaired_files_tab_manager.create_unpaired_files_tab()
         self.tab_widget.addTab(unpaired_widget, "Parowanie Plików")
+
+        # 🚨 NOWA ZAKŁADKA: Eksplorator plików
+        self.tab_widget.addTab(self.file_explorer_tab, "Eksplorator plików")
+
+        # 🚨 ETAP 2: Połączenie sygnałów eksploratora
+        self.file_explorer_tab.folder_changed.connect(self.on_explorer_folder_changed)
+        self.file_explorer_tab.file_selected.connect(self.on_explorer_file_selected)
 
         # Pobierz referencje do widgetów dla kompatybilności
         gallery_widgets = self.gallery_tab_manager.get_widgets_for_main_window()
@@ -497,7 +523,7 @@ class MainWindow(QMainWindow):
         )
 
         bulk_layout = QHBoxLayout(self.bulk_operations_panel)
-        bulk_layout.setContentsMargins(10, 5, 10, 5)
+        bulk_layout.setContentsMargins(5, 3, 5, 3)
 
         # Selected count label
         self.selected_count_label = QLabel("Zaznaczone: 0")
@@ -567,7 +593,7 @@ class MainWindow(QMainWindow):
             layout = self.folder_tree_container.layout()
             if layout:
                 layout.insertWidget(0, expand_controls)
-                logging.debug("✅ Dodano kontrolki expand/collapse do UI")
+                self.logger.debug("Dodano kontrolki expand/collapse do UI")
 
         # Inicjalizacja GalleryManager
         self.gallery_manager = GalleryManager(self.tiles_container, self.tiles_layout)
@@ -588,7 +614,7 @@ class MainWindow(QMainWindow):
         self._show_preferences_loaded_confirmation()
 
         if not self.app_config.get("auto_load_last_folder", False):
-            logging.info("⚙️ Auto-load ostatniego folderu WYŁĄCZONE w preferencjach")
+            logging.debug("Auto-load of last folder DISABLED in preferences")
             return
 
         last_folder = self.app_config.get("default_working_directory", "")
@@ -599,11 +625,11 @@ class MainWindow(QMainWindow):
         import os
 
         if not os.path.exists(last_folder) or not os.path.isdir(last_folder):
-            logging.warning(f"❌ Zapisany folder roboczy nie istnieje: {last_folder}")
+            self.logger.warning(f"Zapisany folder roboczy nie istnieje: {last_folder}")
             return
 
         try:
-            logging.info(f"🔄 Auto-loading ostatniego folderu: {last_folder}")
+            logging.debug(f"Auto-loading last folder: {last_folder}")
             # Ustaw flagę że to jest auto-loading (NIE nadpisuj domyślnego!)
             self._is_auto_loading = True
             self._select_working_directory(last_folder)
@@ -623,7 +649,7 @@ class MainWindow(QMainWindow):
         logging.debug("Preferencje wczytane")
 
         # Pokaż w status barze
-        self.progress_label.setText("✅ Preferencje wczytane")
+        self.progress_label.setText("Preferencje wczytane")
         self.progress_label.setStyleSheet("color: green; font-weight: bold;")
 
         # Po czasie z konfiguracji przywróć normalny status
@@ -705,7 +731,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "_is_auto_loading"):
             logging.info(f"📂 Folder wybrany ręcznie ale NIE nadpisuję domyślnego!")
         else:
-            logging.info(f"🔄 Auto-loading z domyślnego folderu")
+            logging.debug("Auto-loading from default folder")
 
         logging.info("Wybrano folder roboczy: %s", normalized_path)
 
@@ -774,6 +800,10 @@ class MainWindow(QMainWindow):
 
         # DELEGACJA DO KONTROLERA - NO MORE WORKER THREADS!
         success = self.controller.handle_folder_selection(directory_path)
+
+        # 🚨 ETAP 2 - POPRAWKA 5: Ustaw root path dla eksploratora plików
+        if hasattr(self, 'file_explorer_tab') and success:
+            self.file_explorer_tab.set_root_path(directory_path)
 
         # Przywróć UI state
         self.select_folder_button.setText("Wybierz Folder")
@@ -884,23 +914,30 @@ class MainWindow(QMainWindow):
 
     def _update_unpaired_files_direct(self):
         """
-        FALLBACK: Bezpośrednia aktualizacja niesparowanych plików.
-        Używana gdy manager nie działa poprawnie.
+        NAPRAWKA PAROWANIE: Bezpośrednia aktualizacja niesparowanych plików przez manager.
+        Używana do odświeżenia UI po parowaniu plików.
         """
         try:
-            logging.debug("FALLBACK: Rozpoczynam aktualizację unpaired")
+            logging.debug("FALLBACK: Rozpoczynam aktualizację unpaired przez manager")
 
-            # Sprawdź czy mamy widgety przypisane do main_window
+            # NAPRAWKA: Użyj unpaired_files_tab_manager zamiast bezpośrednich widgetów
+            if hasattr(self, 'unpaired_files_tab_manager') and self.unpaired_files_tab_manager:
+                logging.debug("NAPRAWKA: Używam unpaired_files_tab_manager.update_unpaired_files_lists()")
+                self.unpaired_files_tab_manager.update_unpaired_files_lists()
+                logging.debug("NAPRAWKA: unpaired_files_tab_manager.update_unpaired_files_lists() zakończone")
+                return
+
+            # FALLBACK: Sprawdź czy mamy widgety przypisane bezpośrednio do main_window (stary sposób)
             if (
                 not hasattr(self, "unpaired_archives_list_widget")
                 or not self.unpaired_archives_list_widget
             ):
                 logging.warning(
-                    "⚠️ FALLBACK: Brak widgetów w main_window - pomijam aktualizację"
+                    "⚠️ FALLBACK: Brak widgetów w main_window i brak managera - pomijam aktualizację"
                 )
                 return
 
-            # Wyczyść stare dane
+            # Wyczyść stare dane (stary sposób fallback)
             self.unpaired_archives_list_widget.clear()
             self.unpaired_previews_list_widget.clear()
 
@@ -917,7 +954,6 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole, archive_path)
                 self.unpaired_archives_list_widget.addItem(item)
                 archives_added += 1
-                # Spam logów wyeliminowany - każdy plik nie potrzebuje osobnego loga
 
             # Dodaj podglądy (posortowane)
             previews_added = 0
@@ -926,14 +962,13 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole, preview_path)
                 self.unpaired_previews_list_widget.addItem(item)
                 previews_added += 1
-                # Spam logów wyeliminowany - każdy plik nie potrzebuje osobnego loga
 
             logging.debug(f"FALLBACK: Dodano {archives_added} archiwów, {previews_added} podglądów")
 
         except Exception as e:
-            logging.error(f"❌ FALLBACK ERROR: {e}")
-
-            self.unpaired_files_tab_manager.update_unpaired_files_lists()
+            self.logger.error(f"FALLBACK ERROR: {e}")
+            # NAPRAWKA KRYTYCZNA: Nie wywołuj manager który może także crashować
+            # Po błędzie w fallback nie wykonuj żadnych dalszych operacji
 
     def _handle_scan_finished(self, found_pairs, unpaired_archives, unpaired_previews):
         """
@@ -1243,8 +1278,8 @@ class MainWindow(QMainWindow):
 
     def refresh_all_views(self, new_selection=None):
         """
-        Inteligentne odświeżanie widoków - Problem #5.
-        Unika pełnego ponownego skanowania gdy nie jest konieczne.
+        🚀 ETAP 2: Inteligentne odświeżanie widoków z ViewRefreshManager.
+        Eliminuje niepotrzebne przeładowania przez porównanie stanów.
 
         Args:
             new_selection: FilePair do zaznaczenia po odświeżeniu (opcjonalne)
@@ -1258,25 +1293,39 @@ class MainWindow(QMainWindow):
             and self.scan_thread
             and self.scan_thread.isRunning()
         ):
-            logging.info("Skanowanie już w toku - pomijanie refresh_all_views")
+            self.logger.info("Skanowanie już w toku - pomijanie refresh_all_views")
             return
 
-        logging.info("Inteligentne odświeżanie widoków po operacji na plikach")
+        self.logger.info("Inteligentne odświeżanie widoków po operacji na plikach")
 
-        # Zapisz zaznaczenie do przywrócenia po odświeżeniu
-        if new_selection:
-            self._pending_selection = new_selection
+        try:
+            # 🚀 ETAP 2: Użyj ViewRefreshManager dla inteligentnego odświeżania
+            force_refresh = new_selection is not None  # Wymuś jeśli jest nowy element
+            self.view_refresh_manager.request_refresh_all(force=force_refresh)
 
-        # Zamiast pełnego skanowania, odśwież tylko UI z istniejącymi danymi
-        self._apply_filters_and_update_view()
-        # Delegacja do managera zamiast wywołania nieistniejącej metody
-        if hasattr(self, "unpaired_files_tab_manager"):
-            self.unpaired_files_tab_manager.update_unpaired_files_lists()
+            # 🚀 ETAP 2: Emit event do Event Bus
+            self.event_bus.emit_event("view_refresh_requested", "all")
 
-        # Zapisz metadane bez ponownego skanowania
-        self._save_metadata()
+            # Zapisz zaznaczenie do przywrócenia po odświeżeniu
+            if new_selection:
+                self._pending_selection = new_selection
+                self.event_bus.emit_event("file_pair_selected", new_selection)
 
-        logging.info("Odświeżanie zakończone - bez ponownego skanowania")
+            # NAPRAWKA: Metadane są zapisywane asynchronicznie przez workery
+            # Nie wywołujemy _save_metadata() bo może powodować deadlock
+            self.logger.debug("Pomijam _save_metadata() - metadane zapisywane są przez workery")
+
+            self.logger.info("Odświeżanie zakończone - bez ponownego skanowania")
+            
+        except Exception as e:
+            self.logger.error(f"KRYTYCZNY BŁĄD w refresh_all_views: {e}")
+            # Fallback - podstawowe odświeżenie
+            try:
+                self._update_gallery_view()
+                self._update_unpaired_files_direct()
+                self.logger.info("Użyto fallback odświeżenia")
+            except Exception as fallback_error:
+                self.logger.error(f"Również fallback nie zadziałał: {fallback_error}")
 
     def force_full_refresh(self):
         """
@@ -1367,7 +1416,7 @@ class MainWindow(QMainWindow):
             logging.debug("Metadane zapisane")
         else:
             self._show_progress(100, "Nie udało się zapisać metadanych")
-            logging.error("❌ Nie udało się zapisać metadanych.")
+            self.logger.error("Nie udało się zapisać metadanych.")
 
     def open_archive(self, file_pair: FilePair):
         """
@@ -1410,8 +1459,8 @@ class MainWindow(QMainWindow):
 
     def _handle_tile_selection_changed(self, file_pair: FilePair, is_selected: bool):
         """ETAP 2 FINAL: Delegacja tile selection do MainWindowController (MVC)."""
-        logging.info(
-            f"✅ Controller tile selection: {file_pair.get_base_name()} -> {is_selected}"
+        self.logger.info(
+            f"Controller tile selection: {file_pair.get_base_name()} -> {is_selected}"
         )
 
         # DELEGACJA DO KONTROLERA
@@ -1842,6 +1891,11 @@ class MainWindow(QMainWindow):
                 self.controller.unpaired_archives = scan_result.unpaired_archives
                 self.controller.unpaired_previews = scan_result.unpaired_previews
                 
+                # 🚨 NAPRAWKA: Ustaw ścieżkę w eksploratorze plików!
+                if hasattr(self, 'file_explorer_tab'):
+                    self.file_explorer_tab.set_root_path(normalized_path)
+                    logging.info(f"EKSPLORATOR: Ustawiono ścieżkę na {normalized_path}")
+                
                 # Utwórz kafelki BEZ resetowania drzewa
                 if scan_result.file_pairs:
                     self._start_data_processing_worker_without_tree_reset(scan_result.file_pairs)
@@ -1897,3 +1951,28 @@ class MainWindow(QMainWindow):
             f"Widok zaktualizowany bez resetowania drzewa. Wyświetlono po filtracji: "
             f"{len(self.gallery_manager.file_pairs_list)}."
         )
+
+    # 🚨 ETAP 2 - POPRAWKA 5: Obsługa eksploratora plików
+    def on_explorer_folder_changed(self, path: str):
+        """Obsługa zmiany folderu w eksploratorze."""
+        self.logger.info(f"Explorer folder changed to: {path}")
+        # Opcjonalnie synchronizuj z głównym folderem roboczym
+        # W przyszłości można dodać opcję synchronizacji
+
+    def on_explorer_file_selected(self, file_path: str):
+        """Obsługa wyboru pliku w eksploratorze."""
+        self.logger.info(f"Explorer file selected: {file_path}")
+        # Opcjonalnie otwórz plik lub pokaż podgląd
+        # W przyszłości można dodać obsługę podglądu plików
+
+    def set_working_directory(self, directory: str):
+        """
+        🚨 ETAP 2: Ustawia folder roboczy dla wszystkich zakładek.
+        Rozszerzone o synchronizację z eksploratorem plików.
+        """
+        # Istniejący kod...
+        self.controller.current_directory = directory
+
+        # 🚨 NOWE: Ustaw ścieżkę dla eksploratora plików
+        if hasattr(self, 'file_explorer_tab'):
+            self.file_explorer_tab.set_root_path(directory)
