@@ -417,7 +417,7 @@ class PreferencesDialog(QDialog):
             else:
                 self.strategy_size_priority.setChecked(True)
 
-            self.max_depth_spin.setValue(self.app_config.get("max_scan_depth", 0))
+            self.max_depth_spin.setValue(self.app_config.get("max_scan_depth", -1))
             self.ignored_extensions_edit.setText(
                 ",".join(self.app_config.get("ignored_extensions", []))
             )

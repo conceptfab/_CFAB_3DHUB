@@ -36,7 +36,7 @@ from src.ui.delegates.workers import (
     UnifiedBaseWorker,
     WorkerFactory,
 )
-from src.ui.directory_tree_manager import DirectoryTreeManager
+from src.ui.directory_tree.manager import DirectoryTreeManager
 from src.ui.file_operations_ui import FileOperationsUI
 from src.ui.gallery_manager import GalleryManager
 from src.ui.widgets.filter_panel import FilterPanel
@@ -61,8 +61,17 @@ class MainWindow(QMainWindow):
         self._init_ui()
         self._init_managers()
 
-        # Automatyczne ładowanie ostatniego folderu roboczego
-        self._auto_load_last_folder()
+        # WYŁĄCZONO automatyczne ładowanie - użytkownik musi wybrać folder z drzewa
+        # self._auto_load_last_folder()  # NIEPRAWIDŁOWE ZACHOWANIE - skanuje cały główny folder
+
+        # Pokaż preferencje wczytane
+        self._show_preferences_loaded_confirmation()
+        
+        # Zainicjalizuj drzewo katalogów z domyślnym folderem ale BEZ skanowania i rozwijania
+        default_folder = self.app_config.get("default_working_directory", "")
+        if default_folder and os.path.exists(default_folder) and os.path.isdir(default_folder):
+            logging.debug(f"Inicjalizacja drzewa katalogów: {default_folder}")
+            self.directory_tree_manager.init_directory_tree_without_expansion(default_folder)
 
         logging.info("Główne okno aplikacji zostało zainicjalizowane")
 
@@ -584,7 +593,7 @@ class MainWindow(QMainWindow):
 
         last_folder = self.app_config.get("default_working_directory", "")
         if not last_folder:
-            logging.info("📁 Brak zapisanego folderu roboczego do załadowania")
+            logging.debug("Brak zapisanego folderu roboczego")
             return
 
         import os
@@ -610,23 +619,8 @@ class MainWindow(QMainWindow):
         """
         Pokazuje potwierdzenie że preferencje zostały wczytane.
         """
-        # Pokaż w logach szczegóły preferencji
-        logging.info("🎛️ PREFERENCJE WCZYTANE POMYŚLNIE!")
-        logging.info(
-            f"  📏 Thumbnail slider: {self.app_config.get_thumbnail_slider_position()}%"
-        )
-        logging.info(
-            f"  🗂️ Auto-load folder: {self.app_config.get('auto_load_last_folder', False)}"
-        )
-        logging.info(
-            f"  📁 Ostatni folder: {self.app_config.get('default_working_directory', 'BRAK')}"
-        )
-        logging.info(
-            f"  💾 Cache miniaturek: {self.app_config.get('thumbnail_cache_max_entries', 500)} szt."
-        )
-        logging.info(
-            f"  🧠 Pamięć cache: {self.app_config.get('thumbnail_cache_max_memory_mb', 100)}MB"
-        )
+        # Preferencje wczytane - tylko krótki komunikat
+        logging.debug("Preferencje wczytane")
 
         # Pokaż w status barze
         self.progress_label.setText("✅ Preferencje wczytane")
@@ -879,7 +873,7 @@ class MainWindow(QMainWindow):
             )
 
             # BEZPOŚREDNIA AKTUALIZACJA jako FALLBACK
-            logging.info("🛠️ FALLBACK: Bezpośrednia aktualizacja niesparowanych plików")
+            logging.debug("FALLBACK: Bezpośrednia aktualizacja unpaired")
             self._update_unpaired_files_direct()
 
     def _update_unpaired_files_direct(self):
@@ -888,9 +882,7 @@ class MainWindow(QMainWindow):
         Używana gdy manager nie działa poprawnie.
         """
         try:
-            logging.info(
-                "🔧 FALLBACK: Rozpoczynam bezpośrednią aktualizację niesparowanych plików"
-            )
+            logging.debug("FALLBACK: Rozpoczynam aktualizację unpaired")
 
             # Sprawdź czy mamy widgety przypisane do main_window
             if (
@@ -913,9 +905,7 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole, archive_path)
                 self.unpaired_archives_list_widget.addItem(item)
                 archives_added += 1
-                logging.info(
-                    f"📁 FALLBACK: Dodano archiwum {os.path.basename(archive_path)}"
-                )
+                # Spam logów wyeliminowany - każdy plik nie potrzebuje osobnego loga
 
             # Dodaj podglądy
             previews_added = 0
@@ -924,13 +914,9 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole, preview_path)
                 self.unpaired_previews_list_widget.addItem(item)
                 previews_added += 1
-                logging.info(
-                    f"🖼️ FALLBACK: Dodano podgląd {os.path.basename(preview_path)}"
-                )
+                # Spam logów wyeliminowany - każdy plik nie potrzebuje osobnego loga
 
-            logging.info(
-                f"✅ FALLBACK: Dodano {archives_added} archiwów i {previews_added} podglądów"
-            )
+            logging.debug(f"FALLBACK: Dodano {archives_added} archiwów, {previews_added} podglądów")
 
         except Exception as e:
             logging.error(f"❌ FALLBACK ERROR: {e}")
@@ -963,6 +949,10 @@ class MainWindow(QMainWindow):
         """
         Inicjalizuje i uruchamia workera do przetwarzania danych.
         """
+        # NAPRAWKA: Resetuj liczniki progress bara na początku operacji
+        if hasattr(self, '_batch_processing_started'):
+            delattr(self, '_batch_processing_started')
+        
         # NAPRAWKA: Prawidłowo zakończ poprzedni worker jeśli nadal działa
         if self.data_processing_thread and self.data_processing_thread.isRunning():
             logging.warning(
@@ -1000,11 +990,71 @@ class MainWindow(QMainWindow):
             self._create_tile_widgets_batch
         )
         self.data_processing_worker.finished.connect(self._on_tile_loading_finished)
+        # NAPRAWKA: Podłącz sygnały postępu do pasków postępu
+        self.data_processing_worker.progress.connect(self._show_progress)
+        self.data_processing_worker.error.connect(self._handle_worker_error)
         self.data_processing_thread.started.connect(self.data_processing_worker.run)
 
         self.data_processing_thread.start()
         logging.info(
             f"Uruchomiono nowy worker do przetwarzania {len(file_pairs)} par plików"
+        )
+
+    def _start_data_processing_worker_without_tree_reset(self, file_pairs: list[FilePair]):
+        """
+        Inicjalizuje i uruchamia workera do przetwarzania danych BEZ resetowania drzewa katalogów.
+        Używane przy zmianie folderu z drzewa aby zachować strukturę.
+        """
+        # NAPRAWKA: Resetuj liczniki progress bara na początku operacji
+        if hasattr(self, '_batch_processing_started'):
+            delattr(self, '_batch_processing_started')
+            
+        # NAPRAWKA: Prawidłowo zakończ poprzedni worker jeśli nadal działa
+        if self.data_processing_thread and self.data_processing_thread.isRunning():
+            logging.warning(
+                "Poprzedni worker przetwarzania nadal działa - przerywam go i uruchamiam nowy (bez resetowania drzewa)"
+            )
+            # Przerwij poprzedni worker
+            if self.data_processing_worker:
+                try:
+                    self.data_processing_worker.finished.disconnect()
+                except (TypeError, AttributeError):
+                    pass  # Sygnał może być już odłączony
+                self.data_processing_worker.stop()
+
+            # Zakończ poprzedni wątek
+            self.data_processing_thread.quit()
+            if not self.data_processing_thread.wait(
+                self.app_config.thread_wait_timeout_ms
+            ):  # Czekaj maksymalnie według konfiguracji
+                logging.warning("Wymuszenie zakończenia poprzedniego workera")
+                self.data_processing_thread.terminate()
+                self.data_processing_thread.wait()
+
+        self.data_processing_thread = QThread()
+        self.data_processing_worker = DataProcessingWorker(
+            self.controller.current_directory, file_pairs
+        )
+        self.data_processing_worker.moveToThread(self.data_processing_thread)
+
+        # Podłączenie sygnałów
+        self.data_processing_worker.tile_data_ready.connect(
+            self._create_tile_widget_for_pair
+        )
+        # NOWY: obsługa batch processing kafelków
+        self.data_processing_worker.tiles_batch_ready.connect(
+            self._create_tile_widgets_batch
+        )
+        # RÓŻNICA: Podłącz do metody BEZ resetowania drzewa (wrapper ignoruje listę)
+        self.data_processing_worker.finished.connect(lambda processed_pairs: self._finish_folder_change_without_tree_reset())
+        # NAPRAWKA: Podłącz sygnały postępu do pasków postępu
+        self.data_processing_worker.progress.connect(self._show_progress)
+        self.data_processing_worker.error.connect(self._handle_worker_error)
+        self.data_processing_thread.started.connect(self.data_processing_worker.run)
+
+        self.data_processing_thread.start()
+        logging.info(
+            f"Uruchomiono nowy worker do przetwarzania {len(file_pairs)} par plików (bez resetowania drzewa)"
         )
 
     def _create_tile_widget_for_pair(self, file_pair: FilePair):
@@ -1029,8 +1079,37 @@ class MainWindow(QMainWindow):
             tile.stars_changed.connect(self._handle_stars_changed)
             tile.color_tag_changed.connect(self._handle_color_tag_changed)
             tile.tile_context_menu_requested.connect(self._show_file_context_menu)
+            
+            # NAPRAWKA: Podłącz callback do śledzenia ładowania miniaturek
+            original_on_thumbnail_loaded = tile._on_thumbnail_loaded
+            def thumbnail_loaded_callback(*args, **kwargs):
+                result = original_on_thumbnail_loaded(*args, **kwargs)
+                self._on_thumbnail_progress()
+                return result
+            tile._on_thumbnail_loaded = thumbnail_loaded_callback
 
         return tile
+
+    def _on_thumbnail_progress(self):
+        """
+        Wywoływana gdy miniatura zostanie załadowana.
+        Aktualizuje progress bar dla ładowania miniaturek.
+        """
+        if not hasattr(self, '_thumbnails_with_images_loaded'):
+            self._thumbnails_with_images_loaded = 0
+            
+        self._thumbnails_with_images_loaded += 1
+        
+        # Progress bar: 0-50% kafelki, 50-100% miniaturki
+        if hasattr(self, '_total_thumbnails_to_load'):
+            thumbnail_percent = int((self._thumbnails_with_images_loaded / max(self._total_thumbnails_to_load, 1)) * 50)
+            total_percent = 50 + thumbnail_percent  # 50% za kafelki + 50% za miniaturki
+            
+            self._show_progress(total_percent, f"Ładowanie miniaturek: {self._thumbnails_with_images_loaded}/{self._total_thumbnails_to_load}...")
+            
+            # Ukryj progress bar gdy wszystkie miniaturki są załadowane
+            if self._thumbnails_with_images_loaded >= self._total_thumbnails_to_load:
+                QTimer.singleShot(500, self._hide_progress)  # Ukryj po pół sekundy
 
     def _create_tile_widgets_batch(self, file_pairs_batch: list):
         """
@@ -1040,7 +1119,18 @@ class MainWindow(QMainWindow):
         Args:
             file_pairs_batch: Lista obiektów FilePair do przetworzenia w tym batch'u
         """
-        logging.debug(f"Tworzenie batch'a {len(file_pairs_batch)} kafelków...")
+        # Resetuj liczniki na początku nowej operacji ładowania
+        if not hasattr(self, '_batch_processing_started'):
+            self._total_thumbnails_to_load = len(self.controller.current_file_pairs)
+            self._thumbnails_loaded = 0
+            self._thumbnails_with_images_loaded = 0
+            self._batch_processing_started = True
+        
+        batch_size = len(file_pairs_batch)
+        
+        # Aktualizuj progress bar dla tworzenia kafelków (bez miniaturek)
+        percent = int((self._thumbnails_loaded / max(self._total_thumbnails_to_load, 1)) * 50)  # 50% dla kafelków
+        self._show_progress(percent, f"Tworzenie kafelków: {self._thumbnails_loaded}/{self._total_thumbnails_to_load}...")
 
         # Czasowo wyłącz aktualizacje UI dla lepszej wydajności
         self.gallery_manager.tiles_container.setUpdatesEnabled(False)
@@ -1051,10 +1141,12 @@ class MainWindow(QMainWindow):
                 tile = self._create_tile_widget_for_pair(file_pair)
                 if tile:
                     created_count += 1
-
-            logging.debug(
-                f"Utworzono {created_count}/{len(file_pairs_batch)} kafelków w batch'u"
-            )
+                    self._thumbnails_loaded += 1
+                    
+                    # Aktualizuj progress co 5 kafelków
+                    if self._thumbnails_loaded % 5 == 0 or self._thumbnails_loaded >= self._total_thumbnails_to_load:
+                        percent = int((self._thumbnails_loaded / max(self._total_thumbnails_to_load, 1)) * 50)
+                        self._show_progress(percent, f"Tworzenie kafelków: {self._thumbnails_loaded}/{self._total_thumbnails_to_load}...")
 
         finally:
             # Przywróć aktualizacje UI
@@ -1079,20 +1171,10 @@ class MainWindow(QMainWindow):
         self.size_control_panel.setVisible(is_gallery_populated)
         # Zakładka parowania zawsze widoczna
 
-        # Inicjalizacja drzewa katalogów
-        logging.debug("Inicjalizacja drzewa katalogów...")
-        logging.info(
-            f"DEBUG: current_working_directory = '{self.controller.current_directory}'"
-        )
+        # Inicjalizacja drzewa katalogów - TYLKO ustawienie root path, BEZ automatycznego rozwijania
         if self.controller.current_directory:
-            logging.info("DEBUG: Wywołuję init_directory_tree...")
-            self.directory_tree_manager.init_directory_tree(
+            self.directory_tree_manager.init_directory_tree_without_expansion(
                 self.controller.current_directory
-            )
-            logging.info("DEBUG: init_directory_tree zakończone")
-        else:
-            logging.warning(
-                "DEBUG: current_working_directory jest None - nie inicjalizuję drzewa"
             )
 
         # Upewnij się że drzewo folderów jest widoczne
@@ -1263,7 +1345,7 @@ class MainWindow(QMainWindow):
         """
         if success:
             self._show_progress(100, "Metadane zapisane pomyślnie")
-            logging.info("✅ Metadane zapisane pomyślnie.")
+            logging.debug("Metadane zapisane")
         else:
             self._show_progress(100, "Nie udało się zapisać metadanych")
             logging.error("❌ Nie udało się zapisać metadanych.")
@@ -1503,24 +1585,24 @@ class MainWindow(QMainWindow):
 
             clear_cache()
 
-            # Uruchom ponowne skanowanie za pomocą kontrolera
-            # To wywoła pełne ponowne skanowanie i zaktualizuje self.controller.current_file_pairs
+            # Uruchom ponowne skanowanie BEZ RESETOWANIA DRZEWA
+            # Używamy change_directory() zamiast controller.handle_folder_selection()
+            # aby zachować drzewo katalogów
             if hasattr(self, "controller") and self.controller:
-                success = self.controller.handle_folder_selection(
-                    self.controller.current_directory
-                )
-                if success:
+                try:
+                    # Użyj metody która zachowuje drzewo katalogów
+                    self.change_directory(self.controller.current_directory)
                     logging.info(
-                        "Pomyślnie odświeżono folder źródłowy po operacji drag&drop"
+                        "Pomyślnie odświeżono folder źródłowy po operacji bez resetowania drzewa"
                     )
-                else:
-                    logging.warning(
-                        "Błąd podczas odświeżania folderu źródłowego przez kontroler"
-                    )
+                except Exception as e:
+                    logging.warning(f"Błąd podczas odświeżania folderu bez resetu: {e}")
+                    # Fallback - ale tylko odśwież widok, nie resetuj drzewa
+                    self.refresh_all_views()
             else:
                 logging.warning("Kontroler nie jest dostępny - używam fallback")
-                # Fallback - użyj istniejącego mechanizmu odświeżania
-                self._force_refresh()
+                # Fallback - tylko odśwież widok
+                self.refresh_all_views()
 
         except Exception as e:
             logging.error(f"Błąd podczas odświeżania folderu źródłowego: {e}")
@@ -1702,5 +1784,96 @@ class MainWindow(QMainWindow):
             self.unpaired_files_tab_manager.update_unpaired_files_lists()
 
     def request_metadata_save(self):
-        """Żąda zapisu metadanych."""
+        """Żąda zapisu metadanych - używane przez tile widgety."""
+        self._schedule_metadata_save()
+
+    def change_directory(self, folder_path: str):
+        """
+        Zmienia katalog roboczy na wybrany folder i skanuje tylko ten folder.
+        Wywoływane po kliknięciu na folder w drzewie.
+        ZACHOWUJE drzewo katalogów bez resetowania.
+        """
+        try:
+            normalized_path = normalize_path(folder_path)
+            base_folder_name = os.path.basename(normalized_path)
+            self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
+            
+            logging.info(f"Zmiana katalogu na: {normalized_path}")
+            
+            # Wyczyść tylko galerię i dane, ale ZACHOWAJ drzewo katalogów
+            self.gallery_manager.clear_gallery()
+            self._clear_unpaired_files_lists()
+            
+            # Skanuj tylko wybrany folder przez kontroler BEZ resetowania drzewa
+            # Używamy bezpośrednio serwisu skanowania zamiast handle_folder_selection
+            # aby uniknąć wywołania update_scan_results -> _on_tile_loading_finished -> init_directory_tree
+            try:
+                # NAPRAWKA: Skanuj TYLKO bezpośrednie pliki w folderze (max_depth=0)
+                # zamiast całego drzewa folderów rekurencyjnie
+                scan_result = self.controller.scan_service.scan_directory(normalized_path, max_depth=0)
+                
+                if scan_result.error_message:
+                    self.show_error_message("Błąd skanowania", scan_result.error_message)
+                    return
+                
+                # Zaktualizuj stan kontrolera ręcznie
+                self.controller.current_directory = normalized_path
+                self.controller.current_file_pairs = scan_result.file_pairs
+                self.controller.unpaired_archives = scan_result.unpaired_archives
+                self.controller.unpaired_previews = scan_result.unpaired_previews
+                
+                # Utwórz kafelki BEZ resetowania drzewa
+                if scan_result.file_pairs:
+                    self._start_data_processing_worker_without_tree_reset(scan_result.file_pairs)
+                else:
+                    # Wywołaj końcowe akcje BEZ init_directory_tree
+                    self._finish_folder_change_without_tree_reset()
+                
+                logging.info(f"Folder change SUCCESS: {normalized_path}, {len(scan_result.file_pairs)} par")
+                
+            except Exception as scan_error:
+                error_msg = f"Błąd skanowania folderu: {scan_error}"
+                logging.error(error_msg)
+                self.show_error_message("Błąd", error_msg)
+            
+        except Exception as e:
+            error_msg = f"Błąd zmiany katalogu: {e}"
+            logging.error(error_msg)
+            self.show_error_message("Błąd", error_msg)
+
+    def _finish_folder_change_without_tree_reset(self):
+        """
+        Kończy zmianę folderu bez resetowania drzewa katalogów.
+        Alternatywa dla _on_tile_loading_finished gdy chcemy zachować drzewo.
+        """
+        logging.debug("Zakończono tworzenie kafelków bez resetowania drzewa")
+
+        # Zastosuj filtry i odśwież widok
+        self._apply_filters_and_update_view()
+        # Delegacja do managera zamiast wywołania nieistniejącej metody
+        if hasattr(self, "unpaired_files_tab_manager"):
+            self.unpaired_files_tab_manager.update_unpaired_files_lists()
+
+        # Pokaż interfejs
+        self.filter_panel.setEnabled(True)  # Odblokuj panel filtrów
+        is_gallery_populated = bool(self.gallery_manager.file_pairs_list)
+        self.size_control_panel.setVisible(is_gallery_populated)
+
+        # Przywróć przycisk
+        self.select_folder_button.setText("Wybierz Folder Roboczy")
+        self.select_folder_button.setEnabled(True)
+
+        # Pokaż przycisk odświeżania cache
+        self.clear_cache_button.setVisible(True)
+
+        # Zapisz metadane
         self._save_metadata()
+        
+        # NAPRAWKA: Uruchom obliczanie statystyk folderów także w change_directory
+        if hasattr(self, 'directory_tree_manager'):
+            QTimer.singleShot(1000, self.directory_tree_manager.start_background_stats_calculation)
+
+        logging.info(
+            f"Widok zaktualizowany bez resetowania drzewa. Wyświetlono po filtracji: "
+            f"{len(self.gallery_manager.file_pairs_list)}."
+        )

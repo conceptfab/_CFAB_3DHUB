@@ -32,14 +32,14 @@ class ScanningService:
         # Scanner to funkcje, nie klasa!
 
     def scan_directory(
-        self, path: str, max_depth: int = 0, strategy: str = "first_match"
+        self, path: str, max_depth: int = -1, strategy: str = "first_match"
     ) -> ScanResult:
         """
         Skanuje katalog w poszukiwaniu par plików.
 
         Args:
             path: Ścieżka do katalogu
-            max_depth: Maksymalna głębokość skanowania (0 = bez limitu)
+            max_depth: Maksymalna głębokość skanowania (-1 = bez limitu, 0 = tylko główny folder)
             strategy: Strategia parowania ("first_match", "best_match", "size_priority")
 
         Returns:

@@ -175,26 +175,34 @@ def collect_files_streaming(
                         full_file_path = normalize_path(os.path.join(current_dir, name))
                         file_map[map_key].append(full_file_path)
 
-            # Potem rekurencyjnie przetwarzamy podfoldery
-            subfolders_processed = 0
-            for entry in entries:
-                if entry.is_dir():
-                    subfolders_processed += 1
+            # NAPRAWKA: Rekurencyjnie skanuj podfoldery TYLKO jeśli folder ma pliki bezpośrednio
+            should_scan_subfolders = files_processed_in_folder > 0
+            
+            logger.debug(f"Skanowanie: {current_dir} -> {files_processed_in_folder} plików")
+            
+            if should_scan_subfolders:
+                subfolders_processed = 0
+                for entry in entries:
+                    if entry.is_dir():
+                        subfolders_processed += 1
 
-                    # Sprawdzenie co 5 podfolderów
-                    if (
-                        subfolders_processed % 5 == 0
-                        and interrupt_check
-                        and interrupt_check()
-                    ):
-                        logger.warning(
-                            f"Skanowanie przerwane po przetworzeniu {subfolders_processed} podfolderów w {current_dir}"
-                        )
-                        raise ScanningInterrupted(
-                            "Skanowanie przerwane podczas rekursywnego skanowania"
-                        )
+                        # Sprawdzenie co 5 podfolderów
+                        if (
+                            subfolders_processed % 5 == 0
+                            and interrupt_check
+                            and interrupt_check()
+                        ):
+                            logger.warning(
+                                f"Skanowanie przerwane po przetworzeniu {subfolders_processed} podfolderów w {current_dir}"
+                            )
+                            raise ScanningInterrupted(
+                                "Skanowanie przerwane podczas rekursywnego skanowania"
+                            )
 
-                    _walk_directory_streaming(entry.path, depth + 1)
+                        # Normalny rekursywny skan (tylko gdy folder ma pliki)
+                        _walk_directory_streaming(entry.path, depth + 1)
+            else:
+                logger.debug(f"Pomijam podfoldery: {current_dir} (brak plików)")
 
         except (PermissionError, OSError) as e:
             logger.warning(f"Błąd dostępu do katalogu {current_dir}: {e}")

@@ -361,11 +361,11 @@ class FileOperationsUI:
             self.parent_window, "Sukces", f"Pomyślnie sparowano plik: {new_file_pair}"
         )
 
-        # Odśwież widoki w MainWindow
-        if hasattr(self.parent_window, "force_full_refresh") and callable(
-            self.parent_window.force_full_refresh
+        # Odśwież widoki w MainWindow BEZ resetowania drzewa
+        if hasattr(self.parent_window, "refresh_all_views") and callable(
+            self.parent_window.refresh_all_views
         ):
-            self.parent_window.force_full_refresh()
+            self.parent_window.refresh_all_views()
 
     def handle_drop_on_folder(self, urls: List, target_folder_path: str):
         """
@@ -759,15 +759,15 @@ class FileOperationsUI:
 
             # Odśwież folder źródłowy używając tego samego mechanizmu co w głównym oknie
             if hasattr(self.parent_window, "_refresh_source_folder_after_move"):
-                logger.info("🔧 Drag&drop: Wywoływanie odświeżania folderu źródłowego")
+                logger.debug("Odświeżanie folderu źródłowego po drag&drop")
                 self.parent_window._refresh_source_folder_after_move()
             else:
                 logger.warning(
-                    "🔧 Drag&drop: Brak metody _refresh_source_folder_after_move - używam fallback"
+                    "🔧 Drag&drop: Brak metody _refresh_source_folder_after_move - używam fallback BEZ resetu drzewa"
                 )
-                # Fallback - wymusza pełne ponowne skanowanie
-                if hasattr(self.parent_window, "force_full_refresh"):
-                    self.parent_window.force_full_refresh()
+                # Fallback - tylko odśwież widok BEZ resetowania drzewa
+                if hasattr(self.parent_window, "refresh_all_views"):
+                    self.parent_window.refresh_all_views()
 
         # Odśwież widoki (ale już po usunięciu przeniesionych plików ze struktury danych)
         if hasattr(self.parent_window, "refresh_all_views") and callable(

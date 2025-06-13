@@ -95,9 +95,9 @@ class UnpairedFilesTab:
         self.pair_manually_button.clicked.connect(self._handle_manual_pairing)
         self.pair_manually_button.setEnabled(False)
         self.unpaired_files_layout.addWidget(self.pair_manually_button)
-        logging.info("✅ Przycisk parowania utworzony")
+        logging.debug("Przycisk parowania utworzony")
 
-        logging.info("🎉 CREATE_UNPAIRED_FILES_TAB - zakończono pomyślnie")
+        logging.debug("UnpairedFilesTab utworzona")
         return self.unpaired_files_tab
 
     def _create_unpaired_archives_list(self):
@@ -419,7 +419,7 @@ class UnpairedFilesTab:
         """
         Aktualizuje listy niesparowanych plików w interfejsie użytkownika.
         """
-        logging.info("🔍 UPDATE_UNPAIRED_FILES_LISTS wywołane")
+        logging.debug("Aktualizacja unpaired files")
         
         # NAPRAWKA: Sprawdzamy tylko czy atrybut istnieje, nie jego wartość boolean
         if not hasattr(self, 'unpaired_archives_list_widget'):
@@ -446,14 +446,14 @@ class UnpairedFilesTab:
         # DEBUG: Sprawdź stan w kontrolerze
         archives_count = len(self.main_window.controller.unpaired_archives)
         previews_count = len(self.main_window.controller.unpaired_previews)
-        logging.info(f"📊 Controller unpaired_archives: {archives_count}")
-        logging.info(f"📊 Controller unpaired_previews: {previews_count}")
+        logging.debug(f"Unpaired: {archives_count} archiwów, {previews_count} podglądów")
         
-        for i, archive in enumerate(self.main_window.controller.unpaired_archives):
-            logging.info(f"  📁 Archive {i}: {archive}")
-        
-        for i, preview in enumerate(self.main_window.controller.unpaired_previews):
-            logging.info(f"  🖼️ Preview {i}: {preview}")
+        # Logi szczegółów plików tylko w trybie DEBUG
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            for i, archive in enumerate(self.main_window.controller.unpaired_archives[:3]):  # Tylko pierwsze 3
+                logging.debug(f"Archive {i}: {os.path.basename(archive)}")
+            if len(self.main_window.controller.unpaired_archives) > 3:
+                logging.debug(f"... i {len(self.main_window.controller.unpaired_archives) - 3} więcej archiwów")
 
         # UŻYWAMY BEZPOŚREDNIO ATRYBUTÓW Z MANAGERA
         self.unpaired_archives_list_widget.clear()
@@ -483,8 +483,7 @@ class UnpairedFilesTab:
             item = QListWidgetItem(os.path.basename(archive_path))
             item.setData(Qt.ItemDataRole.UserRole, archive_path)
             self.unpaired_archives_list_widget.addItem(item)
-            archive_name = os.path.basename(archive_path)
-            logging.info(f"✅ Dodano archiwum do listy: {archive_name}")
+            # Spam logów wyeliminowany - każdy plik nie potrzebuje osobnego loga
 
         # Aktualizuj miniaturki podglądów - stan z Controller
         for preview_path in self.main_window.controller.unpaired_previews:
@@ -495,13 +494,10 @@ class UnpairedFilesTab:
 
             # Dodaj miniaturkę
             preview_name = os.path.basename(preview_path)
-            logging.info(f"✅ Tworzę miniaturkę dla: {preview_name}")
+            # Usunięto spam logów - progress raportowany przez progress bar
             self._add_preview_thumbnail(preview_path)
 
-        logging.info(
-            f"✅ ZAKOŃCZONO aktualizację listy niesparowanych: "
-            f"{archives_count} archiwów, {previews_count} podglądów."
-        )
+        logging.debug(f"Zakończono aktualizację unpaired: {archives_count} archiwów, {previews_count} podglądów")
         self._update_pair_button_state()
 
     def _update_pair_button_state(self):

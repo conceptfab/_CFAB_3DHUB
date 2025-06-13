@@ -158,9 +158,9 @@ class UnifiedBaseWorker(QRunnable):
         """Emituje sygnał zakończenia z logowaniem."""
         if self._start_time:
             elapsed = time.time() - self._start_time
-            logger.info(f"{self._worker_name}: Zakończono pomyślnie w {elapsed:.2f}s")
+            logger.debug(f"{self._worker_name}: OK w {elapsed:.2f}s")
         else:
-            logger.info(f"{self._worker_name}: Zakończono pomyślnie")
+            logger.debug(f"{self._worker_name}: OK")
         self.signals.finished.emit(result)
 
     def emit_interrupted(self):
@@ -191,9 +191,9 @@ class UnifiedBaseWorker(QRunnable):
         emit_error(), emit_finished()
         """
         self._start_time = time.time()
-        logger.info(
-            f"{self._worker_name}: Rozpoczęto wykonywanie "
-            f"(priorytet: {self._priority})"
+        # Wszystkie workery na DEBUG - wyeliminowanie spamu logów
+        logger.debug(
+            f"{self._worker_name}: Start (priorytet: {self._priority})"
         )
 
         try:

@@ -100,7 +100,7 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
 
             try:
                 found_pairs, _, _ = scan_folder_for_pairs(
-                    self.folder_path, max_depth=0, pair_strategy="first_match"
+                    self.folder_path, max_depth=-1, pair_strategy="first_match"
                 )
                 stats.pairs_count = len(found_pairs)
             except Exception as e:

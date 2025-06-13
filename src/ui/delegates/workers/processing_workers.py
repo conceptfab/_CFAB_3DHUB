@@ -357,9 +357,9 @@ class DataProcessingWorker(QObject):
         """Emituje sygnał zakończenia z logowaniem."""
         if self._start_time:
             elapsed = time.time() - self._start_time
-            logger.info(f"DataProcessingWorker: Zakończono pomyślnie w {elapsed:.2f}s")
+            logger.debug(f"DataProcessingWorker: OK w {elapsed:.2f}s")
         else:
-            logger.info("DataProcessingWorker: Zakończono pomyślnie")
+            logger.debug("DataProcessingWorker: OK")
         self.finished.emit(result)
 
     @pyqtSlot()

@@ -163,6 +163,9 @@ class FileTileWidget(QWidget):
                 - TileSizeConstants.TILE_PADDING * 2,
             )
 
+            # NAPRAWKA: Zabezpieczenie przed ujemnymi wymiarami
+            thumb_dimension = max(thumb_dimension, TileSizeConstants.MIN_THUMBNAIL_WIDTH)
+
             # Ustaw rozmiar etykiety miniatury
             self.thumbnail_label.setFixedSize(thumb_dimension, thumb_dimension)
 
@@ -224,6 +227,10 @@ class FileTileWidget(QWidget):
             - TileSizeConstants.FILENAME_MAX_HEIGHT
             - TileSizeConstants.METADATA_MAX_HEIGHT,
         )
+        
+        # NAPRAWKA: Zabezpieczenie przed ujemnymi wymiarami
+        thumb_size = max(thumb_size, TileSizeConstants.MIN_THUMBNAIL_WIDTH)
+        
         self.thumbnail_label.setFixedSize(thumb_size, thumb_size)
         self.thumbnail_label.setScaledContents(
             True
