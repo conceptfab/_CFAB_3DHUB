@@ -119,14 +119,18 @@ class MetadataManager:
         """Thread-safe flush of buffered changes."""
         with self._buffer_lock:
             if not self._changes_buffer:
+                print("🔥 _flush_changes: Bufor pusty - nie ma nic do zapisu")
                 return
 
             try:
                 # Atomic write with proper error handling
-                self._atomic_write(self._changes_buffer)
-                self._changes_buffer.clear()
-                self._last_save_time = time.time()
-                self._invalidate_cache()  # Invalidate cache after write
+                success = self._atomic_write(self._changes_buffer)
+
+                if success:
+                    self._changes_buffer.clear()
+                    self._last_save_time = time.time()
+                    self._invalidate_cache()  # Invalidate cache after write
+                    logger.debug("Successfully flushed metadata changes")
 
             except Exception as e:
                 logger.error(f"Failed to flush metadata changes: {e}", exc_info=True)
@@ -603,9 +607,12 @@ def _validate_metadata_structure(metadata: Dict[str, Any]) -> bool:
                 )
                 return False
 
-            if not isinstance(pair_metadata["color_tag"], str):
+            if not (
+                isinstance(pair_metadata["color_tag"], str)
+                or pair_metadata["color_tag"] is None
+            ):
                 logger.warning(
-                    f"Wartość 'color_tag' dla '{relative_path}' nie jest ciągiem znaków: {pair_metadata['color_tag']}"
+                    f"Wartość 'color_tag' dla '{relative_path}' nie jest ciągiem znaków ani None: {pair_metadata['color_tag']}"
                 )
                 return False
 

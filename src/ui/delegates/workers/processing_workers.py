@@ -368,6 +368,20 @@ class DataProcessingWorker(QObject):
         self._start_time = time.time()
 
         try:
+            # 🔥 KRYTYCZNE: WCZYTAJ METADANE PRZED PRZETWARZANIEM!
+            self.emit_progress(0, "Wczytywanie metadanych...")
+
+            from src.logic.metadata_manager import MetadataManager
+
+            metadata_manager = MetadataManager.get_instance(self.working_directory)
+            metadata_applied = metadata_manager.apply_metadata_to_file_pairs(
+                self.file_pairs
+            )
+
+            print(
+                f"🔥 DataProcessingWorker: Metadane zastosowane do {len(self.file_pairs)} par - sukces: {metadata_applied}"
+            )
+
             processed_pairs = []
             total_pairs = len(self.file_pairs)
 
@@ -451,15 +465,20 @@ class SaveMetadataWorker(AsyncUnifiedBaseWorker):
 
             self.emit_progress(0, "Rozpoczęto zapisywanie metadanych...")
 
-            # Zapisz metadane z resource protection
+            # Zapisz metadane z resource protection + FORCE SAVE
             def save_metadata():
                 from src.logic.metadata_manager import MetadataManager
 
-                metadata_manager = MetadataManager(self.working_directory)
+                metadata_manager = MetadataManager.get_instance(self.working_directory)
 
+                # KROK 1: Dodaj do bufora
                 metadata_manager.save_metadata(
                     self.file_pairs, self.unpaired_archives, self.unpaired_previews
                 )
+
+                # KROK 2: WYMUŚ NATYCHMIASTOWY ZAPIS DO PLIKU!
+                metadata_manager.force_save()
+
                 return True
 
             # Użyj resource protection dla metadata_manager

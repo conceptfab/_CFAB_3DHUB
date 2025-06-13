@@ -17,6 +17,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.ui.widgets.filter_panel import FilterPanel
+
 if TYPE_CHECKING:
     from src.ui.main_window import MainWindow
 
@@ -46,7 +48,7 @@ class GalleryTab:
 
     def create_gallery_tab(self) -> QWidget:
         """
-        Tworzy zakładkę galerii.
+        Tworzy zakładkę galerii z wbudowanym panelem filtrów.
 
         Returns:
             Widget zakładki galerii
@@ -54,6 +56,9 @@ class GalleryTab:
         self.gallery_tab = QWidget()
         self.gallery_tab_layout = QVBoxLayout(self.gallery_tab)
         self.gallery_tab_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Panel filtrów na górze zakładki
+        self._create_filter_panel()
 
         # Splitter dla drzewa i kafelków
         self.splitter = QSplitter()
@@ -73,6 +78,19 @@ class GalleryTab:
 
         self.gallery_tab_layout.addWidget(self.splitter)
         return self.gallery_tab
+
+    def _create_filter_panel(self):
+        """
+        Tworzy panel filtrów wewnątrz zakładki galerii.
+        """
+        self.filter_panel = FilterPanel()
+        self.filter_panel.setVisible(True)  # Zawsze widoczny
+        self.filter_panel.setEnabled(False)  # Ale zablokowany na start
+        self.filter_panel.connect_signals(self.apply_filters_and_update_view)
+        self.gallery_tab_layout.addWidget(self.filter_panel)
+
+        # Przypisz referencję do main_window dla kompatybilności
+        self.main_window.filter_panel = self.filter_panel
 
     def _create_folder_tree(self):
         """
@@ -161,10 +179,8 @@ class GalleryTab:
             self.update_gallery_view()
             if hasattr(self.main_window, "size_control_panel"):
                 self.main_window.size_control_panel.setVisible(False)
-            if hasattr(self.main_window, "filter_panel"):
-                self.main_window.filter_panel.setEnabled(
-                    False
-                )  # Zablokuj zamiast ukryć
+            if hasattr(self, "filter_panel"):
+                self.filter_panel.setEnabled(False)  # Zablokuj zamiast ukryć
             return
 
         if not self.main_window.controller.current_file_pairs:
@@ -175,10 +191,10 @@ class GalleryTab:
                 self.main_window.size_control_panel.setVisible(False)
             return
 
-        # Pobierz kryteria filtrowania z panelu (może być puste)
+        # Pobierz kryteria filtrowania z lokalnego panelu
         filter_criteria = {}
-        if hasattr(self.main_window, "filter_panel"):
-            filter_criteria = self.main_window.filter_panel.get_filter_criteria()
+        if hasattr(self, "filter_panel"):
+            filter_criteria = self.filter_panel.get_filter_criteria()
 
         # ZAWSZE zastosuj filtry z aktualną listą par plików z kontrolera
         if hasattr(self.main_window, "gallery_manager"):
@@ -192,6 +208,10 @@ class GalleryTab:
         )
         if hasattr(self.main_window, "size_control_panel"):
             self.main_window.size_control_panel.setVisible(is_gallery_populated)
+
+        # Włącz panel filtrów gdy są dane do filtrowania
+        if hasattr(self, "filter_panel"):
+            self.filter_panel.setEnabled(is_gallery_populated)
 
     def update_thumbnail_size(self):
         """
