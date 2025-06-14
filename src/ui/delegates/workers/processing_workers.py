@@ -329,18 +329,25 @@ class DataProcessingWorker(QObject):
         self.progress.emit(percent, message)
 
     def emit_progress_batched(self, current: int, total: int, message: str):
-        """NAPRAWKA PROGRESS BAR: Emituje postęp z throttling dla wydajności przy dużej liczbie kafelków."""
+        """NAPRAWKA PROGRESS BAR: Emituje postęp z inteligentnym throttling dla wydajności."""
         # Oblicz realny procent postępu
         percent = int((current / max(total, 1)) * 100)
         
-        # NAPRAWKA WYDAJNOŚCI: Throttling progress bara - emituj tylko co 1% lub co 10 kafelków
-        # Dla 1487 kafelków to oznacza ~15 aktualizacji zamiast 1487!
-        should_emit = (
-            current == 1 or  # Pierwszy kafelk
-            current == total or  # Ostatni kafelk
-            current % max(1, total // 100) == 0 or  # Co 1% postępu
-            current % 10 == 0  # Co 10 kafelków
-        )
+        # NAPRAWKA PROGRESS BAR: Inteligentny throttling w zależności od rozmiaru folderu
+        if total <= 100:
+            # Małe foldery: emituj co 5 kafelków dla płynnego progress bara
+            should_emit = (current == 1 or current == total or current % 5 == 0)
+        elif total <= 500:
+            # Średnie foldery: emituj co 10 kafelków
+            should_emit = (current == 1 or current == total or current % 10 == 0)
+        else:
+            # Duże foldery: emituj co 25 kafelków ale minimum co 2% postępu
+            progress_step = max(25, total // 50)  # Minimum 25, maksimum co 2%
+            should_emit = (
+                current == 1 or 
+                current == total or 
+                current % progress_step == 0
+            )
         
         if should_emit:
             self.emit_progress(percent, message)
@@ -427,7 +434,9 @@ class DataProcessingWorker(QObject):
             if current_batch:
                 self.tiles_batch_ready.emit(current_batch)
 
-            self.emit_progress(100, f"✅ Załadowano {len(processed_pairs)} kafelków! Metadane ładują się w tle...")
+            # NAPRAWKA PROGRESS BAR: NIE ustawiaj na 100% tutaj! 
+            # Kafelki są tworzone dopiero w _create_tile_widgets_batch
+            self.emit_progress(90, f"Przygotowano {len(processed_pairs)} par plików. Tworzenie kafelków...")
             self.emit_finished(processed_pairs)
             
             # NAPRAWKA PERFORMANCE: Załaduj metadane asynchronicznie w tle po załadowaniu galerii

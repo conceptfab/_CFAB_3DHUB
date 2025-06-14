@@ -776,17 +776,30 @@ class MainWindow(QMainWindow):
                     # NAPRAWKA WYDAJNOŚCI: Aktualizuj licznik tylko gdy potrzeba
                     current_loaded = self.progress_manager.get_thumbnails_loaded() + created_count
                     
-                    # NAPRAWKA WYDAJNOŚCI: Throttling progress bara - aktualizuj rzadziej dla dużych folderów
+                    # NAPRAWKA PROGRESS BAR: Inteligentny throttling dla płynnego progress bara
                     total_thumbnails = self.progress_manager.get_total_thumbnails()
-                    should_update_progress = (
-                        current_loaded == 1 or  # Pierwszy kafelek
-                        current_loaded >= total_thumbnails or  # Ostatni kafelek
-                        current_loaded % max(1, total_thumbnails // 50) == 0 or  # Co 2% postępu
-                        current_loaded % 25 == 0  # Co 25 kafelków (zamiast co 5)
-                    )
+                    
+                    if total_thumbnails <= 100:
+                        # Małe foldery: aktualizuj co 2 kafelki dla płynnego progress bara
+                        should_update_progress = (current_loaded % 2 == 0 or current_loaded >= total_thumbnails)
+                    elif total_thumbnails <= 500:
+                        # Średnie foldery: aktualizuj co 5 kafelków
+                        should_update_progress = (current_loaded % 5 == 0 or current_loaded >= total_thumbnails)
+                    else:
+                        # Duże foldery: aktualizuj co 10 kafelków
+                        should_update_progress = (current_loaded % 10 == 0 or current_loaded >= total_thumbnails)
                     
                     if should_update_progress:
-                        self.progress_manager.update_batch_progress(current_loaded)
+                        # NAPRAWKA PROGRESS BAR: Użyj RZECZYWISTEGO licznika kafelków z galerii!
+                        actual_tiles_count = len(self.gallery_manager.file_pairs_list)
+                        total_thumbnails = self.progress_manager.get_total_thumbnails()
+                        
+                        # Progress bar: 0-90% tworzenie kafelków, 90-100% finalizacja
+                        percent = int((actual_tiles_count / max(total_thumbnails, 1)) * 90)
+                        self.progress_manager.show_progress(
+                            percent,
+                            f"Tworzenie kafelków: {actual_tiles_count}/{total_thumbnails}..."
+                        )
 
         finally:
             # NAPRAWKA WYDAJNOŚCI: Przywróć widoczność i aktualizacje UI
@@ -800,8 +813,13 @@ class MainWindow(QMainWindow):
         """
         logging.info("Zakończono tworzenie wszystkich kafelków.")
 
-        # NAPRAWKA PROGRESS BAR: Ukryj progress bar po zakończeniu ładowania
-        self.progress_manager.hide_progress()
+        # NAPRAWKA PROGRESS BAR: TERAZ dopiero ustaw na 100% po stworzeniu wszystkich kafelków!
+        # Użyj RZECZYWISTEGO licznika kafelków z galerii (zsynchronizowanego z status barem)
+        actual_tiles_count = len(self.gallery_manager.file_pairs_list)
+        self.progress_manager.show_progress(100, f"✅ Załadowano {actual_tiles_count} kafelków!")
+        
+        # Krótkie opóźnienie żeby użytkownik zobaczył 100% przed ukryciem
+        QTimer.singleShot(500, self.progress_manager.hide_progress)
 
         # Zastosuj filtry i odśwież widok
         self._apply_filters_and_update_view()
@@ -1705,9 +1723,16 @@ class MainWindow(QMainWindow):
                 1000, self.directory_tree_manager.start_background_stats_calculation
             )
 
+        # NAPRAWKA PROGRESS BAR: Ustaw na 100% po zakończeniu bez resetowania drzewa
+        actual_tiles_count = len(self.gallery_manager.file_pairs_list)
+        self.progress_manager.show_progress(100, f"✅ Załadowano {actual_tiles_count} kafelków!")
+        
+        # Krótkie opóźnienie żeby użytkownik zobaczył 100% przed ukryciem
+        QTimer.singleShot(500, self.progress_manager.hide_progress)
+        
         logging.info(
             f"Widok zaktualizowany bez resetowania drzewa. Wyświetlono po filtracji: "
-            f"{len(self.gallery_manager.file_pairs_list)}."
+            f"{actual_tiles_count}."
         )
 
     # 🚨 ETAP 2 - POPRAWKA 5: Obsługa eksploratora plików
