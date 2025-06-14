@@ -92,7 +92,13 @@ class FileOperationsUI:
         )
 
         # Wyświetlenie menu w odpowiedniej pozycji
-        menu.exec(widget.mapToGlobal(position))
+        # Sprawdź czy position to QContextMenuEvent czy QPoint
+        if hasattr(position, "pos"):
+            # position to QContextMenuEvent
+            menu.exec(widget.mapToGlobal(position.pos()))
+        else:
+            # position to QPoint
+            menu.exec(widget.mapToGlobal(position))
 
     def rename_file_pair(
         self, file_pair: FilePair, widget: QWidget
@@ -363,35 +369,47 @@ class FileOperationsUI:
 
         try:
             # NAPRAWKA CRASH: Thread-safe aktualizacja kontrolera
-            if hasattr(self.parent_window, 'controller') and self.parent_window.controller:
+            if (
+                hasattr(self.parent_window, "controller")
+                and self.parent_window.controller
+            ):
                 # Dodaj nową parę do listy sparowanych w thread-safe sposób
                 self.parent_window.controller.current_file_pairs.append(new_file_pair)
-                
+
                 # Usuń pliki z list niesparowanych w thread-safe sposób
                 archive_path = new_file_pair.archive_path
                 preview_path = new_file_pair.preview_path
-                
+
                 try:
                     if archive_path in self.parent_window.controller.unpaired_archives:
-                        self.parent_window.controller.unpaired_archives.remove(archive_path)
+                        self.parent_window.controller.unpaired_archives.remove(
+                            archive_path
+                        )
                 except ValueError:
                     logger.debug(f"Archive już usunięte z unpaired: {archive_path}")
-                    
+
                 try:
                     if preview_path in self.parent_window.controller.unpaired_previews:
-                        self.parent_window.controller.unpaired_previews.remove(preview_path)
+                        self.parent_window.controller.unpaired_previews.remove(
+                            preview_path
+                        )
                 except ValueError:
                     logger.debug(f"Preview już usunięte z unpaired: {preview_path}")
 
             # NAPRAWKA CRASH: Użyj QTimer.singleShot dla thread-safe UI update
             # Opóźnij odświeżenie UI aby uniknąć crash podczas worker callback
             from PyQt6.QtCore import QTimer
-            QTimer.singleShot(100, lambda: self._delayed_refresh_after_pairing(new_file_pair))
-            
+
+            QTimer.singleShot(
+                100, lambda: self._delayed_refresh_after_pairing(new_file_pair)
+            )
+
         except Exception as e:
             logger.error(f"KRYTYCZNY BŁĄD podczas finalizacji parowania: {e}")
             # Nie wywołuj refresh_all_views w przypadku błędu - może crashować
-            logger.warning("Pomijam refresh_all_views z powodu błędu - aplikacja powinna zostać stabilna")
+            logger.warning(
+                "Pomijam refresh_all_views z powodu błędu - aplikacja powinna zostać stabilna"
+            )
 
     def _delayed_refresh_after_pairing(self, new_file_pair: FilePair):
         """
@@ -400,28 +418,32 @@ class FileOperationsUI:
         """
         try:
             logger.debug("Rozpoczynam opóźnione odświeżenie po parowaniu")
-            
+
             # Sprawdź czy aplikacja nadal działa
             if not hasattr(self.parent_window, "refresh_all_views"):
-                logger.warning("Parent window nie ma refresh_all_views - pomijam odświeżenie")
+                logger.warning(
+                    "Parent window nie ma refresh_all_views - pomijam odświeżenie"
+                )
                 return
-                
+
             if not callable(self.parent_window.refresh_all_views):
-                logger.warning("refresh_all_views nie jest wywoływalne - pomijam odświeżenie")
+                logger.warning(
+                    "refresh_all_views nie jest wywoływalne - pomijam odświeżenie"
+                )
                 return
-            
+
             # NAPRAWKA: Nie przekazuj new_file_pair do refresh_all_views - może powodować crash
             # Zamiast tego użyj prostego odświeżenia bez selekcji
             self.parent_window.refresh_all_views()
             logger.debug("Odświeżenie po parowaniu zakończone pomyślnie")
-            
+
         except Exception as e:
             logger.error(f"BŁĄD podczas opóźnionego odświeżenia: {e}")
             # Ostatnia deska ratunku - podstawowe odświeżenie
             try:
-                if hasattr(self.parent_window, '_update_gallery_view'):
+                if hasattr(self.parent_window, "_update_gallery_view"):
                     self.parent_window._update_gallery_view()
-                if hasattr(self.parent_window, '_update_unpaired_files_direct'):
+                if hasattr(self.parent_window, "_update_unpaired_files_direct"):
                     self.parent_window._update_unpaired_files_direct()
                 logger.debug("Użyto fallback odświeżenia")
             except Exception as fallback_error:
@@ -436,9 +458,7 @@ class FileOperationsUI:
             target_folder_path: Ścieżka do folderu docelowego
         """
         file_paths = [url.toLocalFile() for url in urls]
-        logging.info(
-            f"Dropped {len(file_paths)} files on folder {target_folder_path}"
-        )
+        logging.info(f"Dropped {len(file_paths)} files on folder {target_folder_path}")
         logging.debug(f"Files: {file_paths}")
 
         # Bezpośrednio rozpocznij przenoszenie bez pytania
@@ -457,33 +477,23 @@ class FileOperationsUI:
                     all_files.append(file_path)
                     logging.debug(f"Added file: {file_path}")
                 elif os.path.isdir(file_path):
-                    logging.debug(
-                        f"Found folder, scanning contents: {file_path}"
-                    )
+                    logging.debug(f"Found folder, scanning contents: {file_path}")
                     # Jeśli to folder, zbierz pliki z niego
                     dir_file_map = collect_files(file_path, max_depth=1)
                     for files_list in dir_file_map.values():
                         all_files.extend(files_list)
-                        logging.debug(
-                            f"Added files from folder: {files_list}"
-                        )
+                        logging.debug(f"Added files from folder: {files_list}")
                 else:
-                    logging.warning(
-                        f"Skipped non-existent item: {file_path}"
-                    )
+                    logging.warning(f"Skipped non-existent item: {file_path}")
 
-            logging.info(
-                f"Found total {len(all_files)} files to move"
-            )
+            logging.info(f"Found total {len(all_files)} files to move")
 
             if not all_files:
                 if hasattr(self.parent_window, "_show_progress"):
                     self.parent_window._show_progress(
                         100, "Nie znaleziono plików do przeniesienia"
                     )
-                logging.warning(
-                    "ERROR - No files found to move"
-                )
+                logging.warning("ERROR - No files found to move")
                 return False
 
             # Utwórz tymczasowy file_map dla algorytmu create_file_pairs
@@ -494,9 +504,7 @@ class FileOperationsUI:
                     temp_file_map[dir_path] = []
                 temp_file_map[dir_path].append(file_path)
 
-            logging.debug(
-                f"Created file_map for {len(temp_file_map)} directories"
-            )
+            logging.debug(f"Created file_map for {len(temp_file_map)} directories")
 
             # Utwórz pary plików używając strategii "best_match"
             file_pairs, _ = create_file_pairs(
@@ -510,25 +518,19 @@ class FileOperationsUI:
             if not file_pairs:
                 # Jeśli nie udało się utworzyć par, spróbuj przenieść pliki indywidualnie
                 # (to może się zdarzyć dla pojedynczych plików bez pary)
-                logging.warning(
-                    "Failed to create file pairs. Moving individual files."
-                )
+                logging.warning("Failed to create file pairs. Moving individual files.")
                 self._move_individual_files(all_files, target_folder_path)
                 logging.info("SUCCESS - Moved files individually")
                 return True
 
             # Użyj BulkMoveWorker do przeniesienia par plików
-            logging.info(
-                f"Starting BulkMoveWorker for {len(file_pairs)} pairs"
-            )
+            logging.info(f"Starting BulkMoveWorker for {len(file_pairs)} pairs")
             self._move_file_pairs_bulk(file_pairs, target_folder_path)
             logging.info("SUCCESS - Started file pairs move operation")
             return True
 
         except Exception as e:
-            logging.error(
-                f"ERROR during file move operation: {e}", exc_info=True
-            )
+            logging.error(f"ERROR during file move operation: {e}", exc_info=True)
             if hasattr(self.parent_window, "_show_progress"):
                 self.parent_window._show_progress(100, f"Błąd przenoszenia: {str(e)}")
             return False
@@ -687,9 +689,7 @@ class FileOperationsUI:
         """
         import shutil
 
-        logging.info(
-            f"Moving {len(files)} individual files"
-        )
+        logging.info(f"Moving {len(files)} individual files")
         logging.debug(f"Target folder: {target_folder_path}")
 
         try:
@@ -710,9 +710,7 @@ class FileOperationsUI:
 
                 try:
                     shutil.move(file_path, destination_path)
-                    logging.debug(
-                        f"Moved: {file_path} -> {destination_path}"
-                    )
+                    logging.debug(f"Moved: {file_path} -> {destination_path}")
                 except Exception as e:
                     logging.error(f"Error moving {file_path}: {e}")
                     # Usunięto QMessageBox.warning - błędy tylko w logach            # Zakończenie operacji
@@ -721,9 +719,7 @@ class FileOperationsUI:
                     100, f"Przeniesiono {len(files)} plików"
                 )
 
-            logging.info(
-                f"Individual files move completed - moved {len(files)} files"
-            )
+            logging.info(f"Individual files move completed - moved {len(files)} files")
 
         except Exception as e:
             logging.error(f"Error during individual files move: {e}")
@@ -748,14 +744,10 @@ class FileOperationsUI:
             target_folder_path: Ścieżka do folderu docelowego
         """
         if not file_pairs:
-            logging.warning(
-                "move_file_pairs_bulk called with empty file list"
-            )
+            logging.warning("move_file_pairs_bulk called with empty file list")
             return
 
-        logging.info(
-            f"Starting bulk move for {len(file_pairs)} file pairs"
-        )
+        logging.info(f"Starting bulk move for {len(file_pairs)} file pairs")
         logging.debug(f"Target folder: {target_folder_path}")
 
         # Utwórz workera do masowego przenoszenia
@@ -830,9 +822,7 @@ class FileOperationsUI:
                 if hasattr(self.parent_window, "controller"):
                     self.parent_window.controller.selected_tiles.discard(file_pair)
 
-            logging.debug(
-                f"Removed {len(moved_pairs)} pairs from current_file_pairs"
-            )
+            logging.debug(f"Removed {len(moved_pairs)} pairs from current_file_pairs")
 
             # Odśwież folder źródłowy używając tego samego mechanizmu co w głównym oknie
             if hasattr(self.parent_window, "_refresh_source_folder_after_move"):

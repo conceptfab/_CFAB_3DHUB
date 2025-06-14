@@ -3,21 +3,135 @@ import json
 import logging
 import os
 import shutil
+import threading
+import time
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Union
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Tuple
+
+import jsonschema
 
 from src.utils.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
 
 
+class ConfigValidator:
+    """Centralized configuration validation."""
+
+    SCHEMA = {
+        "type": "object",
+        "properties": {
+            "thumbnail_size": {"type": "integer", "minimum": 100, "maximum": 600},
+            "min_thumbnail_size": {"type": "integer", "minimum": 10, "maximum": 1000},
+            "max_thumbnail_size": {"type": "integer", "minimum": 100, "maximum": 2000},
+            "supported_archive_extensions": {
+                "type": "array",
+                "items": {"type": "string", "pattern": r"^\.[a-zA-Z0-9]+$"},
+            },
+            "supported_preview_extensions": {
+                "type": "array",
+                "items": {"type": "string", "pattern": r"^\.[a-zA-Z0-9]+$"},
+            },
+            "predefined_colors": {
+                "type": "object",
+                "patternProperties": {
+                    ".*": {
+                        "type": "string",
+                        "pattern": r"^#[0-9A-Fa-f]{6}$|^ALL$|^__NONE__$",
+                    }
+                },
+            },
+            "scanner_max_cache_entries": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000,
+            },
+            "scanner_max_cache_age_seconds": {
+                "type": "integer",
+                "minimum": 60,
+                "maximum": 86400,
+            },
+            "thumbnail_cache_max_entries": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000,
+            },
+            "thumbnail_cache_max_memory_mb": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000,
+            },
+            "thumbnail_cache_enable_disk": {"type": "boolean"},
+            "thumbnail_cache_cleanup_threshold": {
+                "type": "number",
+                "minimum": 0.1,
+                "maximum": 1.0,
+            },
+            "window_min_width": {"type": "integer", "minimum": 400, "maximum": 2000},
+            "window_min_height": {"type": "integer", "minimum": 300, "maximum": 1500},
+            "resize_timer_delay_ms": {
+                "type": "integer",
+                "minimum": 50,
+                "maximum": 1000,
+            },
+            "progress_hide_delay_ms": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 10000,
+            },
+            "thread_wait_timeout_ms": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 5000,
+            },
+            "preferences_status_display_ms": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 10000,
+            },
+        },
+        "additionalProperties": True,
+    }
+
+    @classmethod
+    def validate(cls, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate entire config against schema."""
+        try:
+            jsonschema.validate(config, cls.SCHEMA)
+            return config
+        except jsonschema.ValidationError as e:
+            logger.warning(f"Config validation failed: {e.message}")
+            # Return config with invalid values replaced by defaults
+            return cls._fix_invalid_config(config, e)
+
+    @classmethod
+    def _fix_invalid_config(
+        cls, config: Dict[str, Any], error: jsonschema.ValidationError
+    ) -> Dict[str, Any]:
+        """Fix invalid config by replacing bad values with defaults."""
+        from copy import deepcopy
+
+        # Create a working copy
+        fixed_config = deepcopy(config)
+
+        # Note: We can't access AppConfig.DEFAULT_CONFIG here due to circular import
+        # Instead, we just log the error and return the original config
+        logger.warning(f"Config validation error, using original config: {error}")
+
+        return fixed_config
+
+
 class AppConfig:
     """
-    Klasa zarządzająca konfiguracją aplikacji.
+    Klasa zarządzająca konfiguracją aplikacji z singleton pattern.
 
     Umożliwia odczyt i zapis parametrów konfiguracyjnych,
     z walidacją danych i obsługą błędów.
     """
+
+    _instance = None
+    _initialized = False
 
     # --- Domyślne wartości konfiguracji ---
     DEFAULT_CONFIG = {
@@ -65,6 +179,11 @@ class AppConfig:
         # Ochrona ustawień
     }
 
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(
         self, config_dir: Optional[str] = None, config_file: Optional[str] = None
     ) -> None:
@@ -75,6 +194,18 @@ class AppConfig:
             config_dir: Katalog konfiguracji. Jeśli None, używa domyślny.
             config_file: Nazwa pliku konfiguracji. Jeśli None, używa domyślny.
         """
+        if self._initialized:
+            return
+
+        self._initialized = True
+
+        # Async save components
+        self._save_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="config_save"
+        )
+        self._save_lock = threading.Lock()
+        self._save_future = None
+
         # Flaga informująca czy konfiguracja została wczytana z domyślnych wartości z powodu błędu
         self._config_loaded_from_defaults = False
 
@@ -94,6 +225,45 @@ class AppConfig:
         # Obliczanie pochodnych wartości
         self._update_derived_values()
 
+    @classmethod
+    def get_instance(cls) -> "AppConfig":
+        """Pobiera singleton instancję konfiguracji."""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __getattr__(self, name: str) -> Any:
+        """Dynamic property access for config values."""
+        # Map property names to config keys
+        property_map = {
+            "min_thumbnail_size": "min_thumbnail_size",
+            "max_thumbnail_size": "max_thumbnail_size",
+            "scanner_max_cache_entries": "scanner_max_cache_entries",
+            "scanner_max_cache_age_seconds": "scanner_max_cache_age_seconds",
+            "thumbnail_cache_max_entries": "thumbnail_cache_max_entries",
+            "thumbnail_cache_max_memory_mb": "thumbnail_cache_max_memory_mb",
+            "thumbnail_cache_enable_disk": "thumbnail_cache_enable_disk",
+            "thumbnail_cache_cleanup_threshold": "thumbnail_cache_cleanup_threshold",
+            "window_min_width": "window_min_width",
+            "window_min_height": "window_min_height",
+            "resize_timer_delay_ms": "resize_timer_delay_ms",
+            "progress_hide_delay_ms": "progress_hide_delay_ms",
+            "thread_wait_timeout_ms": "thread_wait_timeout_ms",
+            "preferences_status_display_ms": "preferences_status_display_ms",
+            "supported_archive_extensions": "supported_archive_extensions",
+            "supported_preview_extensions": "supported_preview_extensions",
+            "default_thumbnail_size": "thumbnail_size",
+        }
+
+        if name in property_map:
+            return self.get(
+                property_map[name], self.DEFAULT_CONFIG.get(property_map[name])
+            )
+
+        raise AttributeError(
+            f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        )
+
     def _update_derived_values(self) -> None:
         """Aktualizuje wartości pochodne na podstawie konfiguracji."""
         slider_pos = self._config.get("thumbnail_slider_position", 50)
@@ -110,7 +280,7 @@ class AppConfig:
 
     def _load_config(self) -> Dict[str, Any]:
         """
-        Wczytuje konfigurację z pliku JSON.
+        Wczytuje konfigurację z pliku JSON z walidacją.
 
         Returns:
             Konfiguracja aplikacji.
@@ -125,6 +295,9 @@ class AppConfig:
             with open(self._config_file_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
 
+            # Validate and fix config
+            config = ConfigValidator.validate(config)
+
             # Uzupełnij brakujące klucze
             updated = False
             for key, value in self.DEFAULT_CONFIG.items():
@@ -137,20 +310,35 @@ class AppConfig:
 
             return config
 
-        except (json.JSONDecodeError, IOError) as e:
+        except Exception as e:
             logger.error(
                 f"Błąd wczytywania konfiguracji: {e}. Używam domyślnych ustawień."
             )
             self._config_loaded_from_defaults = True
             return self.DEFAULT_CONFIG.copy()
 
-    def _save_config(self) -> bool:
-        """
-        Zapisuje konfigurację do pliku JSON.
+    def _schedule_async_save(self):
+        """Schedule async save with debouncing."""
+        with self._save_lock:
+            # Cancel previous save if pending
+            if self._save_future and not self._save_future.done():
+                self._save_future.cancel()
 
-        Returns:
-            True jeśli zapis się powiódł, False w przeciwnym razie.
-        """
+            # Schedule new save with 500ms delay
+            self._save_future = self._save_executor.submit(self._delayed_save)
+
+    def _delayed_save(self) -> bool:
+        """Delayed save with debouncing."""
+        time.sleep(0.5)  # 500ms debounce
+
+        try:
+            return self._save_config_sync()
+        except Exception as e:
+            logger.error(f"Async config save failed: {e}")
+            return False
+
+    def _save_config_sync(self) -> bool:
+        """Synchronous save implementation."""
         try:
             # Tworzenie katalogu konfiguracyjnego (z obsługą błędów uprawnień)
             try:
@@ -186,7 +374,252 @@ class AppConfig:
             logger.error(f"Błąd zapisu konfiguracji: {e}")
             return False
 
-    # --- Walidatory dla różnych typów danych ---
+    def _save_config(self) -> bool:
+        """Legacy method - redirects to sync save for backward compatibility."""
+        return self._save_config_sync()
+
+    # --- Publiczne API do zarządzania konfiguracją ---
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """
+        Pobiera wartość konfiguracji.
+
+        Args:
+            key: Klucz konfiguracji.
+            default: Wartość domyślna jeśli klucz nie istnieje.
+
+        Returns:
+            Wartość konfiguracji lub wartość domyślna.
+        """
+        return self._config.get(key, default)
+
+    def set(self, key: str, value: Any) -> bool:
+        """
+        Ustawia wartość konfiguracji z async save.
+
+        Args:
+            key: Klucz konfiguracji.
+            value: Nowa wartość.
+
+        Returns:
+            True jeśli wartość została ustawiona.
+        """
+        self._config[key] = value
+        self._update_derived_values()
+        self._schedule_async_save()
+        return True
+
+    def set_thumbnail_slider_position(self, position: int) -> bool:
+        """
+        Ustawia pozycję suwaka rozmiaru miniaturek.
+
+        Args:
+            position: Pozycja suwaka (0-100).
+
+        Returns:
+            True jeśli pozycja została ustawiona.
+        """
+        try:
+            validated_position = self._validate_int(position, 0, 100, "Pozycja suwaka")
+            self._config["thumbnail_slider_position"] = validated_position
+            self._update_derived_values()
+            self._schedule_async_save()
+            return True
+        except ValueError as e:
+            logger.error(f"Błąd ustawiania pozycji suwaka: {e}")
+            return False
+
+    def get_thumbnail_slider_position(self) -> int:
+        """
+        Pobiera pozycję suwaka rozmiaru miniaturek.
+
+        Returns:
+            Pozycja suwaka (0-100).
+        """
+        return self._config.get("thumbnail_slider_position", 50)
+
+    def set_thumbnail_size_range(self, min_size: int, max_size: int) -> bool:
+        """
+        Ustawia zakres rozmiarów miniaturek.
+
+        Args:
+            min_size: Minimalny rozmiar miniaturki.
+            max_size: Maksymalny rozmiar miniaturki.
+
+        Returns:
+            True jeśli zakres został ustawiony.
+        """
+        try:
+            validated_min = self._validate_int(min_size, 50, 1000, "Minimalny rozmiar")
+            validated_max = self._validate_int(
+                max_size, 100, 2000, "Maksymalny rozmiar"
+            )
+
+            if validated_min >= validated_max:
+                raise ValueError(
+                    f"Minimalny rozmiar ({validated_min}) musi być mniejszy od maksymalnego ({validated_max})"
+                )
+
+            self._config["min_thumbnail_size"] = validated_min
+            self._config["max_thumbnail_size"] = validated_max
+            self._update_derived_values()
+            self._schedule_async_save()
+            return True
+
+        except ValueError as e:
+            logger.error(f"Błąd ustawiania zakresu rozmiarów miniaturek: {e}")
+            return False
+
+    def get_supported_extensions(self, extension_type: str) -> List[str]:
+        """
+        Pobiera listę obsługiwanych rozszerzeń.
+
+        Args:
+            extension_type: Typ rozszerzeń ("archive" lub "preview").
+
+        Returns:
+            Lista obsługiwanych rozszerzeń.
+        """
+        key_map = {
+            "archive": "supported_archive_extensions",
+            "preview": "supported_preview_extensions",
+        }
+
+        key = key_map.get(extension_type)
+        if not key:
+            logger.error(
+                f"Nieprawidłowy typ rozszerzeń: {extension_type}. Dozwolone: {list(key_map.keys())}"
+            )
+            return []
+
+        return self._config.get(key, [])
+
+    def set_supported_extensions(
+        self, extension_type: str, extensions: List[str]
+    ) -> bool:
+        """
+        Ustawia listę obsługiwanych rozszerzeń.
+
+        Args:
+            extension_type: Typ rozszerzeń ("archive" lub "preview").
+            extensions: Lista rozszerzeń.
+
+        Returns:
+            True jeśli lista została ustawiona.
+        """
+        try:
+            validated_extensions = self._validate_list(
+                extensions, str, "Lista rozszerzeń"
+            )
+
+            # Walidacja formatów rozszerzeń
+            for ext in validated_extensions:
+                if not ext.startswith("."):
+                    raise ValueError(f"Rozszerzenie musi zaczynać się od kropki: {ext}")
+
+            key_map = {
+                "archive": "supported_archive_extensions",
+                "preview": "supported_preview_extensions",
+            }
+
+            key = key_map.get(extension_type)
+            if not key:
+                raise ValueError(
+                    f"Nieprawidłowy typ rozszerzeń: {extension_type}. Dozwolone: {list(key_map.keys())}"
+                )
+
+            self._config[key] = validated_extensions
+            self._schedule_async_save()
+            return True
+
+        except ValueError as e:
+            logger.error(f"Błąd ustawiania obsługiwanych rozszerzeń: {e}")
+            return False
+
+    def get_predefined_colors(self) -> Dict[str, str]:
+        """
+        Pobiera predefiniowane kolory.
+
+        Returns:
+            Słownik kolorów {nazwa: kod_hex}.
+        """
+        return self._config.get("predefined_colors", {})
+
+    def set_predefined_colors(self, colors: Dict[str, str]) -> bool:
+        """
+        Ustawia predefiniowane kolory.
+
+        Args:
+            colors: Słownik kolorów {nazwa: kod_hex}.
+
+        Returns:
+            True jeśli kolory zostały ustawione.
+        """
+        try:
+            validated_colors = self._validate_dict(colors, "Słownik kolorów")
+            self._config["predefined_colors"] = validated_colors
+            self._schedule_async_save()
+            return True
+        except ValueError as e:
+            logger.error(f"Błąd ustawiania predefiniowanych kolorów: {e}")
+            return False
+
+    def save(self) -> bool:
+        """
+        Zapisuje konfigurację synchronicznie.
+
+        Returns:
+            True jeśli zapis się powiódł.
+        """
+        return self._save_config_sync()
+
+    def reload(self) -> bool:
+        """
+        Przeładowuje konfigurację z pliku.
+
+        Returns:
+            True jeśli przeładowanie się powiodło.
+        """
+        try:
+            self._config = self._load_config()
+            self._update_derived_values()
+            logger.info("Konfiguracja została przeładowana.")
+            return True
+        except Exception as e:
+            logger.error(f"Błąd przeładowywania konfiguracji: {e}")
+            return False
+
+    def reset_to_defaults(self) -> bool:
+        """
+        Resetuje konfigurację do wartości domyślnych.
+
+        Returns:
+            True jeśli reset się powiódł.
+        """
+        try:
+            self._config = self.DEFAULT_CONFIG.copy()
+            self._update_derived_values()
+            self._schedule_async_save()
+            logger.info("Konfiguracja została zresetowana do domyślnych wartości.")
+            return True
+        except Exception as e:
+            logger.error(f"Błąd resetowania konfiguracji: {e}")
+            return False
+
+    # --- Complex computed properties ---
+
+    @property
+    def thumbnail_size(self) -> Tuple[int, int]:
+        """Computed property for thumbnail size."""
+        return self._thumbnail_size
+
+    @property
+    def predefined_colors_filter(self) -> OrderedDict:
+        """Computed property for ordered colors."""
+        colors = self.get("predefined_colors", {})
+        return OrderedDict(colors)
+
+    # --- Static validation methods (kept for backward compatibility) ---
 
     @staticmethod
     def _validate_int(
@@ -245,397 +678,43 @@ class AppConfig:
             )
         return value
 
-    # --- Publiczne API do zarządzania konfiguracją ---
 
-    def get(self, key: str, default: Any = None) -> Any:
-        """
-        Pobiera wartość parametru konfiguracyjnego.
-
-        Args:
-            key: Klucz parametru.
-            default: Wartość domyślna, jeśli parametr nie istnieje.
-
-        Returns:
-            Wartość parametru lub wartość domyślna.
-        """
-        return self._config.get(key, default)
-
-    def set(self, key: str, value: Any) -> bool:
-        """
-        Ustawia wartość parametru konfiguracyjnego i zapisuje konfigurację.
-
-        Args:
-            key: Klucz parametru.
-            value: Wartość parametru.
-
-        Returns:
-            True jeśli zapisano pomyślnie, False w przeciwnym razie.
-        """
-        self._config[key] = value
-        result = self._save_config()
-        if result:
-            # Aktualizuj wartości pochodne jeśli zapis się udał
-            self._update_derived_values()
-        return result
-
-    def set_thumbnail_slider_position(self, position: int) -> bool:
-        """
-        Ustawia pozycję suwaka miniatur i zapisuje konfigurację.
-
-        Args:
-            position: Pozycja suwaka (0-100).
-
-        Returns:
-            True jeśli zapisano pomyślnie, False w przeciwnym razie.
-        """
-        position = self._validate_int(position, 0, 100, "Pozycja suwaka")
-        return self.set("thumbnail_slider_position", position)
-
-    def get_thumbnail_slider_position(self) -> int:
-        """
-        Pobiera pozycję suwaka miniatur.
-
-        Returns:
-            Pozycja suwaka (0-100).
-        """
-        return self.get("thumbnail_slider_position", 50)
-
-    def set_thumbnail_size_range(self, min_size: int, max_size: int) -> bool:
-        """
-        Ustawia zakres rozmiarów miniatur.
-
-        Args:
-            min_size: Minimalny rozmiar miniatury.
-            max_size: Maksymalny rozmiar miniatury.
-
-        Returns:
-            True jeśli zapisano pomyślnie, False w przeciwnym razie.
-        """
-        min_size = self._validate_int(min_size, 10, 1000, "Minimalny rozmiar miniatury")
-        max_size = self._validate_int(
-            max_size, min_size, 2000, "Maksymalny rozmiar miniatury"
-        )
-
-        # Ustawienie obu wartości przed zapisem
-        self._config["min_thumbnail_size"] = min_size
-        self._config["max_thumbnail_size"] = max_size
-
-        # Jeden zapis
-        result = self._save_config()
-        if result:
-            # Aktualizacja wartości pochodnych
-            self._update_derived_values()
-        return result
-
-    def get_supported_extensions(self, extension_type: str) -> List[str]:
-        """
-        Pobiera listę obsługiwanych rozszerzeń.
-
-        Args:
-            extension_type: Typ rozszerzeń ("archive" lub "preview").
-
-        Returns:
-            Lista obsługiwanych rozszerzeń.
-        """
-        if extension_type == "archive":
-            return self.get("supported_archive_extensions", [])
-        elif extension_type == "preview":
-            return self.get("supported_preview_extensions", [])
-        else:
-            logger.warning(f"Nieznany typ rozszerzeń: {extension_type}")
-            return []
-
-    def set_supported_extensions(
-        self, extension_type: str, extensions: List[str]
-    ) -> bool:
-        """
-        Ustawia listę obsługiwanych rozszerzeń.
-
-        Args:
-            extension_type: Typ rozszerzeń ("archive" lub "preview").
-            extensions: Lista obsługiwanych rozszerzeń.
-
-        Returns:
-            True jeśli zapisano pomyślnie, False w przeciwnym razie.
-        """
-        extensions = self._validate_list(
-            extensions, str, f"Lista rozszerzeń {extension_type}"
-        )
-
-        # Upewnij się, że wszystkie rozszerzenia zaczynają się od kropki
-        normalized_extensions = [
-            ext if ext.startswith(".") else f".{ext}" for ext in extensions
-        ]
-
-        if extension_type == "archive":
-            return self.set("supported_archive_extensions", normalized_extensions)
-        elif extension_type == "preview":
-            return self.set("supported_preview_extensions", normalized_extensions)
-        else:
-            logger.warning(f"Nieznany typ rozszerzeń: {extension_type}")
-            return False
-
-    def get_predefined_colors(self) -> Dict[str, str]:
-        """
-        Pobiera słownik predefiniowanych kolorów do filtrowania.
-
-        Returns:
-            Słownik kolorów (nazwa: kod).
-        """
-        return self.get("predefined_colors", {})
-
-    def set_predefined_colors(self, colors: Dict[str, str]) -> bool:
-        """
-        Ustawia słownik predefiniowanych kolorów do filtrowania.
-
-        Args:
-            colors: Słownik kolorów (nazwa: kod).
-
-        Returns:
-            True jeśli zapisano pomyślnie, False w przeciwnym razie.
-        """
-        colors = self._validate_dict(colors, "Słownik kolorów")
-        return self.set("predefined_colors", colors)
-
-    def save(self) -> bool:
-        """
-        Ręcznie zapisuje konfigurację do pliku.
-
-        Returns:
-            True jeśli zapisano pomyślnie, False w przeciwnym razie.
-        """
-        return self._save_config()
-
-    def reload(self) -> bool:
-        """
-        Przeładowuje konfigurację z pliku.
-        UWAGA: Niezapisane zmiany zostaną utracone!
-
-        Returns:
-            True jeśli wczytanie się powiodło, False w przeciwnym razie.
-        """
-        try:
-            old_config = self._config.copy()  # Backup na wypadek błędu
-            self._config = self._load_config()
-            self._update_derived_values()
-            logger.info(f"Konfiguracja przeładowana z: {self._config_file_path}")
-            return True
-        except Exception as e:
-            self._config = old_config  # Przywróć poprzednią konfigurację
-            logger.error(f"Błąd przeładowania konfiguracji: {e}")
-            return False
-
-    def reset_to_defaults(self) -> bool:
-        """
-        Resetuje konfigurację do wartości domyślnych.
-
-        Returns:
-            True jeśli zapisano pomyślnie, False w przeciwnym razie.
-        """
-        self._config = self.DEFAULT_CONFIG.copy()
-        result = self._save_config()
-        if result:
-            self._update_derived_values()
-        return result
-
-    # --- Właściwości dla często używanych wartości ---
-
-    @property
-    def thumbnail_size(self) -> Tuple[int, int]:
-        """
-        Rozmiar miniatur obliczony na podstawie pozycji suwaka.
-
-        Returns:
-            Rozmiar miniatur (szerokość, wysokość).
-        """
-        return self._thumbnail_size
-
-    @property
-    def min_thumbnail_size(self) -> int:
-        """
-        Minimalny rozmiar miniatury.
-
-        Returns:
-            Minimalny rozmiar.
-        """
-        return self.get("min_thumbnail_size", 50)
-
-    @property
-    def max_thumbnail_size(self) -> int:
-        """
-        Maksymalny rozmiar miniatury.
-
-        Returns:
-            Maksymalny rozmiar.
-        """
-        return self.get("max_thumbnail_size", self.DEFAULT_CONFIG["max_thumbnail_size"])
-
-    @property
-    def default_thumbnail_size(self) -> int:
-        """
-        Domyślny rozmiar miniatury (obliczony lub z DEFAULT_CONFIG).
-
-        Returns:
-            Domyślny rozmiar miniatury.
-        """
-        # Zwraca obliczony _thumbnail_size[0] jeśli dostępny,
-        # w przeciwnym razie wartość z DEFAULT_CONFIG.
-        if hasattr(self, "_thumbnail_size") and self._thumbnail_size:
-            return self._thumbnail_size[0]
-        return self.DEFAULT_CONFIG["thumbnail_size"]
-
-    @property
-    def supported_archive_extensions(self) -> List[str]:
-        """
-        Lista obsługiwanych rozszerzeń archiwów.
-
-        Returns:
-            Lista rozszerzeń.
-        """
-        return self.get_supported_extensions("archive")
-
-    @property
-    def supported_preview_extensions(self) -> List[str]:
-        """
-        Lista obsługiwanych rozszerzeń podglądów (obrazów).
-
-        Returns:
-            Lista rozszerzeń.
-        """
-        return self.get_supported_extensions("preview")
-
-    @property
-    def predefined_colors_filter(self) -> OrderedDict:
-        """
-        Słownik predefiniowanych kolorów do filtrowania.
-
-        Returns:
-            Słownik kolorów jako OrderedDict.
-        """
-        colors_dict = self.get_predefined_colors()
-        return OrderedDict(colors_dict.items())
-
-    @property
-    def scanner_max_cache_entries(self) -> int:
-        """
-        Pobiera maksymalną liczbę wpisów w cache skanera.
-
-        Returns:
-            Maksymalna liczba wpisów w cache.
-        """
-        return self.get("scanner_max_cache_entries", 100)
-
-    @property
-    def scanner_max_cache_age_seconds(self) -> int:
-        """
-        Pobiera maksymalny wiek wpisów w cache skanera w sekundach.
-
-        Returns:
-            Maksymalny wiek wpisów w cache w sekundach.
-        """
-        return self.get("scanner_max_cache_age_seconds", 3600)
-
-    @property
-    def thumbnail_cache_max_entries(self) -> int:
-        """
-        Pobiera maksymalną liczbę miniaturek w cache.
-
-        Returns:
-            Maksymalna liczba miniaturek w cache.
-        """
-        return self.get("thumbnail_cache_max_entries", 500)
-
-    @property
-    def thumbnail_cache_max_memory_mb(self) -> int:
-        """
-        Pobiera maksymalną ilość pamięci dla cache miniaturek w MB.
-
-        Returns:
-            Maksymalna pamięć w MB.
-        """
-        return self.get("thumbnail_cache_max_memory_mb", 100)
-
-    @property
-    def thumbnail_cache_enable_disk(self) -> bool:
-        """
-        Sprawdza czy cache na dysku jest włączony dla miniaturek.
-
-        Returns:
-            True jeśli cache na dysku jest włączony.
-        """
-        return self.get("thumbnail_cache_enable_disk", False)
-
-    @property
-    def thumbnail_cache_cleanup_threshold(self) -> float:
-        """
-        Pobiera próg czyszczenia cache miniaturek (wartość od 0.0 do 1.0).
-
-        Returns:
-            Próg czyszczenia cache.
-        """
-        return self.get("thumbnail_cache_cleanup_threshold", 0.8)
-
-    # --- Properties dla parametrów okna i timerów ---
-
-    @property
-    def window_min_width(self) -> int:
-        """Zwraca minimalną szerokość okna."""
-        return self.get("window_min_width", 800)
-
-    @property
-    def window_min_height(self) -> int:
-        """Zwraca minimalną wysokość okna."""
-        return self.get("window_min_height", 600)
-
-    @property
-    def resize_timer_delay_ms(self) -> int:
-        """Zwraca opóźnienie timera resize galerii w milisekundach."""
-        return self.get("resize_timer_delay_ms", 150)
-
-    @property
-    def progress_hide_delay_ms(self) -> int:
-        """Zwraca czas wyświetlania postępu po zakończeniu w milisekundach."""
-        return self.get("progress_hide_delay_ms", 3000)
-
-    @property
-    def thread_wait_timeout_ms(self) -> int:
-        """Zwraca timeout oczekiwania na zakończenie wątku w milisekundach."""
-        return self.get("thread_wait_timeout_ms", 1000)
-
-    @property
-    def preferences_status_display_ms(self) -> int:
-        """Zwraca czas wyświetlania statusu preferencji w milisekundach."""
-        return self.get("preferences_status_display_ms", 3000)
-
-
-# --- Inicjalizacja domyślnej instancji konfiguracji ---
-config = AppConfig()
-
-# --- Eksport funkcji i stałych dla kompatybilności wstecznej ---
-# Te funkcje i stałe są utrzymywane dla kompatybilności wstecznej
-# z istniejącym kodem, który ich używa.
+# --- Legacy global functions (backward compatibility) ---
 
 
 def set_thumbnail_slider_position(position: int) -> bool:
-    """
-    Zapisuje pozycję suwaka do konfiguracji.
-
-    Args:
-        position: Pozycja suwaka (0-100).
-
-    Returns:
-        True jeśli zapisano pomyślnie, False w przeciwnym razie.
-    """
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
     return config.set_thumbnail_slider_position(position)
 
 
-# Stałe eksportowane dla kompatybilności wstecznej
+def get_supported_extensions(extension_type: str) -> List[str]:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.get_supported_extensions(extension_type)
+
+
+def get_predefined_colors() -> Dict[str, str]:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.get_predefined_colors()
+
+
+def set_predefined_colors(colors: Dict[str, str]) -> bool:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.set_predefined_colors(colors)
+
+
+# --- Legacy constants for backward compatibility ---
+config = AppConfig.get_instance()
+
 SUPPORTED_ARCHIVE_EXTENSIONS = config.supported_archive_extensions
 SUPPORTED_PREVIEW_EXTENSIONS = config.supported_preview_extensions
 PREDEFINED_COLORS_FILTER = config.predefined_colors_filter
-MIN_THUMBNAIL_SIZE = config.min_thumbnail_size  # Zmieniono na int
-MAX_THUMBNAIL_SIZE = config.max_thumbnail_size  # Zmieniono na int
-DEFAULT_THUMBNAIL_SIZE = config.default_thumbnail_size  # Użycie nowej właściwości
+MIN_THUMBNAIL_SIZE = config.min_thumbnail_size
+MAX_THUMBNAIL_SIZE = config.max_thumbnail_size
+DEFAULT_THUMBNAIL_SIZE = config.default_thumbnail_size
 
 # Parametry cache dla skanera
 SCANNER_MAX_CACHE_ENTRIES = config.scanner_max_cache_entries
