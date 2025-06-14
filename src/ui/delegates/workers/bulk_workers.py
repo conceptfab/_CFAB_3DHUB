@@ -435,3 +435,152 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
             self.emit_error(f"Błąd walidacji: {str(ve)}")
         except Exception as e:
             self.emit_error(f"Nieoczekiwany błąd: {str(e)}", e)
+
+
+class MoveUnpairedArchivesWorker(UnifiedBaseWorker, BatchOperationMixin):
+    """
+    Worker do przenoszenia plików archiwum bez pary do folderu '_bez_pary_'.
+    """
+
+    def __init__(self, unpaired_archives: List[str], target_folder: str, batch_size: int = 20):
+        """
+        Inicjalizuje worker do przenoszenia plików archiwum bez pary.
+
+        Args:
+            unpaired_archives: Lista ścieżek do plików archiwum bez pary
+            target_folder: Folder docelowy '_bez_pary_'
+            batch_size: Rozmiar batch'a dla operacji grupowych
+        """
+        UnifiedBaseWorker.__init__(
+            self, timeout_seconds=300, priority=WorkerPriority.NORMAL
+        )
+        BatchOperationMixin.__init__(self, batch_size)
+        self.unpaired_archives = unpaired_archives
+        self.target_folder = target_folder
+        self.moved_files = []  # Lista pomyślnie przeniesionych plików
+        self.error_count = 0
+        self.success_count = 0
+        self.detailed_errors = []  # Lista szczegółowych błędów
+
+    def _validate_inputs(self):
+        """Waliduje parametry wejściowe."""
+        if not self.unpaired_archives:
+            raise ValueError("Lista plików archiwum bez pary jest pusta")
+        if not self.target_folder:
+            raise ValueError("Folder docelowy nie może być pusty")
+        if not os.path.isdir(self.target_folder):
+            raise ValueError(f"Folder docelowy nie istnieje: {self.target_folder}")
+
+    def _process_batch_implementation(self, batch_data: List[str]):
+        """Przetwarza batch operacji przenoszenia archiwów."""
+        for archive_path in batch_data:
+            if self.check_interruption():
+                return
+
+            try:
+                if not os.path.exists(archive_path):
+                    logger.warning(f"Plik nie istnieje: {archive_path}")
+                    continue
+
+                filename = os.path.basename(archive_path)
+                target_path = os.path.join(self.target_folder, filename)
+
+                # Sprawdź czy plik docelowy już istnieje
+                if os.path.exists(target_path):
+                    # Generuj unikalną nazwę
+                    base_name, ext = os.path.splitext(filename)
+                    counter = 1
+                    while os.path.exists(target_path):
+                        new_filename = f"{base_name}_{counter}{ext}"
+                        target_path = os.path.join(self.target_folder, new_filename)
+                        counter += 1
+
+                # Przenieś plik
+                shutil.move(archive_path, target_path)
+                self.moved_files.append((archive_path, target_path))
+                self.success_count += 1
+                logger.debug(f"Przeniesiono archiwum: {filename}")
+
+            except PermissionError as pe:
+                error_msg = f"Błąd uprawnień podczas przenoszenia {archive_path}: {str(pe)}"
+                self.detailed_errors.append({
+                    'file_path': archive_path,
+                    'error': error_msg,
+                    'error_type': 'BŁĄD_UPRAWNIEŃ'
+                })
+                self.error_count += 1
+                logger.error(error_msg, exc_info=True)
+            except OSError as oe:
+                error_msg = f"Błąd systemu podczas przenoszenia {archive_path}: {str(oe)}"
+                self.detailed_errors.append({
+                    'file_path': archive_path,
+                    'error': error_msg,
+                    'error_type': 'BŁĄD_SYSTEMU'
+                })
+                self.error_count += 1
+                logger.error(error_msg, exc_info=True)
+            except Exception as e:
+                error_msg = f"Nieoczekiwany błąd podczas przenoszenia {archive_path}: {str(e)}"
+                self.detailed_errors.append({
+                    'file_path': archive_path,
+                    'error': error_msg,
+                    'error_type': 'BŁĄD_NIEOCZEKIWANY'
+                })
+                self.error_count += 1
+                logger.error(error_msg, exc_info=True)
+
+    def _run_implementation(self):
+        """Wykonuje operację przenoszenia plików archiwum bez pary."""
+        try:
+            self._validate_inputs()
+
+            total_files = len(self.unpaired_archives)
+            self.emit_progress(0, f"Rozpoczęto przenoszenie {total_files} plików archiwum bez pary...")
+
+            processed_files = 0
+
+            # Przetwarzaj pliki w batch'ach
+            for archive_path in self.unpaired_archives:
+                if self.check_interruption():
+                    break
+
+                self.add_to_batch(archive_path)
+                processed_files += 1
+
+                # Emituj progress co 5% lub co 10 plików
+                if (
+                    processed_files % max(1, total_files // 20) == 0
+                    or processed_files % 10 == 0
+                ):
+                    percent = int((processed_files / total_files) * 100)
+                    self.emit_progress(
+                        percent,
+                        f"Przenoszenie: {self.success_count} plików przeniesiono...",
+                    )
+
+            # Przetworz pozostałe pliki w batch'u
+            self.finalize_batches()
+
+            # Podsumowanie operacji
+            message = f"Przeniesiono {self.success_count} plików archiwum bez pary."
+            if self.error_count > 0:
+                message += f" Wystąpiły błędy przy {self.error_count} plikach."
+
+            self.emit_progress(100, message)
+            
+            # Przekaż wyniki wraz z raportami błędów
+            result = {
+                'moved_files': self.moved_files,
+                'detailed_errors': self.detailed_errors,
+                'summary': {
+                    'total_requested': len(self.unpaired_archives),
+                    'successfully_moved': self.success_count,
+                    'errors': self.error_count
+                }
+            }
+            self.emit_finished(result)
+
+        except ValueError as ve:
+            self.emit_error(f"Błąd walidacji: {str(ve)}")
+        except Exception as e:
+            self.emit_error(f"Nieoczekiwany błąd: {str(e)}", e)

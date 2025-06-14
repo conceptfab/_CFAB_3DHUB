@@ -191,7 +191,7 @@ class FolderStatisticsManager:
     
     def __init__(self):
         self.cache = LRUCache(
-            max_size=app_config.get('cache_max_entries', 100),
+            max_size=app_config.get('cache_max_entries', 500),
             ttl_seconds=app_config.get('cache_ttl_seconds', 300)
         )
         self._active_workers = {}  # Słownik aktywnych workerów

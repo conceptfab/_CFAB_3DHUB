@@ -211,6 +211,23 @@ class ThumbnailCache(QObject):
             "max_memory_mb": self._max_memory_mb,
         }
 
+    def update_limits(self, max_entries: int, max_memory_mb: int):
+        """Aktualizuje limity cache i wymusza cleanup jeśli potrzeba."""
+        old_entries = self._max_entries
+        old_memory = self._max_memory_mb
+        
+        self._max_entries = max_entries
+        self._max_memory_mb = max_memory_mb
+        
+        logger.info(
+            f"Zaktualizowano limity cache: entries {old_entries}→{max_entries}, "
+            f"memory {old_memory}→{max_memory_mb}MB"
+        )
+        
+        # Jeśli nowe limity są mniejsze, wymuś cleanup
+        if max_entries < old_entries or max_memory_mb < old_memory:
+            self._schedule_cleanup()
+
     def _normalize_cache_key(self, path: str, width: int, height: int) -> tuple:
         """
         Tworzy znormalizowany klucz cache.

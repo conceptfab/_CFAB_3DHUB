@@ -302,12 +302,29 @@ class UnpairedFilesTab:
         
         self.unpaired_files_layout.addWidget(self.unpaired_splitter)
 
+        # Panel przycisków
+        buttons_panel = QWidget()
+        buttons_panel.setFixedHeight(35)
+        buttons_layout = QHBoxLayout(buttons_panel)
+        buttons_layout.setContentsMargins(5, 2, 5, 2)
+        buttons_layout.setSpacing(10)
+
         # Przycisk do ręcznego parowania
         self.pair_manually_button = QPushButton("Sparuj Wybrane")
         self.pair_manually_button.clicked.connect(self._handle_manual_pairing)
         self.pair_manually_button.setEnabled(False)
-        self.unpaired_files_layout.addWidget(self.pair_manually_button)
-        logging.debug("Przycisk parowania utworzony")
+        self.pair_manually_button.setFixedSize(150, 30)
+        buttons_layout.addWidget(self.pair_manually_button)
+
+        # Przycisk do przenoszenia plików bez pary
+        self.move_unpaired_button = QPushButton("Przenieś Archiwa Bez Pary")
+        self.move_unpaired_button.clicked.connect(self._handle_move_unpaired_archives)
+        self.move_unpaired_button.setToolTip("Przenosi wszystkie pliki archiwum bez pary do folderu '_bez_pary_'")
+        self.move_unpaired_button.setFixedSize(200, 30)
+        buttons_layout.addWidget(self.move_unpaired_button)
+
+        self.unpaired_files_layout.addWidget(buttons_panel)
+        logging.debug("Przyciski parowania i przenoszenia utworzone")
 
         logging.debug("UnpairedFilesTab utworzona")
         return self.unpaired_files_tab
@@ -718,6 +735,157 @@ class UnpairedFilesTab:
                 self.unpaired_archives_list_widget,
                 self.unpaired_previews_list_widget,
                 current_directory,
+            )
+
+    def _handle_move_unpaired_archives(self):
+        """
+        Przenosi wszystkie pliki archiwum bez pary do folderu '_bez_pary_'.
+        """
+        current_directory = self.main_window.controller.current_directory
+        if not current_directory:
+            QMessageBox.warning(
+                self.main_window,
+                "Brak folderu roboczego",
+                "Nie wybrano folderu roboczego."
+            )
+            return
+
+        # Pobierz listę niesparowanych archiwów
+        unpaired_archives = self.main_window.controller.unpaired_archives
+        if not unpaired_archives:
+            QMessageBox.information(
+                self.main_window,
+                "Brak plików",
+                "Nie ma plików archiwum bez pary do przeniesienia."
+            )
+            return
+
+        # Pokaż dialog potwierdzenia
+        reply = QMessageBox.question(
+            self.main_window,
+            "Potwierdzenie przeniesienia",
+            f"Czy na pewno chcesz przenieść {len(unpaired_archives)} plików archiwum bez pary "
+            f"do folderu '_bez_pary_'?\n\n"
+            f"Ta operacja jest nieodwracalna.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Utwórz folder '_bez_pary_' jeśli nie istnieje
+        target_folder = os.path.join(current_directory, "_bez_pary_")
+        try:
+            os.makedirs(target_folder, exist_ok=True)
+        except Exception as e:
+            QMessageBox.critical(
+                self.main_window,
+                "Błąd tworzenia folderu",
+                f"Nie udało się utworzyć folderu '_bez_pary_':\n{str(e)}"
+            )
+            return
+
+        # Uruchom worker do przenoszenia plików
+        self._start_move_unpaired_worker(unpaired_archives, target_folder)
+
+    def _start_move_unpaired_worker(self, unpaired_archives: list, target_folder: str):
+        """
+        Uruchamia worker do przenoszenia plików archiwum bez pary.
+        """
+        from src.ui.delegates.workers.bulk_workers import MoveUnpairedArchivesWorker
+        from PyQt6.QtCore import QThreadPool
+
+        # Utwórz worker
+        self.move_unpaired_worker = MoveUnpairedArchivesWorker(
+            unpaired_archives, target_folder
+        )
+
+        # Podłącz sygnały
+        self.move_unpaired_worker.progress.connect(self.main_window._show_progress)
+        self.move_unpaired_worker.finished.connect(self._on_move_unpaired_finished)
+        self.move_unpaired_worker.error.connect(self._on_move_unpaired_error)
+
+        # Uruchom worker
+        QThreadPool.globalInstance().start(self.move_unpaired_worker)
+        logging.info(f"Rozpoczęto przenoszenie {len(unpaired_archives)} plików archiwum bez pary")
+
+    def _on_move_unpaired_finished(self, result):
+        """
+        Obsługuje zakończenie przenoszenia plików bez pary.
+        """
+        try:
+            moved_files = result.get('moved_files', [])
+            detailed_errors = result.get('detailed_errors', [])
+            summary = result.get('summary', {})
+
+            # Ukryj pasek postępu
+            self.main_window._hide_progress()
+
+            # Pokaż raport
+            self._show_move_unpaired_report(moved_files, detailed_errors, summary)
+
+            # Odśwież widok
+            self._refresh_unpaired_files()
+
+        except Exception as e:
+            logging.error(f"Błąd podczas obsługi zakończenia przenoszenia: {e}")
+            QMessageBox.critical(
+                self.main_window,
+                "Błąd",
+                f"Wystąpił błąd podczas obsługi wyników przenoszenia:\n{str(e)}"
+            )
+
+    def _on_move_unpaired_error(self, error_message: str):
+        """
+        Obsługuje błędy podczas przenoszenia plików bez pary.
+        """
+        self.main_window._hide_progress()
+        QMessageBox.critical(
+            self.main_window,
+            "Błąd przenoszenia",
+            f"Wystąpił błąd podczas przenoszenia plików:\n{error_message}"
+        )
+
+    def _show_move_unpaired_report(self, moved_files: list, detailed_errors: list, summary: dict):
+        """
+        Wyświetla raport z przenoszenia plików bez pary.
+        """
+        total_requested = summary.get('total_requested', 0)
+        successfully_moved = summary.get('successfully_moved', 0)
+        errors = summary.get('errors', 0)
+
+        # Podstawowy komunikat
+        if errors == 0:
+            QMessageBox.information(
+                self.main_window,
+                "Przenoszenie zakończone",
+                f"Pomyślnie przeniesiono {successfully_moved} z {total_requested} plików archiwum bez pary do folderu '_bez_pary_'."
+            )
+        else:
+            # Szczegółowy raport z błędami
+            report_lines = [
+                f"Przenoszenie zakończone z błędami:",
+                f"• Pomyślnie przeniesiono: {successfully_moved}",
+                f"• Błędy: {errors}",
+                f"• Łącznie przetworzono: {total_requested}",
+                ""
+            ]
+
+            if detailed_errors:
+                report_lines.append("Szczegóły błędów:")
+                for error in detailed_errors[:5]:  # Pokaż maksymalnie 5 błędów
+                    file_name = os.path.basename(error.get('file_path', 'Nieznany'))
+                    error_type = error.get('error_type', 'NIEZNANY')
+                    report_lines.append(f"• {file_name}: {error_type}")
+                
+                if len(detailed_errors) > 5:
+                    report_lines.append(f"... i {len(detailed_errors) - 5} więcej błędów")
+
+            QMessageBox.warning(
+                self.main_window,
+                "Przenoszenie zakończone z błędami",
+                "\n".join(report_lines)
             )
 
     def _refresh_unpaired_files(self):

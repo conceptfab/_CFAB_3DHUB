@@ -313,10 +313,10 @@ class MainWindow(QMainWindow):
                 # Odśwież cache miniaturek jeśli zmienił się rozmiar
                 if hasattr(self.gallery_manager, "thumbnail_cache"):
                     max_entries = self.app_config.get(
-                        "thumbnail_cache_max_entries", 500
+                        "thumbnail_cache_max_entries", 2000
                     )
                     max_memory = self.app_config.get(
-                        "thumbnail_cache_max_memory_mb", 100
+                        "thumbnail_cache_max_memory_mb", 500
                     )
                     self.gallery_manager.thumbnail_cache.update_limits(
                         max_entries, max_memory
