@@ -118,7 +118,7 @@ class MainWindowController:
             return False
 
         try:
-            self.view._show_progress(0, f"Usuwanie {len(selected_pairs)} plików...")
+            self.view._show_progress(0, f"Usuwanie {len(selected_pairs)} par plików...")
 
             # Deleguj do serwisu
             deleted_pairs, errors = self.file_service.bulk_delete(selected_pairs)
@@ -128,7 +128,7 @@ class MainWindowController:
 
             # Powiadom UI
             self.view.update_after_bulk_operation(deleted_pairs, "usunięto")
-            self.view._show_progress(100, f"Usunięto {len(deleted_pairs)} plików")
+            self.view._show_progress(100, f"Usunięto {len(deleted_pairs)} par plików")
 
             # Pokaż błędy jeśli były
             if errors:
@@ -162,7 +162,7 @@ class MainWindowController:
             return False
 
         try:
-            self.view._show_progress(0, f"Przenoszenie {len(selected_pairs)} plików...")
+            self.view._show_progress(0, f"Przenoszenie {len(selected_pairs)} par plików...")
 
             # Deleguj do serwisu
             moved_pairs, errors = self.file_service.bulk_move(
@@ -176,7 +176,7 @@ class MainWindowController:
 
             # Powiadom UI
             self.view.update_after_bulk_operation(moved_pairs, "przeniesiono")
-            self.view._show_progress(100, f"Przeniesiono {len(moved_pairs)} plików")
+            self.view._show_progress(100, f"Przeniesiono {len(moved_pairs)} par plików")
 
             # Pokaż błędy jeśli były
             if errors:

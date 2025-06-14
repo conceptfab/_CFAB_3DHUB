@@ -113,14 +113,15 @@ class BulkDeleteWorker(UnifiedBaseWorker, BatchOperationMixin):
                         )  # *2 bo archive + preview
                         self.emit_progress(
                             percent,
-                            f"Usuwanie: {self.success_count} plików usuniętych...",
+                            f"Usuwanie: {len(self.deleted_files)} par plików usuniętych...",
                         )
 
             # Przetworz pozostałe pliki w batch'u
             self.finalize_batches()
 
             # Podsumowanie operacji
-            message = f"Usunięto {self.success_count} plików."
+            pairs_count = len(self.deleted_files)
+            message = f"Usunięto {pairs_count} par plików."
             if self.error_count > 0:
                 message += f" Wystąpiły błędy przy {self.error_count} plikach."
 
@@ -160,6 +161,8 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
         self.error_count = 0
         self.success_count = 0
         self.skipped_count = 0
+        self.detailed_errors = []  # Lista szczegółowych błędów
+        self.skipped_files = []  # Lista pominiętych plików z powodami
 
     def _validate_inputs(self):
         """Waliduje parametry wejściowe."""
@@ -201,6 +204,16 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
 
             try:
                 if not os.path.exists(file_path):
+                    error_msg = f"Plik źródłowy nie istnieje: {file_path}"
+                    self.detailed_errors.append({
+                        'file_path': file_path,
+                        'file_type': file_type,
+                        'file_pair': file_pair.get_base_name() if file_pair else 'Nieznany',
+                        'error': error_msg,
+                        'error_type': 'BRAK_PLIKU_ŹRÓDŁOWEGO'
+                    })
+                    self.error_count += 1
+                    logger.error(error_msg)
                     continue
 
                 filename = os.path.basename(file_path)
@@ -208,11 +221,68 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
 
                 # Sprawdź czy plik już istnieje w katalogu docelowym
                 if os.path.exists(target_path):
-                    logger.warning(
-                        f"Plik {filename} już istnieje w katalogu docelowym. Pomijanie."
-                    )
+                    skip_reason = f"Plik już istnieje w katalogu docelowym"
+                    self.skipped_files.append({
+                        'file_path': file_path,
+                        'file_type': file_type,
+                        'file_pair': file_pair.get_base_name() if file_pair else 'Nieznany',
+                        'target_path': target_path,
+                        'reason': skip_reason
+                    })
+                    logger.warning(f"Plik {filename} już istnieje w katalogu docelowym. Pomijanie.")
                     self.skipped_count += 1
                     continue
+
+                # Sprawdź uprawnienia do zapisu w katalogu docelowym
+                if not os.access(dest_dir, os.W_OK):
+                    error_msg = f"Brak uprawnień do zapisu w katalogu docelowym: {dest_dir}"
+                    self.detailed_errors.append({
+                        'file_path': file_path,
+                        'file_type': file_type,
+                        'file_pair': file_pair.get_base_name() if file_pair else 'Nieznany',
+                        'error': error_msg,
+                        'error_type': 'BRAK_UPRAWNIEŃ_ZAPISU'
+                    })
+                    self.error_count += 1
+                    logger.error(error_msg)
+                    continue
+
+                # Sprawdź czy plik źródłowy nie jest zablokowany
+                try:
+                    # Test czy można otworzyć plik do odczytu
+                    with open(file_path, 'rb') as test_file:
+                        pass
+                except PermissionError:
+                    error_msg = f"Plik jest zablokowany lub brak uprawnień: {file_path}"
+                    self.detailed_errors.append({
+                        'file_path': file_path,
+                        'file_type': file_type,
+                        'file_pair': file_pair.get_base_name() if file_pair else 'Nieznany',
+                        'error': error_msg,
+                        'error_type': 'PLIK_ZABLOKOWANY'
+                    })
+                    self.error_count += 1
+                    logger.error(error_msg)
+                    continue
+
+                # Sprawdź dostępne miejsce na dysku
+                try:
+                    file_size = os.path.getsize(file_path)
+                    free_space = shutil.disk_usage(dest_dir).free
+                    if file_size > free_space:
+                        error_msg = f"Brak miejsca na dysku docelowym. Potrzeba: {file_size} bajtów, dostępne: {free_space} bajtów"
+                        self.detailed_errors.append({
+                            'file_path': file_path,
+                            'file_type': file_type,
+                            'file_pair': file_pair.get_base_name() if file_pair else 'Nieznany',
+                            'error': error_msg,
+                            'error_type': 'BRAK_MIEJSCA_NA_DYSKU'
+                        })
+                        self.error_count += 1
+                        logger.error(error_msg)
+                        continue
+                except OSError as e:
+                    logger.warning(f"Nie można sprawdzić miejsca na dysku: {e}")
 
                 # Wykonaj przeniesienie
                 shutil.move(file_path, target_path)
@@ -224,12 +294,39 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
 
                 logger.debug(f"Przeniesiono {file_type}: {filename}")
 
-            except Exception as e:
+            except PermissionError as pe:
+                error_msg = f"Błąd uprawnień podczas przenoszenia {file_path}: {str(pe)}"
+                self.detailed_errors.append({
+                    'file_path': file_path,
+                    'file_type': file_type,
+                    'file_pair': file_pair.get_base_name() if file_pair else 'Nieznany',
+                    'error': error_msg,
+                    'error_type': 'BŁĄD_UPRAWNIEŃ'
+                })
                 self.error_count += 1
-                logger.error(
-                    f"Błąd podczas przenoszenia pliku {file_path}: {str(e)}",
-                    exc_info=True,
-                )
+                logger.error(error_msg, exc_info=True)
+            except OSError as oe:
+                error_msg = f"Błąd systemu podczas przenoszenia {file_path}: {str(oe)}"
+                self.detailed_errors.append({
+                    'file_path': file_path,
+                    'file_type': file_type,
+                    'file_pair': file_pair.get_base_name() if file_pair else 'Nieznany',
+                    'error': error_msg,
+                    'error_type': 'BŁĄD_SYSTEMU'
+                })
+                self.error_count += 1
+                logger.error(error_msg, exc_info=True)
+            except Exception as e:
+                error_msg = f"Nieoczekiwany błąd podczas przenoszenia {file_path}: {str(e)}"
+                self.detailed_errors.append({
+                    'file_path': file_path,
+                    'file_type': file_type,
+                    'file_pair': file_pair.get_base_name() if file_pair else 'Nieznany',
+                    'error': error_msg,
+                    'error_type': 'BŁĄD_NIEOCZEKIWANY'
+                })
+                self.error_count += 1
+                logger.error(error_msg, exc_info=True)
 
     def _update_file_pair_path(
         self, file_pair: FilePair, file_type: str, new_path: str
@@ -304,21 +401,35 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
                         percent = int((processed_files / total_files) * 100)
                         self.emit_progress(
                             percent,
-                            f"Przenoszenie: {self.success_count} plików przeniesiono...",
+                            f"Przenoszenie: {len(self.updated_file_pairs)} par plików przeniesiono...",
                         )
 
             # Przetworz pozostałe pliki w batch'u
             self.finalize_batches()
 
             # Podsumowanie operacji
-            message = f"Przeniesiono {self.success_count} plików."
+            pairs_count = len(self.updated_file_pairs)
+            message = f"Przeniesiono {pairs_count} par plików."
             if self.skipped_count > 0:
                 message += f" Pominięto {self.skipped_count} plików (już istniejących)."
             if self.error_count > 0:
                 message += f" Wystąpiły błędy przy {self.error_count} plikach."
 
             self.emit_progress(100, message)
-            self.emit_finished(self.updated_file_pairs)
+            
+            # Przekaż wyniki wraz z raportami błędów
+            result = {
+                'moved_pairs': self.updated_file_pairs,
+                'detailed_errors': self.detailed_errors,
+                'skipped_files': self.skipped_files,
+                'summary': {
+                    'total_requested': len(self.files_to_move),
+                    'successfully_moved': len(self.updated_file_pairs),
+                    'errors': self.error_count,
+                    'skipped': self.skipped_count
+                }
+            }
+            self.emit_finished(result)
 
         except ValueError as ve:
             self.emit_error(f"Błąd walidacji: {str(ve)}")

@@ -840,7 +840,9 @@ class MainWindow(QMainWindow):
 
             clear_cache()
             logging.info("Cache wyczyszczony - wymuszono ponowne skanowanie")
-            self._select_working_directory(self.controller.current_directory)
+            # NAPRAWKA: Użyj change_directory zamiast _select_working_directory
+            # aby zachować drzewo folderów
+            self.change_directory(self.controller.current_directory)
 
     def _clear_all_data_and_views(self):
         """
@@ -1540,6 +1542,9 @@ class MainWindow(QMainWindow):
             self._show_progress(100, "Usuwanie przerwane lub nieudane")
             return
 
+        # Zapamiętaj oryginalną liczbę zaznaczonych par PRZED ich usunięciem
+        original_selected_count = len(self.controller.selected_tiles)
+
         # Usuń pary z głównej listy i selekcji
         for file_pair in deleted_pairs:
             if file_pair in self.controller.current_file_pairs:
@@ -1553,11 +1558,11 @@ class MainWindow(QMainWindow):
         self._schedule_metadata_save()
 
         # Wyświetl podsumowanie
-        self._show_progress(100, f"Usunięto {len(deleted_pairs)} plików")
+        self._show_progress(100, f"Usunięto {len(deleted_pairs)} par plików")
         QMessageBox.information(
             self,
             "Usuwanie zakończone",
-            f"Usunięto {len(deleted_pairs)} z {len(self.controller.selected_tiles) + len(deleted_pairs)} zaznaczonych plików.",
+            f"Usunięto {len(deleted_pairs)} z {original_selected_count} zaznaczonych par plików.",
         )
 
     def _perform_bulk_move(self):
@@ -1583,19 +1588,35 @@ class MainWindow(QMainWindow):
         worker.signals.finished.connect(self._on_bulk_move_finished)
 
         # Uruchom workera
-        self._show_progress(0, f"Przenoszenie {count} plików...")
+        self._show_progress(0, f"Przenoszenie {count} par plików...")
         self.thread_pool.start(worker)
 
-    def _on_bulk_move_finished(self, moved_pairs):
+    def _on_bulk_move_finished(self, result):
         """
         Slot wywoływany po zakończeniu operacji przenoszenia.
 
         Args:
-            moved_pairs: Lista pomyślnie przeniesionych par plików
+            result: Wynik operacji - może być listą par plików (stary format) lub słownikiem z szczegółami (nowy format)
         """
-        if not moved_pairs:
+        # Obsługa nowego formatu wyniku
+        if isinstance(result, dict):
+            moved_pairs = result.get('moved_pairs', [])
+            detailed_errors = result.get('detailed_errors', [])
+            skipped_files = result.get('skipped_files', [])
+            summary = result.get('summary', {})
+        else:
+            # Fallback dla starych workerów
+            moved_pairs = result if isinstance(result, list) else []
+            detailed_errors = []
+            skipped_files = []
+            summary = {}
+
+        if not moved_pairs and not detailed_errors and not skipped_files:
             self._show_progress(100, "Przenoszenie przerwane lub nieudane")
             return
+
+        # Zapamiętaj oryginalną liczbę zaznaczonych par PRZED ich usunięciem
+        original_selected_count = len(self.controller.selected_tiles)
 
         # Usuń przeniesione pary z struktur danych
         for file_pair in moved_pairs:
@@ -1611,21 +1632,28 @@ class MainWindow(QMainWindow):
                 f"Odświeżanie folderu źródłowego po drag&drop: {self.controller.current_directory}"
             )
             self._refresh_source_folder_after_move()
-
-        # Odśwież widok
-        self._apply_filters_and_update_view()
+            # NAPRAWKA: NIE wywołuj _apply_filters_and_update_view() tutaj!
+            # change_directory() w _refresh_source_folder_after_move() już odświeża widok
+        else:
+            # Fallback - tylko jeśli nie ma current_directory
+            self._apply_filters_and_update_view()
+        
         self._save_metadata()
 
         destination = (
             os.path.dirname(moved_pairs[0].archive_path) if moved_pairs else "nieznany"
         )
-        self._show_progress(100, f"Przeniesiono {len(moved_pairs)} plików")
+        self._show_progress(100, f"Przeniesiono {len(moved_pairs)} par plików")
 
-        QMessageBox.information(
-            self,
-            "Przenoszenie zakończone",
-            f"Przeniesiono {len(moved_pairs)} z {len(self.controller.selected_tiles) + len(moved_pairs)} zaznaczonych plików do:\n{destination}",
-        )
+        # Pokaż szczegółowy raport błędów jeśli wystąpiły
+        if isinstance(result, dict) and (detailed_errors or skipped_files):
+            self._show_detailed_move_report(moved_pairs, detailed_errors, skipped_files, summary)
+        else:
+            QMessageBox.information(
+                self,
+                "Przenoszenie zakończone",
+                f"Przeniesiono {len(moved_pairs)} z {original_selected_count} zaznaczonych par plików do:\n{destination}",
+            )
 
     def _refresh_source_folder_after_move(self):
         """
@@ -1777,6 +1805,132 @@ class MainWindow(QMainWindow):
         """
         QMessageBox.critical(self, "Błąd", error_message)
         self._hide_progress()
+
+    def _show_detailed_move_report(self, moved_pairs, detailed_errors, skipped_files, summary):
+        """
+        Wyświetla szczegółowy raport z operacji przenoszenia plików.
+        """
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QLabel, QTabWidget, QWidget
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Raport przenoszenia plików")
+        dialog.setMinimumSize(800, 600)
+        dialog.setModal(True)
+
+        layout = QVBoxLayout(dialog)
+
+        # Podsumowanie
+        summary_text = f"""
+<h3>Podsumowanie operacji przenoszenia</h3>
+<p><b>Żądano przeniesienia:</b> {summary.get('total_requested', 0)} par plików</p>
+<p><b>Pomyślnie przeniesiono:</b> {summary.get('successfully_moved', 0)} par plików</p>
+<p><b>Błędy:</b> {summary.get('errors', 0)} plików</p>
+<p><b>Pominięto:</b> {summary.get('skipped', 0)} plików</p>
+        """
+        
+        summary_label = QLabel(summary_text)
+        summary_label.setWordWrap(True)
+        layout.addWidget(summary_label)
+
+        # Zakładki z szczegółami
+        tab_widget = QTabWidget()
+        layout.addWidget(tab_widget)
+
+        # Zakładka z błędami
+        if detailed_errors:
+            errors_widget = QWidget()
+            errors_layout = QVBoxLayout(errors_widget)
+            
+            errors_text = QTextEdit()
+            errors_text.setReadOnly(True)
+            
+            error_content = "<h4>Szczegółowe błędy:</h4>\n"
+            
+            # Grupuj błędy według typu
+            error_groups = {}
+            for error in detailed_errors:
+                error_type = error.get('error_type', 'NIEZNANY')
+                if error_type not in error_groups:
+                    error_groups[error_type] = []
+                error_groups[error_type].append(error)
+            
+            for error_type, errors in error_groups.items():
+                error_content += f"<h5>{error_type} ({len(errors)} plików):</h5>\n<ul>\n"
+                for error in errors:
+                    file_pair = error.get('file_pair', 'Nieznany')
+                    file_type = error.get('file_type', 'nieznany')
+                    file_path = error.get('file_path', 'nieznana ścieżka')
+                    error_msg = error.get('error', 'nieznany błąd')
+                    
+                    error_content += f"<li><b>Para:</b> {file_pair} ({file_type})<br/>"
+                    error_content += f"<b>Plik:</b> {file_path}<br/>"
+                    error_content += f"<b>Błąd:</b> {error_msg}</li>\n"
+                error_content += "</ul>\n"
+            
+            errors_text.setHtml(error_content)
+            errors_layout.addWidget(errors_text)
+            tab_widget.addTab(errors_widget, f"Błędy ({len(detailed_errors)})")
+
+        # Zakładka z pominięciami
+        if skipped_files:
+            skipped_widget = QWidget()
+            skipped_layout = QVBoxLayout(skipped_widget)
+            
+            skipped_text = QTextEdit()
+            skipped_text.setReadOnly(True)
+            
+            skipped_content = "<h4>Pominięte pliki:</h4>\n<ul>\n"
+            for skipped in skipped_files:
+                file_pair = skipped.get('file_pair', 'Nieznany')
+                file_type = skipped.get('file_type', 'nieznany')
+                file_path = skipped.get('file_path', 'nieznana ścieżka')
+                target_path = skipped.get('target_path', 'nieznana ścieżka docelowa')
+                reason = skipped.get('reason', 'nieznany powód')
+                
+                skipped_content += f"<li><b>Para:</b> {file_pair} ({file_type})<br/>"
+                skipped_content += f"<b>Plik źródłowy:</b> {file_path}<br/>"
+                skipped_content += f"<b>Plik docelowy:</b> {target_path}<br/>"
+                skipped_content += f"<b>Powód:</b> {reason}</li>\n"
+            skipped_content += "</ul>\n"
+            
+            skipped_text.setHtml(skipped_content)
+            skipped_layout.addWidget(skipped_text)
+            tab_widget.addTab(skipped_widget, f"Pominięte ({len(skipped_files)})")
+
+        # Zakładka z sukcesami
+        if moved_pairs:
+            success_widget = QWidget()
+            success_layout = QVBoxLayout(success_widget)
+            
+            success_text = QTextEdit()
+            success_text.setReadOnly(True)
+            
+            success_content = "<h4>Pomyślnie przeniesione pary:</h4>\n<ul>\n"
+            for pair in moved_pairs:
+                pair_name = pair.get_base_name() if hasattr(pair, 'get_base_name') else 'Nieznana para'
+                archive_path = getattr(pair, 'archive_path', 'brak')
+                preview_path = getattr(pair, 'preview_path', 'brak')
+                
+                success_content += f"<li><b>Para:</b> {pair_name}<br/>"
+                success_content += f"<b>Archiwum:</b> {archive_path}<br/>"
+                success_content += f"<b>Podgląd:</b> {preview_path}</li>\n"
+            success_content += "</ul>\n"
+            
+            success_text.setHtml(success_content)
+            success_layout.addWidget(success_text)
+            tab_widget.addTab(success_widget, f"Sukces ({len(moved_pairs)})")
+
+        # Przyciski
+        button_layout = QHBoxLayout()
+        
+        close_button = QPushButton("Zamknij")
+        close_button.clicked.connect(dialog.accept)
+        button_layout.addStretch()
+        button_layout.addWidget(close_button)
+        
+        layout.addLayout(button_layout)
+
+        dialog.exec()
 
     # ETAP 2 FINAL: Metody UI dla MainWindowController (MVC)
     def show_error_message(self, title: str, message: str):
