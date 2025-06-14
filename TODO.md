@@ -5,4 +5,5 @@
 
 4. Poprawki UI
 5. Foldery ULubione
-6. Tool do konwersji i zmiany miniaturek
+6. Usuwanie spacji przed kropką
+7.
