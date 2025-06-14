@@ -46,6 +46,13 @@ from src.ui.widgets.gallery_tab import GalleryTab
 from src.ui.widgets.preview_dialog import PreviewDialog
 from src.ui.widgets.unpaired_files_tab import UnpairedFilesTab
 
+# 🚀 ETAP 1: Refaktoryzacja - nowe komponenty MainWindow
+from src.ui.main_window.ui_manager import UIManager
+from src.ui.main_window.progress_manager import ProgressManager
+from src.ui.main_window.worker_manager import WorkerManager
+from src.ui.main_window.event_handler import EventHandler
+from src.ui.main_window.file_operations_coordinator import FileOperationsCoordinator
+
 # 🚀 ETAP 2: Nowe zoptymalizowane komponenty
 from src.utils.logging_config import get_main_window_logger
 from src.utils.path_utils import normalize_path
@@ -103,11 +110,20 @@ class MainWindow(QMainWindow):
         # ETAP 2 FINAL: MVC Controller - centralna logika biznesowa
         self.controller = MainWindowController(self)
 
-        # Wątki
-        self.scan_thread = None
-        self.scan_worker = None
-        self.data_processing_thread = None
-        self.data_processing_worker = None
+        # 🚀 ETAP 1: UI Manager - zarządzanie interfejsem użytkownika
+        self.ui_manager = UIManager(self)
+        
+        # 🚀 ETAP 1: Progress Manager - zarządzanie postępem
+        self.progress_manager = ProgressManager(self)
+        
+        # 🚀 ETAP 1: Worker Manager - zarządzanie wątkami
+        self.worker_manager = WorkerManager(self)
+        
+        # 🚀 ETAP 1: Event Handler - obsługa zdarzeń
+        self.event_handler = EventHandler(self)
+        
+        # 🚀 ETAP 1: File Operations Coordinator - operacje na plikach
+        self.file_operations_coordinator = FileOperationsCoordinator(self)
 
     def _init_window(self):
         """Inicjalizuje okno aplikacji."""
@@ -182,17 +198,8 @@ class MainWindow(QMainWindow):
         """
         Inicjalizuje elementy interfejsu użytkownika.
         """
-        # Najpierw tworzymy menu bar
-        self.setup_menu_bar()
-
-        # Panel górny
-        self._create_top_panel()
-
-        # Panel filtrów przeniesiony do zakładki galerii
-        # self.filter_panel będzie ustawiony przez GalleryTab
-
-        # Bulk operations panel
-        self._create_bulk_operations_panel()
+        # 🚀 ETAP 1: Delegacja do UI Manager
+        self.ui_manager.init_ui()
 
         # TabWidget jako główny kontener widoków
         self.tab_widget = QTabWidget()
@@ -246,332 +253,26 @@ class MainWindow(QMainWindow):
         self.unpaired_previews_layout = unpaired_widgets["unpaired_previews_layout"]
         self.pair_manually_button = unpaired_widgets["pair_manually_button"]
 
-    def setup_menu_bar(self):
-        """Tworzy menu bar z pełną funkcjonalnością."""
-        menubar = self.menuBar()
-
-        # Menu Plik
-        file_menu = menubar.addMenu("&Plik")
-        file_menu.addAction("&Otwórz folder...", self._select_working_directory)
-        file_menu.addSeparator()
-        file_menu.addAction("&Wyjście", self.close)
-
-        # Menu Narzędzia
-        tools_menu = menubar.addMenu("&Narzędzia")
-        tools_menu.addAction(
-            "🗑️ Usuń wszystkie foldery .app_metadata", self.remove_all_metadata_folders
-        )
-        tools_menu.addSeparator()
-        tools_menu.addAction("⚙️ Preferencje...", self.show_preferences)
-
-        # Menu Widok
-        view_menu = menubar.addMenu("&Widok")
-        view_menu.addAction("🔄 Odśwież", self.refresh_all_views)
-
-        # Menu Pomoc
-        help_menu = menubar.addMenu("&Pomoc")
-        help_menu.addAction("ℹ️ O programie...", self.show_about)
-
+    # 🚀 ETAP 1: Metody UI przeniesione do UIManager - delegacje
     def show_preferences(self):
-        """Wyświetla okno preferencji."""
-        try:
-            # Import tylko jeśli nie jest jeszcze zaimportowany
-            if not hasattr(self, "_preferences_dialog_class"):
-                from src.ui.widgets.preferences_dialog import PreferencesDialog
-
-                self._preferences_dialog_class = PreferencesDialog
-
-            dialog = self._preferences_dialog_class(self)
-            # Połącz sygnał zmiany preferencji
-            dialog.preferences_changed.connect(self._handle_preferences_changed)
-            result = dialog.exec()
-
-            if result == QDialog.DialogCode.Accepted:
-                logging.info("Okno preferencji zamknięte - zmiany zaakceptowane")
-            else:
-                logging.info("Okno preferencji anulowane")
-
-        except ImportError:
-            QMessageBox.information(
-                self,
-                "Preferencje",
-                "Okno preferencji będzie dostępne w przyszłej wersji.",
-            )
-            logging.warning("PreferencjesDialog nie został jeszcze zaimplementowany")
-
-    def _handle_preferences_changed(self):
-        """Obsługuje zmiany w preferencjach aplikacji."""
-        try:
-            logging.info("Preferencje zostały zmienione - aplikuję nowe ustawienia")
-
-            # UWAGA: NIE tworzymy nowej instancji AppConfig!
-            # Tylko przeładowujemy istniejącą konfigurację
-            self.app_config.reload()
-
-            # Zastosuj nowe ustawienia do UI
-            if hasattr(self, "gallery_manager"):
-                # Odśwież cache miniaturek jeśli zmienił się rozmiar
-                if hasattr(self.gallery_manager, "thumbnail_cache"):
-                    max_entries = self.app_config.get(
-                        "thumbnail_cache_max_entries", 2000
-                    )
-                    max_memory = self.app_config.get(
-                        "thumbnail_cache_max_memory_mb", 500
-                    )
-                    self.gallery_manager.thumbnail_cache.update_limits(
-                        max_entries, max_memory
-                    )
-
-            # Odśwież slider miniatur
-            if hasattr(self, "size_slider"):
-                saved_position = self.app_config.get_thumbnail_slider_position()
-                if saved_position != self.size_slider.value():
-                    self.size_slider.setValue(saved_position)
-                    self._update_thumbnail_size()
-
-            # Odśwież widok jeśli jest otwarty folder
-            if self.controller.current_directory:
-                self.refresh_all_views()
-
-            logging.info("Nowe ustawienia preferencji zostały zastosowane")
-
-        except Exception as e:
-            logging.error(f"Błąd podczas aplikowania nowych preferencji: {e}")
-            QMessageBox.warning(
-                self,
-                "Ostrzeżenie",
-                "Niektóre nowe ustawienia mogą wymagać ponownego uruchomienia aplikacji.",
-            )
-
+        """Delegacja do UIManager."""
+        return self.ui_manager.show_preferences()
+    
     def remove_all_metadata_folders(self):
-        """Usuwa wszystkie foldery .app_metadata z folderu roboczego."""
-        if not self.controller.current_directory:
-            QMessageBox.warning(self, "Uwaga", "Nie wybrano folderu roboczego.")
-            return
-
-        reply = QMessageBox.question(
-            self,
-            "Potwierdzenie",
-            "Czy na pewno chcesz usunąć wszystkie foldery .app_metadata?\n"
-            "Ta operacja jest nieodwracalna.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            self.start_metadata_cleanup_worker()
-
+        """Delegacja do UIManager."""
+        return self.ui_manager.remove_all_metadata_folders()
+    
     def start_metadata_cleanup_worker(self):
-        """Uruchamia worker do usuwania folderów metadanych."""
-        import shutil
-        from pathlib import Path
-
-        try:
-            self._show_progress(0, "Szukanie folderów .app_metadata...")
-
-            # Znajdź wszystkie foldery .app_metadata
-            metadata_folders = []
-            root_path = Path(self.controller.current_directory)
-
-            for folder in root_path.rglob(".app_metadata"):
-                if folder.is_dir():
-                    metadata_folders.append(folder)
-
-            if not metadata_folders:
-                QMessageBox.information(
-                    self, "Informacja", "Nie znaleziono folderów .app_metadata."
-                )
-                self._hide_progress()
-                return
-
-            total_folders = len(metadata_folders)
-            self._show_progress(
-                10, f"Znaleziono {total_folders} folderów do usunięcia..."
-            )
-
-            # Usuń foldery
-            deleted_count = 0
-            for i, folder in enumerate(metadata_folders):
-                try:
-                    shutil.rmtree(folder)
-                    deleted_count += 1
-                    progress = 10 + int((i + 1) / total_folders * 80)
-                    self._show_progress(progress, f"Usuwanie {i+1}/{total_folders}...")
-                except Exception as e:
-                    logging.error(f"Błąd podczas usuwania {folder}: {e}")
-
-            self._show_progress(100, f"Usunięto {deleted_count} folderów")
-            QMessageBox.information(
-                self,
-                "Zakończono",
-                f"Usunięto {deleted_count} z {total_folders} folderów .app_metadata",
-            )
-
-        except Exception as e:
-            error_msg = f"Błąd podczas czyszczenia metadanych: {e}"
-            logging.error(error_msg)
-            QMessageBox.critical(self, "Błąd", error_msg)
-            self._hide_progress()
-
+        """Delegacja do UIManager."""
+        return self.ui_manager.start_metadata_cleanup_worker()
+    
     def show_about(self):
-        """Wyświetla informacje o programie."""
-        QMessageBox.about(
-            self,
-            "O programie",
-            "CFAB_3DHUB v1.0\n\n"
-            "Aplikacja do zarządzania parami plików archiwum-podgląd\n\n"
-            "Funkcje:\n"
-            "• Automatyczne parowanie plików\n"
-            "• Zarządzanie metadanymi\n"
-            "• Operacje masowe na plikach\n"
-            "• Zaawansowane filtrowanie",
-        )
+        """Delegacja do UIManager."""
+        return self.ui_manager.show_about()
 
-    def _create_top_panel(self):
-        """
-        Tworzy panel górny z przyciskami i kontrolkami.
-        """
-        self.top_panel = QWidget()
-        self.top_panel.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
-        self.top_layout = QHBoxLayout(self.top_panel)
-        self.top_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Przycisk wyboru folderu
-        self.select_folder_button = QPushButton("Wybierz Folder Roboczy")
-        self.select_folder_button.clicked.connect(self._select_working_directory)
-        self.top_layout.addWidget(self.select_folder_button)
-
-        # Przycisk czyszczenia cache
-        self.clear_cache_button = QPushButton("Odśwież (Wyczyść Cache)")
-        self.clear_cache_button.clicked.connect(self._force_refresh)
-        self.clear_cache_button.setVisible(False)
-        self.top_layout.addWidget(self.clear_cache_button)
-
-        # Panel kontroli rozmiaru
-        self._create_size_control_panel()
-
-        self.main_layout.addWidget(self.top_panel)
-
-    def _create_size_control_panel(self):
-        """
-        Tworzy panel kontroli rozmiaru miniatur.
-        """
-        self.size_control_panel = QWidget()
-        self.size_control_panel.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
-        self.size_control_layout = QHBoxLayout(self.size_control_panel)
-        self.size_control_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Label dla suwaka
-        self.size_label = QLabel("Rozmiar miniatur:")
-        self.size_control_layout.addWidget(self.size_label)
-
-        # Suwak rozmiaru miniatur
-        self.size_slider = QSlider()
-        self.size_slider.setOrientation(Qt.Orientation.Horizontal)
-        self.size_slider.setMinimum(0)
-        self.size_slider.setMaximum(100)
-
-        # Ustawienie wartości początkowej suwaka na wymuszone 50%
-        self.size_slider.setValue(self.initial_slider_position)
-
-        self.size_slider.sliderReleased.connect(self._update_thumbnail_size)
-        self.size_control_layout.addWidget(self.size_slider)
-
-        self.top_layout.addStretch(1)
-        self.top_layout.addWidget(self.size_control_panel)
-
-    def _create_bulk_operations_panel(self):
-        """
-        Creates the bulk operations panel for selected tiles.
-        """
-        self.bulk_operations_panel = QWidget()
-        self.bulk_operations_panel.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
-        self.bulk_operations_panel.setVisible(False)  # Hidden by default
-
-        # Apply styling for better visibility
-        self.bulk_operations_panel.setStyleSheet(
-            """
-            QWidget {
-                background-color: #f0f0f0;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 5px;
-                margin: 2px;
-            }
-            QPushButton {
-                background-color: #4a90e2;
-                color: white;
-                border: none;
-                padding: 6px 12px;
-                border-radius: 3px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #357abd;
-            }
-            QPushButton:pressed {
-                background-color: #285a9b;
-            }
-            QLabel {
-                color: #333;
-                font-weight: bold;
-            }
-        """
-        )
-
-        bulk_layout = QHBoxLayout(self.bulk_operations_panel)
-        bulk_layout.setContentsMargins(5, 3, 5, 3)
-
-        # Selected count label
-        self.selected_count_label = QLabel("Zaznaczone: 0")
-        bulk_layout.addWidget(self.selected_count_label)
-
-        bulk_layout.addStretch(1)
-
-        # Select all button
-        self.select_all_button = QPushButton("Zaznacz wszystkie")
-        self.select_all_button.clicked.connect(self._select_all_tiles)
-        bulk_layout.addWidget(self.select_all_button)
-
-        # Clear selection button
-        self.clear_selection_button = QPushButton("Wyczyść zaznaczenie")
-        self.clear_selection_button.clicked.connect(self._clear_all_selections)
-        bulk_layout.addWidget(self.clear_selection_button)
-
-        # Separator
-        separator = QLabel("|")
-        separator.setStyleSheet("color: #999; margin: 0 10px;")
-        bulk_layout.addWidget(separator)
-
-        # Bulk move button
-        self.bulk_move_button = QPushButton("Przenieś zaznaczone")
-        self.bulk_move_button.clicked.connect(self._perform_bulk_move)
-        bulk_layout.addWidget(self.bulk_move_button)
-
-        # Bulk delete button
-        self.bulk_delete_button = QPushButton("Usuń zaznaczone")
-        self.bulk_delete_button.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #e74c3c;
-            }
-            QPushButton:hover {
-                background-color: #c0392b;
-            }
-            QPushButton:pressed {
-                background-color: #a93226;
-            }
-        """
-        )
-        self.bulk_delete_button.clicked.connect(self._perform_bulk_delete)
-        bulk_layout.addWidget(self.bulk_delete_button)
-
-        self.main_layout.addWidget(self.bulk_operations_panel)
+    # 🚀 ETAP 1: Metody UI przeniesione do UIManager
+    # _create_top_panel(), _create_size_control_panel(), _create_bulk_operations_panel()
+    # są teraz w UIManager
 
     def _init_managers(self):
         """
@@ -668,39 +369,10 @@ class MainWindow(QMainWindow):
         """
         Obsługuje zamykanie aplikacji - kończy wszystkie wątki.
         """
-        self._cleanup_threads()
-        event.accept()
+        # 🚀 ETAP 1: Delegacja do EventHandler
+        self.event_handler.handle_close_event(event)
 
-    def _cleanup_threads(self):
-        """
-        Czyści wszystkie aktywne wątki - Problem #3: używa ThreadCoordinator.
-        """
-        # Użyj ThreadCoordinator zamiast ręcznego zarządzania
-        if hasattr(self, "thread_coordinator"):
-            self.thread_coordinator.cleanup_all_threads()
-        else:
-            # Fallback - stary sposób dla kompatybilności
-            if self.scan_thread and self.scan_thread.isRunning():
-                logging.info("Kończenie wątku skanowania przy zamykaniu aplikacji...")
-                self.scan_thread.quit()
-                if not self.scan_thread.wait(self.app_config.thread_wait_timeout_ms):
-                    logging.warning("Wątek skanowania nie zakończył się, wymuszam...")
-                    self.scan_thread.terminate()
-                    self.scan_thread.wait()
 
-            if self.data_processing_thread and self.data_processing_thread.isRunning():
-                logging.info(
-                    "Kończenie wątku przetwarzania przy zamykaniu aplikacji..."
-                )
-                self.data_processing_thread.quit()
-                if not self.data_processing_thread.wait(
-                    self.app_config.thread_wait_timeout_ms
-                ):
-                    logging.warning(
-                        "Wątek przetwarzania nie zakończył się, wymuszam..."
-                    )
-                    self.data_processing_thread.terminate()
-                    self.data_processing_thread.wait()
 
     def _select_working_directory(self, directory_path=None):
         """
@@ -1007,125 +679,13 @@ class MainWindow(QMainWindow):
 
         # Uruchom workera do tworzenia kafelków w tle
         if found_pairs:
-            self._start_data_processing_worker(found_pairs)
+            self.worker_manager.start_data_processing_worker(found_pairs)
         else:
             self._on_tile_loading_finished()
 
-    def _start_data_processing_worker(self, file_pairs: list[FilePair]):
-        """
-        Inicjalizuje i uruchamia workera do przetwarzania danych.
-        """
-        # NAPRAWKA: Resetuj liczniki progress bara na początku operacji
-        if hasattr(self, "_batch_processing_started"):
-            delattr(self, "_batch_processing_started")
-        
-        # NAPRAWKA: Prawidłowo zakończ poprzedni worker jeśli nadal działa
-        if self.data_processing_thread and self.data_processing_thread.isRunning():
-            logging.warning(
-                "Poprzedni worker przetwarzania nadal działa - przerywam go i uruchamiam nowy"
-            )
-            # Przerwij poprzedni worker
-            if self.data_processing_worker:
-                try:
-                    self.data_processing_worker.finished.disconnect()
-                except (TypeError, AttributeError):
-                    pass  # Sygnał może być już odłączony
-                self.data_processing_worker.stop()
 
-            # Zakończ poprzedni wątek
-            self.data_processing_thread.quit()
-            if not self.data_processing_thread.wait(
-                self.app_config.thread_wait_timeout_ms
-            ):  # Czekaj maksymalnie według konfiguracji
-                logging.warning("Wymuszenie zakończenia poprzedniego workera")
-                self.data_processing_thread.terminate()
-                self.data_processing_thread.wait()
 
-        self.data_processing_thread = QThread()
-        self.data_processing_worker = DataProcessingWorker(
-            self.controller.current_directory, file_pairs
-        )
-        self.data_processing_worker.moveToThread(self.data_processing_thread)
 
-        # Podłączenie sygnałów
-        self.data_processing_worker.tile_data_ready.connect(
-            self._create_tile_widget_for_pair
-        )
-        # NOWY: obsługa batch processing kafelków
-        self.data_processing_worker.tiles_batch_ready.connect(
-            self._create_tile_widgets_batch
-        )
-        self.data_processing_worker.finished.connect(self._on_tile_loading_finished)
-        # NAPRAWKA: Podłącz sygnały postępu do pasków postępu
-        self.data_processing_worker.progress.connect(self._show_progress)
-        self.data_processing_worker.error.connect(self._handle_worker_error)
-        self.data_processing_thread.started.connect(self.data_processing_worker.run)
-
-        self.data_processing_thread.start()
-        logging.info(
-            f"Uruchomiono nowy worker do przetwarzania {len(file_pairs)} par plików"
-        )
-
-    def _start_data_processing_worker_without_tree_reset(
-        self, file_pairs: list[FilePair]
-    ):
-        """
-        Inicjalizuje i uruchamia workera do przetwarzania danych BEZ resetowania drzewa katalogów.
-        Używane przy zmianie folderu z drzewa aby zachować strukturę.
-        """
-        # NAPRAWKA: Resetuj liczniki progress bara na początku operacji
-        if hasattr(self, "_batch_processing_started"):
-            delattr(self, "_batch_processing_started")
-            
-        # NAPRAWKA: Prawidłowo zakończ poprzedni worker jeśli nadal działa
-        if self.data_processing_thread and self.data_processing_thread.isRunning():
-            logging.warning(
-                "Poprzedni worker przetwarzania nadal działa - przerywam go i uruchamiam nowy (bez resetowania drzewa)"
-            )
-            # Przerwij poprzedni worker
-            if self.data_processing_worker:
-                try:
-                    self.data_processing_worker.finished.disconnect()
-                except (TypeError, AttributeError):
-                    pass  # Sygnał może być już odłączony
-                self.data_processing_worker.stop()
-
-            # Zakończ poprzedni wątek
-            self.data_processing_thread.quit()
-            if not self.data_processing_thread.wait(
-                self.app_config.thread_wait_timeout_ms
-            ):  # Czekaj maksymalnie według konfiguracji
-                logging.warning("Wymuszenie zakończenia poprzedniego workera")
-                self.data_processing_thread.terminate()
-                self.data_processing_thread.wait()
-
-        self.data_processing_thread = QThread()
-        self.data_processing_worker = DataProcessingWorker(
-            self.controller.current_directory, file_pairs
-        )
-        self.data_processing_worker.moveToThread(self.data_processing_thread)
-
-        # Podłączenie sygnałów
-        self.data_processing_worker.tile_data_ready.connect(
-            self._create_tile_widget_for_pair
-        )
-        # NOWY: obsługa batch processing kafelków
-        self.data_processing_worker.tiles_batch_ready.connect(
-            self._create_tile_widgets_batch
-        )
-        # RÓŻNICA: Podłącz do metody BEZ resetowania drzewa (wrapper ignoruje listę)
-        self.data_processing_worker.finished.connect(
-            lambda processed_pairs: self._finish_folder_change_without_tree_reset()
-        )
-        # NAPRAWKA: Podłącz sygnały postępu do pasków postępu
-        self.data_processing_worker.progress.connect(self._show_progress)
-        self.data_processing_worker.error.connect(self._handle_worker_error)
-        self.data_processing_thread.started.connect(self.data_processing_worker.run)
-
-        self.data_processing_thread.start()
-        logging.info(
-            f"Uruchomiono nowy worker do przetwarzania {len(file_pairs)} par plików (bez resetowania drzewa)"
-        )
 
     def _create_tile_widget_for_pair(self, file_pair: FilePair):
         """
@@ -1180,34 +740,8 @@ class MainWindow(QMainWindow):
         return tile
 
     def _on_thumbnail_progress(self):
-        """
-        Wywoływana gdy miniatura zostanie załadowana.
-        Aktualizuje progress bar dla ładowania miniaturek.
-        """
-        if not hasattr(self, "_thumbnails_with_images_loaded"):
-            self._thumbnails_with_images_loaded = 0
-            
-        self._thumbnails_with_images_loaded += 1
-        
-        # Progress bar: 0-50% kafelki, 50-100% miniaturki
-        if hasattr(self, "_total_thumbnails_to_load"):
-            thumbnail_percent = int(
-                (
-                    self._thumbnails_with_images_loaded
-                    / max(self._total_thumbnails_to_load, 1)
-                )
-                * 50
-            )
-            total_percent = 50 + thumbnail_percent  # 50% za kafelki + 50% za miniaturki
-            
-            self._show_progress(
-                total_percent,
-                f"Ładowanie miniaturek: {self._thumbnails_with_images_loaded}/{self._total_thumbnails_to_load}...",
-            )
-            
-            # Ukryj progress bar gdy wszystkie miniaturki są załadowane
-            if self._thumbnails_with_images_loaded >= self._total_thumbnails_to_load:
-                QTimer.singleShot(500, self._hide_progress)  # Ukryj po pół sekundy
+        """Delegacja do ProgressManager."""
+        return self.progress_manager.on_thumbnail_progress()
 
     def _create_tile_widgets_batch(self, file_pairs_batch: list):
         """
@@ -1218,22 +752,14 @@ class MainWindow(QMainWindow):
             file_pairs_batch: Lista obiektów FilePair do przetworzenia w tym batch'u
         """
         # Resetuj liczniki na początku nowej operacji ładowania
-        if not hasattr(self, "_batch_processing_started"):
-            self._total_thumbnails_to_load = len(self.controller.current_file_pairs)
-            self._thumbnails_loaded = 0
-            self._thumbnails_with_images_loaded = 0
-            self._batch_processing_started = True
+        if not self.progress_manager.is_batch_processing():
+            total_thumbnails = len(self.controller.current_file_pairs)
+            self.progress_manager.init_batch_processing(total_thumbnails)
         
         batch_size = len(file_pairs_batch)
         
         # Aktualizuj progress bar dla tworzenia kafelków (bez miniaturek)
-        percent = int(
-            (self._thumbnails_loaded / max(self._total_thumbnails_to_load, 1)) * 50
-        )  # 50% dla kafelków
-        self._show_progress(
-            percent,
-            f"Tworzenie kafelków: {self._thumbnails_loaded}/{self._total_thumbnails_to_load}...",
-        )
+        self.progress_manager.update_batch_progress(self.progress_manager.get_thumbnails_loaded())
 
         # Czasowo wyłącz aktualizacje UI dla lepszej wydajności
         self.gallery_manager.tiles_container.setUpdatesEnabled(False)
@@ -1244,24 +770,14 @@ class MainWindow(QMainWindow):
                 tile = self._create_tile_widget_for_pair(file_pair)
                 if tile:
                     created_count += 1
-                    self._thumbnails_loaded += 1
+                    current_loaded = self.progress_manager.get_thumbnails_loaded() + 1
                     
                     # Aktualizuj progress co 5 kafelków
                     if (
-                        self._thumbnails_loaded % 5 == 0
-                        or self._thumbnails_loaded >= self._total_thumbnails_to_load
+                        current_loaded % 5 == 0
+                        or current_loaded >= self.progress_manager.get_total_thumbnails()
                     ):
-                        percent = int(
-                            (
-                                self._thumbnails_loaded
-                                / max(self._total_thumbnails_to_load, 1)
-                            )
-                            * 50
-                        )
-                        self._show_progress(
-                            percent,
-                            f"Tworzenie kafelków: {self._thumbnails_loaded}/{self._total_thumbnails_to_load}...",
-                        )
+                        self.progress_manager.update_batch_progress(current_loaded)
 
         finally:
             # Przywróć aktualizacje UI
@@ -1317,15 +833,9 @@ class MainWindow(QMainWindow):
         """
         Obsługuje błędy występujące podczas skanowania folderu.
         """
-        logging.error(f"Błąd skanowania: {error_message}")
-        QMessageBox.critical(
-            self,
-            "Błąd Skanowania",
-            "Wystąpił błąd podczas skanowania folderu:\n" f"{error_message}",
-        )
-
-        self._clear_all_data_and_views()
-
+        # 🚀 ETAP 1: Delegacja do EventHandler
+        self.event_handler.handle_scan_error(error_message)
+        
         # Przywróć przycisk
         self.select_folder_button.setText("Wybierz Folder Roboczy")
         self.select_folder_button.setEnabled(True)
@@ -1433,9 +943,9 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         """
         Obsługuje zmianę rozmiaru okna.
-        """  # Opóźnienie przerenderowania galerii
-        self.resize_timer.start(self.app_config.resize_timer_delay_ms)
-        super().resizeEvent(event)
+        """
+        # 🚀 ETAP 1: Delegacja do EventHandler
+        self.event_handler.handle_resize_event(event)
 
     def _save_metadata(self):
         """
@@ -1455,7 +965,7 @@ class MainWindow(QMainWindow):
         )
 
         # Podłącz sygnały
-        self._setup_worker_connections(worker)
+        self.worker_manager.setup_worker_connections(worker)
         worker.signals.finished.connect(self._on_metadata_saved)
 
         # Uruchom workera
@@ -1564,24 +1074,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Błąd Podglądu", error_message)
 
     def _handle_tile_selection_changed(self, file_pair: FilePair, is_selected: bool):
-        """ETAP 2 FINAL: Delegacja tile selection do MainWindowController (MVC)."""
-        self.logger.info(
-            f"Controller tile selection: {file_pair.get_base_name()} -> {is_selected}"
-        )
-
-        # DELEGACJA DO KONTROLERA
-        self.controller.handle_tile_selection(file_pair, is_selected)
-
-        # LEGACY: Aktualizuj lokalny stan (stopniowo usuwane)
-        if is_selected:
-            self.controller.selected_tiles.add(file_pair)
-        else:
-            self.controller.selected_tiles.discard(file_pair)
-
-        # Update bulk operations UI visibility
-        self._update_bulk_operations_visibility()
-
-        logging.debug(f"Total selected tiles: {len(self.controller.selected_tiles)}")
+        """Obsługuje zmianę selekcji kafelka."""
+        # 🚀 ETAP 1: Delegacja do EventHandler
+        self.event_handler.handle_tile_selection_changed(file_pair, is_selected)
 
     def _update_bulk_operations_visibility(self):
         """Updates visibility of bulk operations controls based on selection count."""
@@ -1688,7 +1183,7 @@ class MainWindow(QMainWindow):
         worker = BulkMoveWorker(list(self.controller.selected_tiles), destination)
 
         # Podłącz sygnały
-        self._setup_worker_connections(worker)
+        self.worker_manager.setup_worker_connections(worker)
         worker.signals.finished.connect(self._on_bulk_move_finished)
 
         # Uruchom workera
@@ -1871,27 +1366,12 @@ class MainWindow(QMainWindow):
     # ---- Metody do obsługi operacji asynchronicznych i postępu ----
 
     def _show_progress(self, percent: int, message: str):
-        """
-        Aktualizuje pasek postępu i etykietę postępu.
-
-        Args:
-            percent: Wartość postępu (0-100)
-            message: Wiadomość do wyświetlenia
-        """
-        self.progress_bar.setValue(percent)
-        self.progress_label.setText(message)
-        self.progress_bar.setVisible(True)
-
-        # Jeśli osiągnięto 100%, ukryj pasek po krótkim czasie
-        if percent >= 100:
-            QTimer.singleShot(
-                self.app_config.progress_hide_delay_ms, self._hide_progress
-            )
+        """Delegacja do ProgressManager."""
+        return self.progress_manager.show_progress(percent, message)
 
     def _hide_progress(self):
-        """Ukrywa pasek postępu i resetuje etykietę."""
-        self.progress_bar.setVisible(False)
-        self.progress_label.setText("Gotowy")
+        """Delegacja do ProgressManager."""
+        return self.progress_manager.hide_progress()
 
     def _setup_worker_connections(self, worker: UnifiedBaseWorker):
         """
@@ -1904,14 +1384,8 @@ class MainWindow(QMainWindow):
         worker.signals.error.connect(self._handle_worker_error)
 
     def _handle_worker_error(self, error_message: str):
-        """
-        Obsługuje błędy zgłaszane przez workery.
-
-        Args:
-            error_message: Komunikat o błędzie
-        """
-        QMessageBox.critical(self, "Błąd", error_message)
-        self._hide_progress()
+        """Delegacja do ProgressManager."""
+        return self.progress_manager.handle_worker_error(error_message)
 
     def _show_detailed_move_report(self, moved_pairs, detailed_errors, skipped_files, summary):
         """
@@ -2062,7 +1536,7 @@ class MainWindow(QMainWindow):
 
         # Utwórz nowe kafelki
         if scan_result.file_pairs:
-            self._start_data_processing_worker(scan_result.file_pairs)
+            self.worker_manager.start_data_processing_worker(scan_result.file_pairs)
         else:
             self._on_tile_loading_finished()
 
@@ -2163,7 +1637,7 @@ class MainWindow(QMainWindow):
                 
                 # Utwórz kafelki BEZ resetowania drzewa
                 if scan_result.file_pairs:
-                    self._start_data_processing_worker_without_tree_reset(
+                    self.worker_manager.start_data_processing_worker_without_tree_reset(
                         scan_result.file_pairs
                     )
                 else:

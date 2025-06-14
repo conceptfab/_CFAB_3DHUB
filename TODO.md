@@ -5,4 +5,4 @@
 
 4. Poprawki UI
 5. Foldery ULubione
-6. Tool do konwersji i zmiany miniaturek
+6. Program się zawiesza przy parowania jeśli znajdzie plik który istnieje

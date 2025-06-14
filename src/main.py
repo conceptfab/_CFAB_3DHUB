@@ -14,7 +14,7 @@ import traceback
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 # Importy z własnych modułów projektu (teraz absolutne od 'src')
-from src.ui.main_window import MainWindow
+from src.ui.main_window.main_window import MainWindow
 from src.utils.logging_config import setup_logging
 
 
