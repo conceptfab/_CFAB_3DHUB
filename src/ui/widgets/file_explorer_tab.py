@@ -111,6 +111,34 @@ class FileExplorerTab(QWidget):
         )
         tools_layout.addWidget(self.duplicate_renamer_button)
 
+        # Przycisk do konwertera WebP
+        self.webp_converter_button = QPushButton("🔄 Konwerter WebP")
+        self.webp_converter_button.setToolTip(
+            "Konwertuj wszystkie obrazy w folderze na format WebP"
+        )
+        self.webp_converter_button.clicked.connect(self._launch_webp_converter)
+        self.webp_converter_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                padding: 8px 12px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 12px;
+                margin: 2px;
+            }
+            QPushButton:hover {
+                background-color: #229954;
+            }
+            QPushButton:pressed {
+                background-color: #1e8449;
+            }
+        """
+        )
+        tools_layout.addWidget(self.webp_converter_button)
+
         # Przycisk odświeżania listy plików
         self.refresh_files_button = QPushButton("🔄 Odśwież listę plików")
         self.refresh_files_button.setToolTip(
@@ -425,4 +453,28 @@ class FileExplorerTab(QWidget):
             logging.error(f"Error launching duplicate renamer: {e}")
             QMessageBox.critical(
                 self, "Błąd", f"Błąd podczas uruchamiania renumeratora:\n{e}"
+            )
+
+    def _launch_webp_converter(self):
+        """Uruchamia zintegrowane narzędzie konwertera WebP."""
+        try:
+            # Sprawdź czy folder jest wybrany
+            if not self.current_path or not os.path.exists(self.current_path):
+                QMessageBox.warning(
+                    self,
+                    "Brak folderu",
+                    "Nie wybrano folderu roboczego.\nWybierz folder w głównej aplikacji."
+                )
+                return
+
+            # Import i uruchomienie konwertera WebP
+            from src.ui.widgets.webp_converter_widget import WebPConverterDialog
+            
+            dialog = WebPConverterDialog(self.current_path, self)
+            dialog.exec()
+            
+        except Exception as e:
+            logging.error(f"Error launching WebP converter: {e}")
+            QMessageBox.critical(
+                self, "Błąd", f"Błąd podczas uruchamiania konwertera WebP:\n{e}"
             )

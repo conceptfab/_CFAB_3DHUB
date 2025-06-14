@@ -212,9 +212,23 @@ class ThumbnailCache(QObject):
         }
 
     def _normalize_cache_key(self, path: str, width: int, height: int) -> tuple:
-        """Tworzy znormalizowany klucz cache."""
+        """
+        Tworzy znormalizowany klucz cache.
+        NAPRAWKA: Uwzględnia format miniaturek w kluczu cache.
+        """
+        try:
+            from src.app_config import AppConfig
+            config = AppConfig.get_instance()
+            thumbnail_format = config.get_thumbnail_format()
+            thumbnail_quality = config.get_thumbnail_quality()
+        except Exception:
+            # Fallback jeśli nie można pobrać konfiguracji
+            thumbnail_format = "WEBP"
+            thumbnail_quality = 80
+            
         normalized_path = normalize_path(path) if path else ""
-        return (normalized_path, width, height)
+        # Klucz cache uwzględnia format i jakość aby różne ustawienia nie kolidowały
+        return (normalized_path, width, height, thumbnail_format, thumbnail_quality)
 
     def _estimate_pixmap_size(self, pixmap: QPixmap) -> int:
         """

@@ -4,3 +4,5 @@
 3. Dodanie do 3 zakładki toola - random_name.
 
 4. Poprawki UI
+5. Foldery ULubione
+6. Tool do konwersji i zmiany miniaturek

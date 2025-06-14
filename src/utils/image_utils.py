@@ -62,6 +62,9 @@ def create_placeholder_pixmap(width, height, color="#E0E0E0", text="Brak podglą
 def pillow_image_to_qpixmap(pil_image):
     """
     Konwertuje obiekt obrazu Pillow (PIL.Image) na QPixmap (PyQt6).
+    
+    NAPRAWKA: Używa konfigurowalnego formatu miniaturek z AppConfig.
+    Domyślnie WebP dla lepszej kompresji i jakości (25-34% mniejsze pliki).
 
     Args:
         pil_image (PIL.Image): Obiekt obrazu z biblioteki Pillow
@@ -70,17 +73,54 @@ def pillow_image_to_qpixmap(pil_image):
         QPixmap: Obiekt QPixmap utworzony z obrazu Pillow
     """
     try:
-        # Konwersja do RGB jeśli obraz jest w trybie RGBA (zapobieganie problemom z przezroczystością)
-        if pil_image.mode == "RGBA":
-            background = Image.new("RGBA", pil_image.size, (255, 255, 255))
-            composite = Image.alpha_composite(background, pil_image)
-            pil_image = composite.convert("RGB")
-        elif pil_image.mode != "RGB":
-            pil_image = pil_image.convert("RGB")
+        from src.app_config import AppConfig
+        config = AppConfig.get_instance()
+        
+        # Pobierz ustawienia formatu z konfiguracji
+        thumbnail_format = config.get_thumbnail_format()
+        thumbnail_quality = config.get_thumbnail_quality()
+        webp_method = config.get_thumbnail_webp_method()
+        preserve_transparency = config.get_thumbnail_preserve_transparency()
+        
+        # Przygotuj obraz w zależności od formatu i ustawień przezroczystości
+        if thumbnail_format == "WEBP" and preserve_transparency:
+            # WebP obsługuje przezroczystość - zachowaj RGBA
+            if pil_image.mode not in ("RGB", "RGBA"):
+                if pil_image.mode in ("LA", "PA"):
+                    pil_image = pil_image.convert("RGBA")
+                else:
+                    pil_image = pil_image.convert("RGB")
+        elif thumbnail_format == "PNG" and preserve_transparency:
+            # PNG obsługuje przezroczystość - zachowaj RGBA
+            if pil_image.mode not in ("RGB", "RGBA"):
+                if pil_image.mode in ("LA", "PA"):
+                    pil_image = pil_image.convert("RGBA")
+                else:
+                    pil_image = pil_image.convert("RGB")
+        else:
+            # JPEG nie obsługuje przezroczystości - konwertuj na RGB
+            if pil_image.mode == "RGBA":
+                background = Image.new("RGB", pil_image.size, (255, 255, 255))
+                pil_image = Image.alpha_composite(
+                    Image.new("RGBA", pil_image.size, (255, 255, 255, 255)), 
+                    pil_image
+                ).convert("RGB")
+            elif pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
 
-        # Zapis do bufora w pamięci
+        # Zapis do bufora w pamięci używając wybranego formatu
         buffer = BytesIO()
-        pil_image.save(buffer, format="JPEG")
+        
+        if thumbnail_format == "WEBP":
+            # WebP z konfigurowalnymi ustawieniami
+            pil_image.save(buffer, format="WEBP", quality=thumbnail_quality, method=webp_method)
+        elif thumbnail_format == "PNG":
+            # PNG lossless - jakość nie ma znaczenia
+            pil_image.save(buffer, format="PNG", optimize=True)
+        else:  # JPEG
+            # JPEG z konfigurowalnymi ustawieniami
+            pil_image.save(buffer, format="JPEG", quality=thumbnail_quality, optimize=True)
+            
         buffer.seek(0)
 
         # Konwersja do QImage i dalej do QPixmap
@@ -91,8 +131,31 @@ def pillow_image_to_qpixmap(pil_image):
         return q_pixmap
 
     except Exception as e:
-        logging.error(f"Błąd konwersji obrazu Pillow do QPixmap: {e}")
-        return QPixmap()
+        logging.error(f"Błąd konwersji obrazu Pillow do QPixmap ({thumbnail_format}): {e}")
+        # Fallback na JPEG jeśli wybrany format nie działa
+        try:
+            logging.warning("Próba fallback na JPEG...")
+            if pil_image.mode == "RGBA":
+                background = Image.new("RGB", pil_image.size, (255, 255, 255))
+                pil_image = Image.alpha_composite(
+                    Image.new("RGBA", pil_image.size, (255, 255, 255, 255)), 
+                    pil_image
+                ).convert("RGB")
+            elif pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+
+            buffer = BytesIO()
+            pil_image.save(buffer, format="JPEG", quality=80, optimize=True)
+            buffer.seek(0)
+
+            q_image = QImage()
+            q_image.loadFromData(buffer.getvalue())
+            q_pixmap = QPixmap.fromImage(q_image)
+
+            return q_pixmap
+        except Exception as fallback_error:
+            logging.error(f"Błąd fallback JPEG: {fallback_error}")
+            return QPixmap()
 
 
 def crop_to_square(pil_image, size):

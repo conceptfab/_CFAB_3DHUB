@@ -90,6 +90,10 @@ class ConfigValidator:
                 "minimum": 1000,
                 "maximum": 10000,
             },
+            "thumbnail_format": {"type": "string", "pattern": r"^(WEBP|JPEG|PNG)$"},
+            "thumbnail_quality": {"type": "integer", "minimum": 1, "maximum": 100},
+            "thumbnail_webp_method": {"type": "integer", "minimum": 0, "maximum": 6},
+            "thumbnail_preserve_transparency": {"type": "boolean"},
         },
         "additionalProperties": True,
     }
@@ -149,6 +153,7 @@ class AppConfig:
             ".gif",
             ".bmp",
             ".tiff",
+            ".webp",
         ],
         # Kolory do filtrowania
         "predefined_colors": {
@@ -165,10 +170,15 @@ class AppConfig:
         "scanner_max_cache_entries": 100,
         "scanner_max_cache_age_seconds": 3600,  # 1 godzina
         # Parametry cache dla miniaturek
-        "thumbnail_cache_max_entries": 500,  # Maksymalna liczba miniaturek w cache
-        "thumbnail_cache_max_memory_mb": 100,  # Maksymalna pamięć w MB (przybliżone)
-        "thumbnail_cache_enable_disk": False,  # Czy używać cache na dysku
-        "thumbnail_cache_cleanup_threshold": 0.8,  # Próg czyszczenia (80% limitu)
+        "thumbnail_cache_max_entries": 1000,
+        "thumbnail_cache_max_memory_mb": 100,
+        "thumbnail_cache_enable_disk": False,
+        "thumbnail_cache_cleanup_threshold": 0.8,
+        # Thumbnail format settings - NOWE
+        "thumbnail_format": "WEBP",  # WEBP, JPEG, PNG
+        "thumbnail_quality": 80,     # 1-100 dla lossy formatów
+        "thumbnail_webp_method": 6,  # 0-6, wyższa wartość = lepsza kompresja
+        "thumbnail_preserve_transparency": True,  # Zachowaj przezroczystość w WebP/PNG
         # Parametry okna i timerów
         "window_min_width": 800,  # Minimalna szerokość okna
         "window_min_height": 600,  # Minimalna wysokość okna
@@ -619,6 +629,118 @@ class AppConfig:
         colors = self.get("predefined_colors", {})
         return OrderedDict(colors)
 
+    # --- Thumbnail format configuration methods ---
+    
+    def get_thumbnail_format(self) -> str:
+        """
+        Pobiera format miniaturek.
+        
+        Returns:
+            Format miniaturek: "WEBP", "JPEG" lub "PNG"
+        """
+        return self._config.get("thumbnail_format", "WEBP")
+    
+    def set_thumbnail_format(self, format_name: str) -> bool:
+        """
+        Ustawia format miniaturek.
+        
+        Args:
+            format_name: Format miniaturek ("WEBP", "JPEG", "PNG")
+            
+        Returns:
+            True jeśli format został ustawiony
+        """
+        if format_name not in ["WEBP", "JPEG", "PNG"]:
+            logger.error(f"Nieprawidłowy format miniaturek: {format_name}")
+            return False
+            
+        self._config["thumbnail_format"] = format_name
+        self._schedule_async_save()
+        logger.info(f"Format miniaturek zmieniony na: {format_name}")
+        return True
+    
+    def get_thumbnail_quality(self) -> int:
+        """
+        Pobiera jakość kompresji miniaturek.
+        
+        Returns:
+            Jakość kompresji (1-100)
+        """
+        return self._config.get("thumbnail_quality", 80)
+    
+    def set_thumbnail_quality(self, quality: int) -> bool:
+        """
+        Ustawia jakość kompresji miniaturek.
+        
+        Args:
+            quality: Jakość kompresji (1-100)
+            
+        Returns:
+            True jeśli jakość została ustawiona
+        """
+        try:
+            validated_quality = self._validate_int(quality, 1, 100, "Jakość miniaturek")
+            self._config["thumbnail_quality"] = validated_quality
+            self._schedule_async_save()
+            logger.info(f"Jakość miniaturek zmieniona na: {validated_quality}")
+            return True
+        except ValueError as e:
+            logger.error(f"Błąd ustawiania jakości miniaturek: {e}")
+            return False
+    
+    def get_thumbnail_webp_method(self) -> int:
+        """
+        Pobiera metodę kompresji WebP.
+        
+        Returns:
+            Metoda kompresji WebP (0-6)
+        """
+        return self._config.get("thumbnail_webp_method", 6)
+    
+    def set_thumbnail_webp_method(self, method: int) -> bool:
+        """
+        Ustawia metodę kompresji WebP.
+        
+        Args:
+            method: Metoda kompresji (0-6, wyższa = lepsza kompresja)
+            
+        Returns:
+            True jeśli metoda została ustawiona
+        """
+        try:
+            validated_method = self._validate_int(method, 0, 6, "Metoda WebP")
+            self._config["thumbnail_webp_method"] = validated_method
+            self._schedule_async_save()
+            logger.info(f"Metoda WebP zmieniona na: {validated_method}")
+            return True
+        except ValueError as e:
+            logger.error(f"Błąd ustawiania metody WebP: {e}")
+            return False
+    
+    def get_thumbnail_preserve_transparency(self) -> bool:
+        """
+        Sprawdza czy zachowywać przezroczystość w miniaturkach.
+        
+        Returns:
+            True jeśli zachowywać przezroczystość
+        """
+        return self._config.get("thumbnail_preserve_transparency", True)
+    
+    def set_thumbnail_preserve_transparency(self, preserve: bool) -> bool:
+        """
+        Ustawia czy zachowywać przezroczystość w miniaturkach.
+        
+        Args:
+            preserve: Czy zachowywać przezroczystość
+            
+        Returns:
+            True jeśli ustawienie zostało zmienione
+        """
+        self._config["thumbnail_preserve_transparency"] = preserve
+        self._schedule_async_save()
+        logger.info(f"Zachowywanie przezroczystości: {preserve}")
+        return True
+
     # --- Static validation methods (kept for backward compatibility) ---
 
     @staticmethod
@@ -704,6 +826,32 @@ def set_predefined_colors(colors: Dict[str, str]) -> bool:
     """Legacy function for backward compatibility."""
     config = AppConfig.get_instance()
     return config.set_predefined_colors(colors)
+
+
+# --- Thumbnail format legacy functions ---
+
+def get_thumbnail_format() -> str:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.get_thumbnail_format()
+
+
+def set_thumbnail_format(format_name: str) -> bool:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.set_thumbnail_format(format_name)
+
+
+def get_thumbnail_quality() -> int:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.get_thumbnail_quality()
+
+
+def set_thumbnail_quality(quality: int) -> bool:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.set_thumbnail_quality(quality)
 
 
 # --- Legacy constants for backward compatibility ---

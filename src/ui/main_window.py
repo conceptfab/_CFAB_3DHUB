@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
 
         # Pokaż preferencje wczytane
         self._show_preferences_loaded_confirmation()
-
+        
         # Zainicjalizuj drzewo katalogów z domyślnym folderem ale BEZ skanowania i rozwijania
         default_folder = self.app_config.get("default_working_directory", "")
         if (
@@ -90,13 +90,13 @@ class MainWindow(QMainWindow):
         """Inicjalizuje dane aplikacji."""
         # 🚀 ETAP 2: Zoptymalizowany logger bez emoji
         self.logger = get_main_window_logger()
-
+        
         # KRYTYCZNE: AppConfig musi być pierwsze - inne komponenty go używają!
         self.app_config = app_config.AppConfig()
 
         # 🚀 ETAP 2: Event Bus - eliminuje tight coupling
         self.event_bus = get_event_bus()
-
+        
         # 🚀 ETAP 2: View Refresh Manager - inteligentne odświeżanie
         self.view_refresh_manager = ViewRefreshManager(self)
 
@@ -1018,7 +1018,7 @@ class MainWindow(QMainWindow):
         # NAPRAWKA: Resetuj liczniki progress bara na początku operacji
         if hasattr(self, "_batch_processing_started"):
             delattr(self, "_batch_processing_started")
-
+        
         # NAPRAWKA: Prawidłowo zakończ poprzedni worker jeśli nadal działa
         if self.data_processing_thread and self.data_processing_thread.isRunning():
             logging.warning(
@@ -1076,7 +1076,7 @@ class MainWindow(QMainWindow):
         # NAPRAWKA: Resetuj liczniki progress bara na początku operacji
         if hasattr(self, "_batch_processing_started"):
             delattr(self, "_batch_processing_started")
-
+            
         # NAPRAWKA: Prawidłowo zakończ poprzedni worker jeśli nadal działa
         if self.data_processing_thread and self.data_processing_thread.isRunning():
             logging.warning(
@@ -1149,7 +1149,7 @@ class MainWindow(QMainWindow):
             tile.stars_changed.connect(self._handle_stars_changed)
             tile.color_tag_changed.connect(self._handle_color_tag_changed)
             tile.tile_context_menu_requested.connect(self._show_file_context_menu)
-
+            
             # NAPRAWKA: Podłącz callback do śledzenia ładowania miniaturek
             original_on_thumbnail_loaded = tile._on_thumbnail_loaded
 
@@ -1186,9 +1186,9 @@ class MainWindow(QMainWindow):
         """
         if not hasattr(self, "_thumbnails_with_images_loaded"):
             self._thumbnails_with_images_loaded = 0
-
+            
         self._thumbnails_with_images_loaded += 1
-
+        
         # Progress bar: 0-50% kafelki, 50-100% miniaturki
         if hasattr(self, "_total_thumbnails_to_load"):
             thumbnail_percent = int(
@@ -1199,12 +1199,12 @@ class MainWindow(QMainWindow):
                 * 50
             )
             total_percent = 50 + thumbnail_percent  # 50% za kafelki + 50% za miniaturki
-
+            
             self._show_progress(
                 total_percent,
                 f"Ładowanie miniaturek: {self._thumbnails_with_images_loaded}/{self._total_thumbnails_to_load}...",
             )
-
+            
             # Ukryj progress bar gdy wszystkie miniaturki są załadowane
             if self._thumbnails_with_images_loaded >= self._total_thumbnails_to_load:
                 QTimer.singleShot(500, self._hide_progress)  # Ukryj po pół sekundy
@@ -1223,9 +1223,9 @@ class MainWindow(QMainWindow):
             self._thumbnails_loaded = 0
             self._thumbnails_with_images_loaded = 0
             self._batch_processing_started = True
-
+        
         batch_size = len(file_pairs_batch)
-
+        
         # Aktualizuj progress bar dla tworzenia kafelków (bez miniaturek)
         percent = int(
             (self._thumbnails_loaded / max(self._total_thumbnails_to_load, 1)) * 50
@@ -1245,7 +1245,7 @@ class MainWindow(QMainWindow):
                 if tile:
                     created_count += 1
                     self._thumbnails_loaded += 1
-
+                    
                     # Aktualizuj progress co 5 kafelków
                     if (
                         self._thumbnails_loaded % 5 == 0
@@ -1386,7 +1386,7 @@ class MainWindow(QMainWindow):
             )
 
             self.logger.info("Odświeżanie zakończone - bez ponownego skanowania")
-
+            
         except Exception as e:
             self.logger.error(f"KRYTYCZNY BŁĄD w refresh_all_views: {e}")
             # Fallback - podstawowe odświeżenie
@@ -1419,7 +1419,7 @@ class MainWindow(QMainWindow):
         """
         # Deleguj do gallery_tab_manager
         self.gallery_tab_manager.update_thumbnail_size()
-
+        
         # NAPRAWKA: Deleguj również do unpaired_files_tab_manager dla skalowania
         if (
             hasattr(self, "unpaired_files_tab_manager")
@@ -1780,7 +1780,7 @@ class MainWindow(QMainWindow):
                 f"Rozpoczynanie ponownego skanowania folderu: {self.controller.current_directory}"
             )
 
-            # NAPRAWKA DRAG&DROP: NIE wyczyścićmy cache miniaturek!
+            # NAPRAWKA DRAG&DROP: NIE wyczyścićmy cache miniaturek! 
             # Scanner cache może zostać wyczyszczony ale thumbnail cache NIE!
             # Miniaturki nie zmieniają się przy przeniesieniu plików do innego folderu
             from src.logic.scanner import clear_cache
@@ -2127,13 +2127,13 @@ class MainWindow(QMainWindow):
             normalized_path = normalize_path(folder_path)
             base_folder_name = os.path.basename(normalized_path)
             self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
-
+            
             logging.info(f"Zmiana katalogu na: {normalized_path}")
-
+            
             # Wyczyść tylko galerię i dane, ale ZACHOWAJ drzewo katalogów
             self.gallery_manager.clear_gallery()
             self._clear_unpaired_files_lists()
-
+            
             # Skanuj tylko wybrany folder przez kontroler BEZ resetowania drzewa
             # Używamy bezpośrednio serwisu skanowania zamiast handle_folder_selection
             # aby uniknąć wywołania update_scan_results -> _on_tile_loading_finished -> init_directory_tree
@@ -2143,24 +2143,24 @@ class MainWindow(QMainWindow):
                 scan_result = self.controller.scan_service.scan_directory(
                     normalized_path, max_depth=0
                 )
-
+                
                 if scan_result.error_message:
                     self.show_error_message(
                         "Błąd skanowania", scan_result.error_message
                     )
                     return
-
+                
                 # Zaktualizuj stan kontrolera ręcznie
                 self.controller.current_directory = normalized_path
                 self.controller.current_file_pairs = scan_result.file_pairs
                 self.controller.unpaired_archives = scan_result.unpaired_archives
                 self.controller.unpaired_previews = scan_result.unpaired_previews
-
+                
                 # 🚨 NAPRAWKA: Ustaw ścieżkę w eksploratorze plików!
                 if hasattr(self, "file_explorer_tab"):
                     self.file_explorer_tab.set_root_path(normalized_path)
                     logging.info(f"EKSPLORATOR: Ustawiono ścieżkę na {normalized_path}")
-
+                
                 # Utwórz kafelki BEZ resetowania drzewa
                 if scan_result.file_pairs:
                     self._start_data_processing_worker_without_tree_reset(
@@ -2169,16 +2169,16 @@ class MainWindow(QMainWindow):
                 else:
                     # Wywołaj końcowe akcje BEZ init_directory_tree
                     self._finish_folder_change_without_tree_reset()
-
+                
                 logging.info(
                     f"Folder change SUCCESS: {normalized_path}, {len(scan_result.file_pairs)} par"
                 )
-
+                
             except Exception as scan_error:
                 error_msg = f"Błąd skanowania folderu: {scan_error}"
                 logging.error(error_msg)
                 self.show_error_message("Błąd", error_msg)
-
+            
         except Exception as e:
             error_msg = f"Błąd zmiany katalogu: {e}"
             logging.error(error_msg)
@@ -2211,7 +2211,7 @@ class MainWindow(QMainWindow):
 
         # Zapisz metadane
         self._save_metadata()
-
+        
         # NAPRAWKA: Uruchom obliczanie statystyk folderów także w change_directory
         if hasattr(self, "directory_tree_manager"):
             QTimer.singleShot(
