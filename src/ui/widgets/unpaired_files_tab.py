@@ -802,9 +802,9 @@ class UnpairedFilesTab:
         )
 
         # Podłącz sygnały
-        self.move_unpaired_worker.progress.connect(self.main_window._show_progress)
-        self.move_unpaired_worker.finished.connect(self._on_move_unpaired_finished)
-        self.move_unpaired_worker.error.connect(self._on_move_unpaired_error)
+        self.move_unpaired_worker.signals.progress.connect(self.main_window._show_progress)
+        self.move_unpaired_worker.signals.finished.connect(self._on_move_unpaired_finished)
+        self.move_unpaired_worker.signals.error.connect(self._on_move_unpaired_error)
 
         # Uruchom worker
         QThreadPool.globalInstance().start(self.move_unpaired_worker)
