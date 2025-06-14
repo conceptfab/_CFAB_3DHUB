@@ -437,6 +437,199 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
             self.emit_error(f"Nieoczekiwany błąd: {str(e)}", e)
 
 
+class BulkMoveFilesWorker(UnifiedBaseWorker, BatchOperationMixin):
+    """
+    Worker do masowego przenoszenia pojedynczych plików (dla drag&drop).
+    Różni się od BulkMoveWorker tym, że przyjmuje List[str] zamiast List[FilePair].
+    """
+
+    def __init__(self, file_paths: List[str], destination_dir: str, batch_size: int = 15):
+        """
+        Inicjalizuje worker do masowego przenoszenia pojedynczych plików.
+
+        Args:
+            file_paths: Lista ścieżek plików do przeniesienia
+            destination_dir: Katalog docelowy
+            batch_size: Rozmiar batch'a dla operacji grupowych
+        """
+        UnifiedBaseWorker.__init__(
+            self, timeout_seconds=600, priority=WorkerPriority.NORMAL
+        )
+        BatchOperationMixin.__init__(self, batch_size)
+        self.file_paths = file_paths
+        self.destination_dir = destination_dir
+        self.moved_files = []  # Lista pomyślnie przeniesionych plików
+        self.error_count = 0
+        self.success_count = 0
+        self.skipped_count = 0
+        self.detailed_errors = []  # Lista szczegółowych błędów
+        self.skipped_files = []  # Lista pominiętych plików z powodami
+
+    def _validate_inputs(self):
+        """Waliduje parametry wejściowe."""
+        if not self.file_paths:
+            raise ValueError("Lista plików do przeniesienia jest pusta")
+        if not self.destination_dir:
+            raise ValueError("Katalog docelowy nie może być pusty")
+        if not os.path.isdir(self.destination_dir):
+            raise ValueError(f"Katalog docelowy nie istnieje: {self.destination_dir}")
+
+    def _process_batch_implementation(self, batch_data: List[str]):
+        """Przetwarza batch operacji przenoszenia plików."""
+        dest_dir = normalize_path(self.destination_dir)
+
+        for file_path in batch_data:
+            if self.check_interruption():
+                return
+
+            try:
+                if not os.path.exists(file_path):
+                    error_msg = f"Plik źródłowy nie istnieje: {file_path}"
+                    self.detailed_errors.append({
+                        'file_path': file_path,
+                        'error': error_msg,
+                        'error_type': 'BRAK_PLIKU_ŹRÓDŁOWEGO'
+                    })
+                    self.error_count += 1
+                    logger.error(error_msg)
+                    continue
+
+                filename = os.path.basename(file_path)
+                target_path = os.path.join(dest_dir, filename)
+
+                # Sprawdź czy plik już istnieje w katalogu docelowym
+                if os.path.exists(target_path):
+                    skip_reason = f"Plik już istnieje w katalogu docelowym"
+                    self.skipped_files.append({
+                        'file_path': file_path,
+                        'target_path': target_path,
+                        'reason': skip_reason
+                    })
+                    logger.warning(f"Plik {filename} już istnieje w katalogu docelowym. Pomijanie.")
+                    self.skipped_count += 1
+                    continue
+
+                # Sprawdź uprawnienia do zapisu w katalogu docelowym
+                if not os.access(dest_dir, os.W_OK):
+                    error_msg = f"Brak uprawnień do zapisu w katalogu docelowym: {dest_dir}"
+                    self.detailed_errors.append({
+                        'file_path': file_path,
+                        'error': error_msg,
+                        'error_type': 'BRAK_UPRAWNIEŃ_ZAPISU'
+                    })
+                    self.error_count += 1
+                    logger.error(error_msg)
+                    continue
+
+                # Sprawdź dostępne miejsce na dysku
+                try:
+                    file_size = os.path.getsize(file_path)
+                    free_space = shutil.disk_usage(dest_dir).free
+                    if file_size > free_space:
+                        error_msg = f"Brak miejsca na dysku docelowym. Potrzeba: {file_size} bajtów, dostępne: {free_space} bajtów"
+                        self.detailed_errors.append({
+                            'file_path': file_path,
+                            'error': error_msg,
+                            'error_type': 'BRAK_MIEJSCA_NA_DYSKU'
+                        })
+                        self.error_count += 1
+                        logger.error(error_msg)
+                        continue
+                except OSError as e:
+                    logger.warning(f"Nie można sprawdzić miejsca na dysku: {e}")
+
+                # Wykonaj przeniesienie
+                shutil.move(file_path, target_path)
+                self.moved_files.append((file_path, target_path))
+                self.success_count += 1
+
+                logger.debug(f"Przeniesiono plik: {filename}")
+
+            except PermissionError as pe:
+                error_msg = f"Błąd uprawnień podczas przenoszenia {file_path}: {str(pe)}"
+                self.detailed_errors.append({
+                    'file_path': file_path,
+                    'error': error_msg,
+                    'error_type': 'BŁĄD_UPRAWNIEŃ'
+                })
+                self.error_count += 1
+                logger.error(error_msg, exc_info=True)
+            except OSError as oe:
+                error_msg = f"Błąd systemu podczas przenoszenia {file_path}: {str(oe)}"
+                self.detailed_errors.append({
+                    'file_path': file_path,
+                    'error': error_msg,
+                    'error_type': 'BŁĄD_SYSTEMU'
+                })
+                self.error_count += 1
+                logger.error(error_msg, exc_info=True)
+            except Exception as e:
+                error_msg = f"Nieoczekiwany błąd podczas przenoszenia {file_path}: {str(e)}"
+                self.detailed_errors.append({
+                    'file_path': file_path,
+                    'error': error_msg,
+                    'error_type': 'BŁĄD_NIEOCZEKIWANY'
+                })
+                self.error_count += 1
+                logger.error(error_msg, exc_info=True)
+
+    def _run_implementation(self):
+        """Wykonuje operację masowego przenoszenia pojedynczych plików."""
+        try:
+            self._validate_inputs()
+
+            total_files = len(self.file_paths)
+            self.emit_progress(0, f"Rozpoczęto przenoszenie {total_files} plików...")
+
+            processed_files = 0
+
+            # Przetwarzaj pliki w batch'ach
+            for file_path in self.file_paths:
+                if self.check_interruption():
+                    break
+
+                self.add_to_batch(file_path)
+                processed_files += 1
+
+                # NAPRAWKA PROGRESS BAR: Emituj progress dla KAŻDEGO pliku żeby pokazać realny postęp
+                percent = int((processed_files / total_files) * 100)
+                self.emit_progress(
+                    percent,
+                    f"Przenoszenie: {processed_files}/{total_files} plików...",
+                )
+
+            # Przetworz pozostałe pliki w batch'u
+            self.finalize_batches()
+
+            # Podsumowanie operacji
+            message = f"Przeniesiono {self.success_count} plików."
+            if self.skipped_count > 0:
+                message += f" Pominięto {self.skipped_count} plików (już istniejących)."
+            if self.error_count > 0:
+                message += f" Wystąpiły błędy przy {self.error_count} plikach."
+
+            self.emit_progress(100, message)
+            
+            # Przekaż wyniki wraz z raportami błędów
+            result = {
+                'moved_files': self.moved_files,
+                'detailed_errors': self.detailed_errors,
+                'skipped_files': self.skipped_files,
+                'summary': {
+                    'total_requested': len(self.file_paths),
+                    'successfully_moved': self.success_count,
+                    'errors': self.error_count,
+                    'skipped': self.skipped_count
+                }
+            }
+            self.emit_finished(result)
+
+        except ValueError as ve:
+            self.emit_error(f"Błąd walidacji: {str(ve)}")
+        except Exception as e:
+            self.emit_error(f"Nieoczekiwany błąd: {str(e)}", e)
+
+
 class MoveUnpairedArchivesWorker(UnifiedBaseWorker, BatchOperationMixin):
     """
     Worker do przenoszenia plików archiwum bez pary do folderu '_bez_pary_'.

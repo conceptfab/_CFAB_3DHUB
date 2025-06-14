@@ -447,8 +447,8 @@ _Priorytet: WYSOKI | Czas: 2 dni_
 | Etap                        | Czas    | Priorytet | Status       |
 | --------------------------- | ------- | --------- | ------------ |
 | ETAP 1: MainWindow          | 3-4 dni | NAJWYŻSZY | ✅ UKOŃCZONY |
-| ETAP 2: AppConfig           | 2 dni   | WYSOKI    | ⏳ Planowany |
-| ETAP 3: MetadataManager     | 2-3 dni | WYSOKI    | ⏳ Planowany |
+| ETAP 2: AppConfig           | 2 dni   | WYSOKI    | ✅ UKOŃCZONY |
+| ETAP 3: MetadataManager     | 2-3 dni | WYSOKI    | ✅ UKOŃCZONY |
 | ETAP 4: FileOperationsUI    | 2 dni   | ŚREDNI    | ⏳ Planowany |
 | ETAP 5: Widget'y            | 3-4 dni | ŚREDNI    | ⏳ Planowany |
 | ETAP 6: Struktura katalogów | 1 dzień | NISKI     | ⏳ Planowany |

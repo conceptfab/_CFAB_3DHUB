@@ -73,6 +73,9 @@ class WorkerManager:
         Args:
             file_pairs: Lista obiektów FilePair do przetworzenia
         """
+        # NAPRAWKA PROGRESS BAR: Resetuj progress bar na 0% przed rozpoczęciem
+        self.main_window._show_progress(0, "Przygotowywanie...")
+        
         # NAPRAWKA: Resetuj liczniki progress bara na początku operacji
         if hasattr(self.main_window, "_batch_processing_started"):
             delattr(self.main_window, "_batch_processing_started")
@@ -132,6 +135,9 @@ class WorkerManager:
         Args:
             file_pairs: Lista obiektów FilePair do przetworzenia
         """
+        # NAPRAWKA PROGRESS BAR: Resetuj progress bar na 0% przed rozpoczęciem
+        self.main_window._show_progress(0, "Przygotowywanie...")
+        
         # NAPRAWKA: Resetuj liczniki progress bara na początku operacji
         if hasattr(self.main_window, "_batch_processing_started"):
             delattr(self.main_window, "_batch_processing_started")

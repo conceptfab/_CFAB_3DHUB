@@ -313,13 +313,28 @@ class WebPConverterDialog(QDialog):
             if app:
                 for widget in app.topLevelWidgets():
                     if hasattr(widget, 'refresh_all_views'):
-                        # Odśwież widoki z opóźnieniem aby pliki WebP zostały wykryte
-                        QTimer.singleShot(1000, widget.refresh_all_views)
-                        self._log("🔄 Odświeżanie widoków aplikacji...")
+                        # NAPRAWKA CRASH: Thread-safe odświeżenie z większym opóźnieniem
+                        # i proper error handling żeby uniknąć zawieszania po konwersji
+                        def safe_refresh():
+                            try:
+                                # Sprawdź czy widget nadal istnieje
+                                if widget and hasattr(widget, 'refresh_all_views'):
+                                    widget.refresh_all_views()
+                                    self._log("✅ Widoki aplikacji odświeżone pomyślnie")
+                                else:
+                                    self._log("⚠️ Widget już nie istnieje - pomijam odświeżenie")
+                            except Exception as refresh_error:
+                                self._log(f"❌ Błąd odświeżania: {refresh_error}")
+                                logging.error(f"Błąd podczas odświeżania po konwersji: {refresh_error}")
+                        
+                        # Większe opóźnienie dla stabilności i thread-safe execution
+                        QTimer.singleShot(2000, safe_refresh)
+                        self._log("🔄 Zaplanowano odświeżanie widoków aplikacji...")
                         break
                         
         except Exception as e:
             logging.error(f"Błąd odświeżania widoków aplikacji: {e}")
+            self._log(f"❌ Błąd planowania odświeżenia: {e}")
 
     def closeEvent(self, event):
         """Obsługuje zamknięcie okna."""

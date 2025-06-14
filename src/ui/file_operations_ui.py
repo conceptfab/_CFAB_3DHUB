@@ -6,8 +6,7 @@ import logging
 import os
 from typing import List, Optional
 
-from PyQt6.QtCore import QThreadPool  # Dodano QThreadPool
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QThreadPool, QTimer, Qt  # Dodano QThreadPool i QTimer
 from PyQt6.QtWidgets import QProgressDialog  # Dodano QProgressDialog
 from PyQt6.QtWidgets import QInputDialog, QListWidget, QMenu, QMessageBox, QWidget
 
@@ -665,10 +664,9 @@ class FileOperationsUI:
         if hasattr(self.parent_window, "refresh_all_views") and callable(
             self.parent_window.refresh_all_views
         ):
-            # Po przeniesieniu, chcemy odświeżyć widok, ale nowy element może być w innym folderze,
-            # więc niekoniecznie chcemy go zaznaczać, chyba że logika aplikacji tego wymaga.
-            # Na razie proste odświeżenie.
-            self.parent_window.refresh_all_views()
+            # NAPRAWKA DRAG&DROP PERFORMANCE: Użyj opóźnionego odświeżania dla pojedynczych par
+            # żeby nie blokować UI podczas drag&drop
+            QTimer.singleShot(500, self.parent_window.refresh_all_views)
             # Jeśli MainWindow ma metodę do zmiany folderu i chcemy na niego przejść:
             # self.parent_window.select_folder(target_folder_path)
             # Lub jeśli chcemy zaznaczyć przeniesiony element, jeśli jest w bieżącym widoku:
@@ -726,11 +724,12 @@ class FileOperationsUI:
             if hasattr(self.parent_window, "_show_progress"):
                 self.parent_window._show_progress(100, f"Błąd: {str(e)}")
 
-        # Odśwież widoki po przeniesieniu
+        # NAPRAWKA DRAG&DROP PERFORMANCE: Odśwież widoki tylko jeśli nie ma bulk move
+        # Dla bulk move _handle_bulk_move_finished() już obsługuje odświeżanie
         if hasattr(self.parent_window, "refresh_all_views") and callable(
             self.parent_window.refresh_all_views
         ):
-            logging.debug("Refreshing views after file move")
+            logging.debug("Refreshing views after individual file move")
             self.parent_window.refresh_all_views()
 
     def _move_file_pairs_bulk(
@@ -836,11 +835,10 @@ class FileOperationsUI:
                 if hasattr(self.parent_window, "refresh_all_views"):
                     self.parent_window.refresh_all_views()
 
-        # Odśwież widoki (ale już po usunięciu przeniesionych plików ze struktury danych)
-        if hasattr(self.parent_window, "refresh_all_views") and callable(
-            self.parent_window.refresh_all_views
-        ):
-            self.parent_window.refresh_all_views()
+        # NAPRAWKA DRAG&DROP PERFORMANCE: NIE wywołuj refresh_all_views() tutaj!
+        # _refresh_source_folder_after_move() już odświeża widoki przez change_directory()
+        # Podwójne odświeżanie spowalnia drag&drop ekstremalnie po refaktoryzacji MetadataManager
+        logger.debug("Pomijam refresh_all_views() - _refresh_source_folder_after_move() już odświeża widoki")
 
     def _handle_bulk_move_error(self, error_message: str):
         """

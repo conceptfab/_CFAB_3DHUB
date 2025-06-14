@@ -58,8 +58,9 @@ class EventHandler:
         """
         super(type(self.main_window), self.main_window).resizeEvent(event)
         
-        # Opóźnione odświeżenie galerii po zmianie rozmiaru
-        self.main_window.resize_timer.start(300)
+        # Opóźnione odświeżenie galerii po zmianie rozmiaru - używaj konfiguracji
+        delay = self.main_window.app_config.resize_timer_delay_ms
+        self.main_window.resize_timer.start(delay)
 
     def handle_scan_finished(self, found_pairs, unpaired_archives, unpaired_previews):
         """

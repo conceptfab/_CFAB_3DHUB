@@ -43,6 +43,9 @@ class ProgressManager:
             percent: Wartość postępu (0-100)
             message: Wiadomość do wyświetlenia
         """
+        # NAPRAWKA PROGRESS BAR: Ogranicz percent do zakresu 0-100
+        percent = max(0, min(100, percent))
+        
         self.main_window.progress_bar.setValue(percent)
         self.main_window.progress_label.setText(message)
         self.main_window.progress_bar.setVisible(True)

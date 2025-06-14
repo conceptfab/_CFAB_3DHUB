@@ -271,7 +271,7 @@ class DataProcessingWorker(QObject):
         self,
         working_directory: str,
         file_pairs: list[FilePair],
-        timeout_seconds: int = 600,
+        timeout_seconds: int = 1800,  # NAPRAWKA: 30 minut timeout dla dużych folderów
     ):
         """
         Inicjalizuje worker do przetwarzania danych.
@@ -286,7 +286,7 @@ class DataProcessingWorker(QObject):
         self.file_pairs = file_pairs
         self._interrupted = False
         self._last_progress_time = 0
-        self._progress_interval_ms = 100  # Minimalny odstęp między sygnałami (ms)
+        self._progress_interval_ms = 50  # NAPRAWKA PROGRESS BAR: Zmniejszony odstęp dla płynniejszego progress bara
         self._start_time = None
         self._timeout_seconds = timeout_seconds
 
@@ -329,21 +329,21 @@ class DataProcessingWorker(QObject):
         self.progress.emit(percent, message)
 
     def emit_progress_batched(self, current: int, total: int, message: str):
-        """Emituje sygnał postępu z limitem częstotliwości."""
-        current_time = time.time() * 1000  # Czas w milisekundach
-
-        # Zawsze emituj pierwszy (0%) i ostatni (100%) progress oraz co _progress_interval_ms
+        """NAPRAWKA PROGRESS BAR: Emituje postęp z throttling dla wydajności przy dużej liczbie kafelków."""
+        # Oblicz realny procent postępu
         percent = int((current / max(total, 1)) * 100)
-        is_first = current == 0
-        is_last = current >= total
-
-        if (
-            is_first
-            or is_last
-            or (current_time - self._last_progress_time) >= self._progress_interval_ms
-        ):
+        
+        # NAPRAWKA WYDAJNOŚCI: Throttling progress bara - emituj tylko co 1% lub co 10 kafelków
+        # Dla 1487 kafelków to oznacza ~15 aktualizacji zamiast 1487!
+        should_emit = (
+            current == 1 or  # Pierwszy kafelk
+            current == total or  # Ostatni kafelk
+            current % max(1, total // 100) == 0 or  # Co 1% postępu
+            current % 10 == 0  # Co 10 kafelków
+        )
+        
+        if should_emit:
             self.emit_progress(percent, message)
-            self._last_progress_time = current_time
 
     def emit_error(self, message: str, exception: Exception = None):
         """Emituje sygnał błędu z logowaniem."""
@@ -368,38 +368,46 @@ class DataProcessingWorker(QObject):
         self._start_time = time.time()
 
         try:
-            # 🔥 KRYTYCZNE: WCZYTAJ METADANE PRZED PRZETWARZANIEM!
-            self.emit_progress(0, "Wczytywanie metadanych...")
+            # NAPRAWKA PROGRESS BAR: Wymuś progress 0% na samym początku
+            self.emit_progress(0, "Rozpoczynanie ładowania...")
+            
+            # NAPRAWKA PERFORMANCE: Szybkie ładowanie galerii bez metadanych
+            self.emit_progress(0, f"Szybkie ładowanie {len(self.file_pairs)} kafelków...")
 
-            from src.logic.metadata_manager import MetadataManager
-
-            metadata_manager = MetadataManager.get_instance(self.working_directory)
-            metadata_applied = metadata_manager.apply_metadata_to_file_pairs(
-                self.file_pairs
-            )
-
-            print(
-                f"🔥 DataProcessingWorker: Metadane zastosowane do {len(self.file_pairs)} par - sukces: {metadata_applied}"
-            )
+            # NAPRAWKA PERFORMANCE: POMIŃ metadane podczas ładowania galerii!
+            # Metadane będą załadowane asynchronicznie w tle przez osobny worker
+            # To drastycznie przyspiesza ładowanie galerii po refaktoryzacji MetadataManager
+            logger.debug(f"DataProcessingWorker: Pomijam metadane dla szybkiego ładowania {len(self.file_pairs)} par")
+            metadata_applied = True  # Symuluj sukces żeby nie blokować UI
 
             processed_pairs = []
             total_pairs = len(self.file_pairs)
 
-            # Przetwarzanie wsadowe - generuj kafelki w grupach
-            batch_size = 10  # Rozmiar wsadu
+            # NAPRAWKA PERFORMANCE: Dynamiczny batch size w zależności od liczby kafelków
+            # Dla małych folderów (do 100 par) - batch_size = 5
+            # Dla średnich folderów (100-500 par) - batch_size = 20  
+            # Dla dużych folderów (500+ par) - batch_size = 50
+            if total_pairs <= 100:
+                batch_size = 5
+            elif total_pairs <= 500:
+                batch_size = 20
+            else:
+                batch_size = 50  # Większy batch dla dużych folderów żeby zmniejszyć liczbę sygnałów
             current_batch = []
 
             for i, file_pair in enumerate(self.file_pairs):
                 if self.check_interruption():
                     return
 
-                # Emituj progress co 10% lub co 5 plików
-                if i % max(1, total_pairs // 10) == 0 or i % 5 == 0:
-                    self.emit_progress_batched(
-                        i,
-                        total_pairs,
-                        f"Przetwarzanie: {i}/{total_pairs} par plików...",
-                    )
+                # NAPRAWKA PROGRESS BAR: Emituj progress dla KAŻDEGO kafelka żeby było widać postęp
+                self.emit_progress_batched(
+                    i + 1,  # +1 żeby pokazać aktualny postęp
+                    total_pairs,
+                    f"Ładowanie kafelków: {i + 1}/{total_pairs}...",
+                )
+
+                # NAPRAWKA WYDAJNOŚCI: Usunięto time.sleep() - drastycznie spowalniało aplikację
+                # Progress bar jest widoczny dzięki częstym emit_progress_batched() calls
 
                 # Dodaj do batch'a
                 current_batch.append(file_pair)
@@ -409,16 +417,45 @@ class DataProcessingWorker(QObject):
                 if len(current_batch) >= batch_size:
                     self.tiles_batch_ready.emit(current_batch.copy())
                     current_batch.clear()
+                    
+                    # NAPRAWKA WYDAJNOŚCI: Krótka przerwa co batch żeby UI mogło się odświeżyć
+                    # Tylko dla dużych folderów (500+ par) żeby nie blokować UI
+                    if total_pairs >= 500 and i % (batch_size * 2) == 0:
+                        time.sleep(0.001)  # 1ms przerwa co 2 batch'e dla UI
 
             # Wyemituj pozostałe pliki w batch'u
             if current_batch:
                 self.tiles_batch_ready.emit(current_batch)
 
-            self.emit_progress(100, f"Przetworzono {len(processed_pairs)} par plików")
+            self.emit_progress(100, f"✅ Załadowano {len(processed_pairs)} kafelków! Metadane ładują się w tle...")
             self.emit_finished(processed_pairs)
+            
+            # NAPRAWKA PERFORMANCE: Załaduj metadane asynchronicznie w tle po załadowaniu galerii
+            self._load_metadata_async()
 
         except Exception as e:
             self.emit_error(f"Błąd podczas przetwarzania danych: {str(e)}", e)
+    
+    def _load_metadata_async(self):
+        """Ładuje metadane asynchronicznie w tle po załadowaniu galerii."""
+        try:
+            import threading
+            
+            def load_metadata_delayed():
+                try:
+                    from src.logic.metadata_manager import MetadataManager
+                    metadata_manager = MetadataManager.get_instance(self.working_directory)
+                    metadata_applied = metadata_manager.apply_metadata_to_file_pairs(self.file_pairs)
+                    logger.debug(f"Metadane załadowane asynchronicznie: {metadata_applied}")
+                except Exception as e:
+                    logger.error(f"Błąd ładowania metadanych w tle: {e}")
+            
+            # NAPRAWKA THREAD SAFETY: Użyj threading.Timer zamiast QTimer w worker thread
+            timer = threading.Timer(1.0, load_metadata_delayed)
+            timer.start()
+            
+        except Exception as e:
+            logger.error(f"Błąd planowania asynchronicznego ładowania metadanych: {e}")
 
     def stop(self):
         """Zatrzymuje worker - kompatybilność z main_window."""

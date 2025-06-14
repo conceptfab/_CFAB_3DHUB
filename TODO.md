@@ -3,6 +3,6 @@
 2. Dodanie 3 zakładki z podglądem danego folderu w stylu eksploratora - widoczne maja być wszystkie plik
 3. Dodanie do 3 zakładki toola - random_name.
 
-4. Poprawki UI
+4. Poprawki UI - porogress bary indetyczne
 5. Foldery ULubione
 6. Program się zawiesza przy parowania jeśli znajdzie plik który istnieje

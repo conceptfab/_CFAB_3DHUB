@@ -880,9 +880,12 @@ class DirectoryTreeManager:
                     if source_index.isValid():
                         folder_path = self.model.filePath(source_index)
                         if os.path.isdir(folder_path):
-                            self._highlighted_drop_target = folder_path
-                            # Wymuś ponowne rysowanie
-                            self.folder_tree.viewport().update()
+                            # NAPRAWKA DRAG&DROP PERFORMANCE: Tylko aktualizuj jeśli folder się zmienił
+                            current_target = getattr(self, '_highlighted_drop_target', None)
+                            if current_target != folder_path:
+                                self._highlighted_drop_target = folder_path
+                                # Wymuś ponowne rysowanie tylko jeśli folder się zmienił
+                                self.folder_tree.viewport().update()
                             event.acceptProposedAction()
                             return
 

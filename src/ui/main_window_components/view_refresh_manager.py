@@ -29,7 +29,7 @@ class ViewRefreshManager(QObject):
         self._refresh_timer = QTimer()
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self._perform_scheduled_refreshes)
-        self._refresh_delay = 100  # 100ms opóźnienie
+        self._refresh_delay = 50  # NAPRAWKA PERFORMANCE: Zmniejszone opóźnienie dla szybszego UI
         
         # Definicje widoków do odświeżania
         self._view_definitions = {

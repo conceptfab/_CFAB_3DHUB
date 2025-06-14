@@ -10,7 +10,7 @@ from typing import List
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from src.models.file_pair import FilePair
-from src.ui.delegates.workers import BulkMoveWorker
+from src.ui.delegates.workers import BulkMoveWorker, BulkMoveFilesWorker
 # Usunięto import nieistniejącej klasy BulkDeleteDialog
 
 
@@ -135,12 +135,12 @@ class FileOperationsCoordinator:
         # Pokaż progress
         self.main_window.progress_manager.show_progress(0, f"Przenoszenie {len(source_file_paths)} plików...")
 
-        # Uruchom worker do przenoszenia plików
-        worker = BulkMoveWorker(source_file_paths, target_folder_path)
+        # Uruchom worker do przenoszenia plików (BulkMoveFilesWorker dla List[str])
+        worker = BulkMoveFilesWorker(source_file_paths, target_folder_path)
         self.main_window.worker_manager.setup_worker_connections(worker)
         
-        # Podłącz callback po zakończeniu
-        worker.finished.connect(lambda result: self.on_bulk_move_finished(result))
+        # Podłącz callback po zakończeniu (inny format wyniku dla BulkMoveFilesWorker)
+        worker.finished.connect(lambda result: self.on_bulk_move_files_finished(result))
         
         # Uruchom worker
         self.main_window.thread_pool.start(worker)
@@ -176,7 +176,7 @@ class FileOperationsCoordinator:
 
     def on_bulk_move_finished(self, result):
         """
-        Callback po zakończeniu operacji bulk move.
+        Callback po zakończeniu operacji bulk move (dla FilePair).
         
         Args:
             result: Wynik operacji przenoszenia
@@ -204,6 +204,33 @@ class FileOperationsCoordinator:
         
         # Pokaż szczegółowy raport
         self.show_detailed_move_report(moved_pairs, detailed_errors, skipped_files, summary)
+        
+        # Odśwież folder źródłowy po przenoszeniu
+        self.refresh_source_folder_after_move()
+
+    def on_bulk_move_files_finished(self, result):
+        """
+        Callback po zakończeniu operacji bulk move files (dla drag&drop).
+        
+        Args:
+            result: Wynik operacji przenoszenia pojedynczych plików
+        """
+        self.logger.info("Bulk move files zakończone")
+        
+        # Ukryj progress
+        self.main_window.progress_manager.hide_progress()
+        
+        # Rozpakuj wynik (inny format niż moved_pairs)
+        moved_files = result.get('moved_files', [])
+        detailed_errors = result.get('detailed_errors', [])
+        skipped_files = result.get('skipped_files', [])
+        summary = result.get('summary', {})
+        
+        # Odśwież widoki (nie usuwamy z file_pairs bo to były pojedyncze pliki)
+        self.main_window.refresh_all_views()
+        
+        # Pokaż szczegółowy raport dla pojedynczych plików
+        self.show_detailed_files_move_report(moved_files, detailed_errors, skipped_files, summary)
         
         # Odśwież folder źródłowy po przenoszeniu
         self.refresh_source_folder_after_move()
@@ -260,6 +287,66 @@ class FileOperationsCoordinator:
         msg_box = QMessageBox(self.main_window)
         msg_box.setWindowTitle("Raport Operacji Przenoszenia")
         msg_box.setText("Operacja przenoszenia została zakończona.")
+        msg_box.setDetailedText(report_text)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.exec()
+
+    def show_detailed_files_move_report(self, moved_files, detailed_errors, skipped_files, summary):
+        """
+        Pokazuje szczegółowy raport operacji przenoszenia pojedynczych plików.
+        
+        Args:
+            moved_files: Lista przeniesionych plików (tuples: (source, target))
+            detailed_errors: Lista szczegółowych błędów
+            skipped_files: Lista pominiętych plików
+            summary: Podsumowanie operacji
+        """
+        # Przygotuj treść raportu
+        report_lines = []
+        
+        # Podsumowanie
+        report_lines.append("=== RAPORT OPERACJI PRZENOSZENIA PLIKÓW ===\n")
+        report_lines.append(f"Przeniesiono pomyślnie: {summary.get('successfully_moved', 0)} plików")
+        report_lines.append(f"Błędy: {summary.get('errors', 0)}")
+        report_lines.append(f"Pominięto: {summary.get('skipped', 0)}")
+        report_lines.append("")
+        
+        # Przeniesione pliki
+        if moved_files:
+            report_lines.append("=== PRZENIESIONE PLIKI ===")
+            for source_path, target_path in moved_files[:10]:  # Pokaż maksymalnie 10
+                report_lines.append(f"✓ {os.path.basename(source_path)}")
+            if len(moved_files) > 10:
+                report_lines.append(f"... i {len(moved_files) - 10} więcej")
+            report_lines.append("")
+        
+        # Błędy
+        if detailed_errors:
+            report_lines.append("=== BŁĘDY ===")
+            for error in detailed_errors[:5]:  # Pokaż maksymalnie 5 błędów
+                file_path = error.get('file_path', 'Nieznany')
+                error_msg = error.get('error', 'Nieznany błąd')
+                report_lines.append(f"✗ {os.path.basename(file_path)}: {error_msg}")
+            if len(detailed_errors) > 5:
+                report_lines.append(f"... i {len(detailed_errors) - 5} więcej błędów")
+            report_lines.append("")
+        
+        # Pominięte pliki
+        if skipped_files:
+            report_lines.append("=== POMINIĘTE PLIKI ===")
+            for skipped in skipped_files[:5]:  # Pokaż maksymalnie 5
+                file_path = skipped.get('file_path', 'Nieznany')
+                reason = skipped.get('reason', 'Nieznany powód')
+                report_lines.append(f"⚠ {os.path.basename(file_path)}: {reason}")
+            if len(skipped_files) > 5:
+                report_lines.append(f"... i {len(skipped_files) - 5} więcej")
+        
+        # Pokaż dialog z raportem
+        report_text = "\n".join(report_lines)
+        
+        msg_box = QMessageBox(self.main_window)
+        msg_box.setWindowTitle("Raport Operacji Przenoszenia Plików")
+        msg_box.setText("Operacja przenoszenia plików została zakończona.")
         msg_box.setDetailedText(report_text)
         msg_box.setIcon(QMessageBox.Icon.Information)
         msg_box.exec()

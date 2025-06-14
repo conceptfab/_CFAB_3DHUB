@@ -32,6 +32,7 @@ from .file_workers import (
 from .bulk_workers import (
     BulkDeleteWorker,
     BulkMoveWorker,
+    BulkMoveFilesWorker,
 )
 
 # Processing workery
@@ -62,7 +63,7 @@ __all__ = [
     'ManuallyPairFilesWorker', 'RenameFilePairWorker', 'DeleteFilePairWorker', 'MoveFilePairWorker',
     
     # Bulk workery
-    'BulkDeleteWorker', 'BulkMoveWorker',
+    'BulkDeleteWorker', 'BulkMoveWorker', 'BulkMoveFilesWorker',
     
     # Processing workery
     'ThumbnailGenerationWorker', 'BatchThumbnailWorker', 'DataProcessingWorker', 'SaveMetadataWorker',

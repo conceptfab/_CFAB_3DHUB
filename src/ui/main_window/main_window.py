@@ -761,8 +761,11 @@ class MainWindow(QMainWindow):
         # Aktualizuj progress bar dla tworzenia kafelków (bez miniaturek)
         self.progress_manager.update_batch_progress(self.progress_manager.get_thumbnails_loaded())
 
-        # Czasowo wyłącz aktualizacje UI dla lepszej wydajności
+        # NAPRAWKA WYDAJNOŚCI: Wyłącz aktualizacje UI dla całego batch'a
         self.gallery_manager.tiles_container.setUpdatesEnabled(False)
+        
+        # NAPRAWKA WYDAJNOŚCI: Wyłącz również repaint dla lepszej wydajności
+        self.gallery_manager.tiles_container.setVisible(False)
 
         try:
             created_count = 0
@@ -770,17 +773,24 @@ class MainWindow(QMainWindow):
                 tile = self._create_tile_widget_for_pair(file_pair)
                 if tile:
                     created_count += 1
-                    current_loaded = self.progress_manager.get_thumbnails_loaded() + 1
+                    # NAPRAWKA WYDAJNOŚCI: Aktualizuj licznik tylko gdy potrzeba
+                    current_loaded = self.progress_manager.get_thumbnails_loaded() + created_count
                     
-                    # Aktualizuj progress co 5 kafelków
-                    if (
-                        current_loaded % 5 == 0
-                        or current_loaded >= self.progress_manager.get_total_thumbnails()
-                    ):
+                    # NAPRAWKA WYDAJNOŚCI: Throttling progress bara - aktualizuj rzadziej dla dużych folderów
+                    total_thumbnails = self.progress_manager.get_total_thumbnails()
+                    should_update_progress = (
+                        current_loaded == 1 or  # Pierwszy kafelek
+                        current_loaded >= total_thumbnails or  # Ostatni kafelek
+                        current_loaded % max(1, total_thumbnails // 50) == 0 or  # Co 2% postępu
+                        current_loaded % 25 == 0  # Co 25 kafelków (zamiast co 5)
+                    )
+                    
+                    if should_update_progress:
                         self.progress_manager.update_batch_progress(current_loaded)
 
         finally:
-            # Przywróć aktualizacje UI
+            # NAPRAWKA WYDAJNOŚCI: Przywróć widoczność i aktualizacje UI
+            self.gallery_manager.tiles_container.setVisible(True)
             self.gallery_manager.tiles_container.setUpdatesEnabled(True)
             self.gallery_manager.tiles_container.update()  # Wymuś odświeżenie
 
@@ -789,6 +799,9 @@ class MainWindow(QMainWindow):
         Wywoływane po zakończeniu tworzenia wszystkich kafelków.
         """
         logging.info("Zakończono tworzenie wszystkich kafelków.")
+
+        # NAPRAWKA PROGRESS BAR: Ukryj progress bar po zakończeniu ładowania
+        self.progress_manager.hide_progress()
 
         # Zastosuj filtry i odśwież widok
         self._apply_filters_and_update_view()
