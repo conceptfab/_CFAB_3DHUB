@@ -233,15 +233,9 @@ class ViewRefreshManager(QObject):
     def _refresh_gallery_view(self) -> bool:
         """Odświeża widok galerii."""
         try:
-            # NAPRAWKA: Bezpośrednie odświeżenie galerii bez rekurencji
-            if hasattr(self.main_window, 'gallery_tab') and hasattr(self.main_window.gallery_tab, 'refresh_gallery'):
-                self.main_window.gallery_tab.refresh_gallery()
-                return True
-            elif hasattr(self.main_window, 'controller') and hasattr(self.main_window.controller, 'refresh_gallery'):
-                self.main_window.controller.refresh_gallery()
-                return True
-            else:
-                logger.debug("Brak metody odświeżania galerii - pomijam")
+            # NAPRAWKA: Użyj istniejącej metody zamiast nieistniejącej refresh_gallery()
+            if hasattr(self.main_window, '_update_gallery_view'):
+                self.main_window._update_gallery_view()
                 return True
         except Exception as e:
             logger.error(f"Błąd odświeżania galerii: {e}")
@@ -250,15 +244,9 @@ class ViewRefreshManager(QObject):
     def _refresh_unpaired_files_view(self) -> bool:
         """Odświeża widok niesparowanych plików."""
         try:
-            # NAPRAWKA: Bezpośrednie odświeżenie bez rekurencji
-            if hasattr(self.main_window, 'unpaired_files_tab') and hasattr(self.main_window.unpaired_files_tab, 'refresh_lists'):
-                self.main_window.unpaired_files_tab.refresh_lists()
-                return True
-            elif hasattr(self.main_window, 'controller') and hasattr(self.main_window.controller, 'refresh_unpaired_lists'):
-                self.main_window.controller.refresh_unpaired_lists()
-                return True
-            else:
-                logger.debug("Brak metody odświeżania niesparowanych plików - pomijam")
+            # NAPRAWKA: Użyj istniejącej metody zamiast nieistniejącej refresh_lists()
+            if hasattr(self.main_window, '_update_unpaired_files_direct'):
+                self.main_window._update_unpaired_files_direct()
                 return True
         except Exception as e:
             logger.error(f"Błąd odświeżania niesparowanych plików: {e}")
