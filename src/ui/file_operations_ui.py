@@ -6,7 +6,7 @@ import logging
 import os
 from typing import List, Optional
 
-from PyQt6.QtCore import QThreadPool, QTimer, Qt  # Dodano QThreadPool i QTimer
+from PyQt6.QtCore import Qt, QThreadPool, QTimer  # Dodano QThreadPool i QTimer
 from PyQt6.QtWidgets import QProgressDialog  # Dodano QProgressDialog
 from PyQt6.QtWidgets import QInputDialog, QListWidget, QMenu, QMessageBox, QWidget
 
@@ -114,7 +114,11 @@ class FileOperationsUI:
         )
 
         if ok and new_name and new_name != current_name:
-            worker = file_operations.rename_file_pair(file_pair, new_name)
+            # Pobierz working_directory z file_pair
+            working_directory = file_pair.working_directory
+            worker = file_operations.rename_file_pair(
+                file_pair, new_name, working_directory
+            )
 
             if worker:
                 progress_dialog = QProgressDialog(
@@ -131,8 +135,8 @@ class FileOperationsUI:
                 progress_dialog.setValue(0)
 
                 worker.signals.finished.connect(
-                    lambda old_fp, new_fp: self._handle_rename_file_pair_finished(
-                        old_fp, new_fp, progress_dialog
+                    lambda new_fp: self._handle_rename_file_pair_finished(
+                        file_pair, new_fp, progress_dialog
                     )
                 )
                 worker.signals.error.connect(
@@ -221,8 +225,8 @@ class FileOperationsUI:
                 progress_dialog.setValue(0)
 
                 worker.signals.finished.connect(
-                    lambda fp: self._handle_delete_file_pair_finished(
-                        fp, progress_dialog
+                    lambda deleted_files: self._handle_delete_file_pair_finished(
+                        file_pair, progress_dialog
                     )
                 )
                 worker.signals.error.connect(
@@ -253,18 +257,16 @@ class FileOperationsUI:
         # Usunięto return False/True
 
     def _handle_delete_file_pair_finished(
-        self, deleted_file_pair: FilePair, progress_dialog: QProgressDialog
+        self, file_pair: FilePair, progress_dialog: QProgressDialog
     ):
-        logger.info(
-            f"Pomyślnie usunięto pliki dla {deleted_file_pair.get_base_name()}."
-        )
+        logger.info(f"Pomyślnie usunięto pliki dla {file_pair.get_base_name()}.")
         if progress_dialog.isVisible():
             progress_dialog.accept()
 
         QMessageBox.information(
             self.parent_window,
             "Sukces",
-            f"Pomyślnie usunięto pliki dla '{deleted_file_pair.get_base_name()}'.",
+            f"Pomyślnie usunięto pliki dla '{file_pair.get_base_name()}'.",
         )
         if hasattr(self.parent_window, "refresh_all_views") and callable(
             self.parent_window.refresh_all_views
@@ -783,10 +785,10 @@ class FileOperationsUI:
         """
         # Wyciągnij dane z wyniku
         if isinstance(result, dict):
-            moved_pairs = result.get('moved_pairs', [])
-            detailed_errors = result.get('detailed_errors', [])
-            skipped_files = result.get('skipped_files', [])
-            summary = result.get('summary', {})
+            moved_pairs = result.get("moved_pairs", [])
+            detailed_errors = result.get("detailed_errors", [])
+            skipped_files = result.get("skipped_files", [])
+            summary = result.get("summary", {})
         else:
             # Fallback dla starych workerów
             moved_pairs = result if isinstance(result, list) else []
@@ -808,7 +810,9 @@ class FileOperationsUI:
 
         # Pokaż szczegółowy raport błędów jeśli wystąpiły
         if detailed_errors or skipped_files:
-            self._show_detailed_move_report(moved_pairs, detailed_errors, skipped_files, summary)
+            self._show_detailed_move_report(
+                moved_pairs, detailed_errors, skipped_files, summary
+            )
 
         # 🔧 NAPRAWKA DRAG&DROP: Usuń przeniesione pary z struktur danych głównego okna
         # i odśwież folder źródłowy żeby usunąć pliki które już nie istnieją na dysku
@@ -838,7 +842,9 @@ class FileOperationsUI:
         # NAPRAWKA DRAG&DROP PERFORMANCE: NIE wywołuj refresh_all_views() tutaj!
         # _refresh_source_folder_after_move() już odświeża widoki przez change_directory()
         # Podwójne odświeżanie spowalnia drag&drop ekstremalnie po refaktoryzacji MetadataManager
-        logger.debug("Pomijam refresh_all_views() - _refresh_source_folder_after_move() już odświeża widoki")
+        logger.debug(
+            "Pomijam refresh_all_views() - _refresh_source_folder_after_move() już odświeża widoki"
+        )
 
     def _handle_bulk_move_error(self, error_message: str):
         """
@@ -865,7 +871,9 @@ class FileOperationsUI:
         if hasattr(self.parent_window, "_show_progress"):
             self.parent_window._show_progress(percent, message)
 
-    def _show_detailed_move_report(self, moved_pairs, detailed_errors, skipped_files, summary):
+    def _show_detailed_move_report(
+        self, moved_pairs, detailed_errors, skipped_files, summary
+    ):
         """
         Wyświetla szczegółowy raport z operacji przenoszenia plików.
 
@@ -875,7 +883,16 @@ class FileOperationsUI:
             skipped_files: Lista pominiętych plików
             summary: Podsumowanie operacji
         """
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QLabel, QTabWidget, QWidget
+        from PyQt6.QtWidgets import (
+            QDialog,
+            QHBoxLayout,
+            QLabel,
+            QPushButton,
+            QTabWidget,
+            QTextEdit,
+            QVBoxLayout,
+            QWidget,
+        )
 
         dialog = QDialog(self.parent_window)
         dialog.setWindowTitle("Raport przenoszenia plików")
@@ -892,7 +909,7 @@ class FileOperationsUI:
 <p><b>Błędy:</b> {summary.get('errors', 0)} plików</p>
 <p><b>Pominięto:</b> {summary.get('skipped', 0)} plików</p>
         """
-        
+
         summary_label = QLabel(summary_text)
         summary_label.setWordWrap(True)
         layout.addWidget(summary_label)
@@ -905,33 +922,35 @@ class FileOperationsUI:
         if detailed_errors:
             errors_widget = QWidget()
             errors_layout = QVBoxLayout(errors_widget)
-            
+
             errors_text = QTextEdit()
             errors_text.setReadOnly(True)
-            
+
             error_content = "<h4>Szczegółowe błędy:</h4>\n"
-            
+
             # Grupuj błędy według typu
             error_groups = {}
             for error in detailed_errors:
-                error_type = error.get('error_type', 'NIEZNANY')
+                error_type = error.get("error_type", "NIEZNANY")
                 if error_type not in error_groups:
                     error_groups[error_type] = []
                 error_groups[error_type].append(error)
-            
+
             for error_type, errors in error_groups.items():
-                error_content += f"<h5>{error_type} ({len(errors)} plików):</h5>\n<ul>\n"
+                error_content += (
+                    f"<h5>{error_type} ({len(errors)} plików):</h5>\n<ul>\n"
+                )
                 for error in errors:
-                    file_pair = error.get('file_pair', 'Nieznany')
-                    file_type = error.get('file_type', 'nieznany')
-                    file_path = error.get('file_path', 'nieznana ścieżka')
-                    error_msg = error.get('error', 'nieznany błąd')
-                    
+                    file_pair = error.get("file_pair", "Nieznany")
+                    file_type = error.get("file_type", "nieznany")
+                    file_path = error.get("file_path", "nieznana ścieżka")
+                    error_msg = error.get("error", "nieznany błąd")
+
                     error_content += f"<li><b>Para:</b> {file_pair} ({file_type})<br/>"
                     error_content += f"<b>Plik:</b> {file_path}<br/>"
                     error_content += f"<b>Błąd:</b> {error_msg}</li>\n"
                 error_content += "</ul>\n"
-            
+
             errors_text.setHtml(error_content)
             errors_layout.addWidget(errors_text)
             tab_widget.addTab(errors_widget, f"Błędy ({len(detailed_errors)})")
@@ -940,24 +959,24 @@ class FileOperationsUI:
         if skipped_files:
             skipped_widget = QWidget()
             skipped_layout = QVBoxLayout(skipped_widget)
-            
+
             skipped_text = QTextEdit()
             skipped_text.setReadOnly(True)
-            
+
             skipped_content = "<h4>Pominięte pliki:</h4>\n<ul>\n"
             for skipped in skipped_files:
-                file_pair = skipped.get('file_pair', 'Nieznany')
-                file_type = skipped.get('file_type', 'nieznany')
-                file_path = skipped.get('file_path', 'nieznana ścieżka')
-                target_path = skipped.get('target_path', 'nieznana ścieżka docelowa')
-                reason = skipped.get('reason', 'nieznany powód')
-                
+                file_pair = skipped.get("file_pair", "Nieznany")
+                file_type = skipped.get("file_type", "nieznany")
+                file_path = skipped.get("file_path", "nieznana ścieżka")
+                target_path = skipped.get("target_path", "nieznana ścieżka docelowa")
+                reason = skipped.get("reason", "nieznany powód")
+
                 skipped_content += f"<li><b>Para:</b> {file_pair} ({file_type})<br/>"
                 skipped_content += f"<b>Plik źródłowy:</b> {file_path}<br/>"
                 skipped_content += f"<b>Plik docelowy:</b> {target_path}<br/>"
                 skipped_content += f"<b>Powód:</b> {reason}</li>\n"
             skipped_content += "</ul>\n"
-            
+
             skipped_text.setHtml(skipped_content)
             skipped_layout.addWidget(skipped_text)
             tab_widget.addTab(skipped_widget, f"Pominięte ({len(skipped_files)})")
@@ -966,33 +985,37 @@ class FileOperationsUI:
         if moved_pairs:
             success_widget = QWidget()
             success_layout = QVBoxLayout(success_widget)
-            
+
             success_text = QTextEdit()
             success_text.setReadOnly(True)
-            
+
             success_content = "<h4>Pomyślnie przeniesione pary:</h4>\n<ul>\n"
             for pair in moved_pairs:
-                pair_name = pair.get_base_name() if hasattr(pair, 'get_base_name') else 'Nieznana para'
-                archive_path = getattr(pair, 'archive_path', 'brak')
-                preview_path = getattr(pair, 'preview_path', 'brak')
-                
+                pair_name = (
+                    pair.get_base_name()
+                    if hasattr(pair, "get_base_name")
+                    else "Nieznana para"
+                )
+                archive_path = getattr(pair, "archive_path", "brak")
+                preview_path = getattr(pair, "preview_path", "brak")
+
                 success_content += f"<li><b>Para:</b> {pair_name}<br/>"
                 success_content += f"<b>Archiwum:</b> {archive_path}<br/>"
                 success_content += f"<b>Podgląd:</b> {preview_path}</li>\n"
             success_content += "</ul>\n"
-            
+
             success_text.setHtml(success_content)
             success_layout.addWidget(success_text)
             tab_widget.addTab(success_widget, f"Sukces ({len(moved_pairs)})")
 
         # Przyciski
         button_layout = QHBoxLayout()
-        
+
         close_button = QPushButton("Zamknij")
         close_button.clicked.connect(dialog.accept)
         button_layout.addStretch()
         button_layout.addWidget(close_button)
-        
+
         layout.addLayout(button_layout)
 
         # Pokaż dialog

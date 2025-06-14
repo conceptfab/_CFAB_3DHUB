@@ -285,7 +285,33 @@ class MoveOperations:
     # - _handle_move_finished()
 ```
 
-### 4.2 Rezultat ETAPU 4:
+### 4.2 Rezultat ETAPU 4: 🔄 W TRAKCIE
+
+**Postęp:**
+
+- ✅ Utworzono strukturę katalogów `src/ui/file_operations/`
+- ✅ RenameOperations (177 linii) - kompletne z testami (8 testów ✅)
+- ✅ DeleteOperations (172 linii) - kompletne z testami (7 testów ✅)
+- ✅ **KRYTYCZNE NAPRAWKI** - naprawiono błędy FilePair w całej aplikacji:
+  - ✅ `src/ui/file_operations_ui.py` - dodano brakujący parametr `working_directory`
+  - ✅ `src/ui/delegates/workers/file_workers.py` - naprawiono konstruktory FilePair
+  - ✅ `src/services/file_operations_service.py` - naprawiono tworzenie FilePair
+  - ✅ Naprawiono callback sygnały finished w workerach
+- ✅ **NAPRAWIONO CRASH - TYMCZASOWO WYŁĄCZONO VIEWREFRESHMANAGER**:
+  - ✅ `src/ui/main_window_components/view_refresh_manager.py` - naprawiono metodę `get_current_filter()` na `get_filter_criteria()`
+  - ⚠️ `src/ui/main_window/main_window.py` - TYMCZASOWO wyłączono ViewRefreshManager, używa fallback (\_update_gallery_view + \_update_unpaired_files_direct)
+  - ⚠️ Problem: ViewRefreshManager nadal powoduje crash mimo naprawek - wymaga głębszej analizy
+- 🔍 **DEBUGOWANIE** - dodano szczegółowe logi do fallback refresh żeby znaleźć przyczynę crash:
+  - Sprawdzanie czy gallery_tab_manager istnieje przed wywołaniem
+  - Sprawdzanie czy unpaired_files_tab_manager istnieje przed wywołaniem
+  - Dodano logi przed i po każdej operacji refresh
+- ⏳ **TESTOWANIE** - sprawdzanie gdzie dokładnie następuje crash
+- ⏳ PairingOperations - planowane
+- ⏳ MoveOperations - planowane
+- ⏳ FileOperationsCore - planowane
+- ⏳ Integracja z głównym plikiem - planowane
+
+**Cel końcowy:**
 
 - FileOperationsUI zmniejszony z 1002 do ~250 linii
 - 5 wyspecjalizowanych klas operacji
@@ -449,7 +475,7 @@ _Priorytet: WYSOKI | Czas: 2 dni_
 | ETAP 1: MainWindow          | 3-4 dni | NAJWYŻSZY | ✅ UKOŃCZONY |
 | ETAP 2: AppConfig           | 2 dni   | WYSOKI    | ✅ UKOŃCZONY |
 | ETAP 3: MetadataManager     | 2-3 dni | WYSOKI    | ✅ UKOŃCZONY |
-| ETAP 4: FileOperationsUI    | 2 dni   | ŚREDNI    | ⏳ Planowany |
+| ETAP 4: FileOperationsUI    | 2 dni   | ŚREDNI    | 🔄 W trakcie |
 | ETAP 5: Widget'y            | 3-4 dni | ŚREDNI    | ⏳ Planowany |
 | ETAP 6: Struktura katalogów | 1 dzień | NISKI     | ⏳ Planowany |
 | ETAP 7: Testy i walidacja   | 2 dni   | WYSOKI    | ⏳ Planowany |

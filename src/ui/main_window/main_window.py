@@ -40,18 +40,18 @@ from src.ui.delegates.workers import (
 from src.ui.directory_tree.manager import DirectoryTreeManager
 from src.ui.file_operations_ui import FileOperationsUI
 from src.ui.gallery_manager import GalleryManager
+from src.ui.main_window.event_handler import EventHandler
+from src.ui.main_window.file_operations_coordinator import FileOperationsCoordinator
+from src.ui.main_window.progress_manager import ProgressManager
+
+# 🚀 ETAP 1: Refaktoryzacja - nowe komponenty MainWindow
+from src.ui.main_window.ui_manager import UIManager
+from src.ui.main_window.worker_manager import WorkerManager
 from src.ui.main_window_components.event_bus import get_event_bus
 from src.ui.main_window_components.view_refresh_manager import ViewRefreshManager
 from src.ui.widgets.gallery_tab import GalleryTab
 from src.ui.widgets.preview_dialog import PreviewDialog
 from src.ui.widgets.unpaired_files_tab import UnpairedFilesTab
-
-# 🚀 ETAP 1: Refaktoryzacja - nowe komponenty MainWindow
-from src.ui.main_window.ui_manager import UIManager
-from src.ui.main_window.progress_manager import ProgressManager
-from src.ui.main_window.worker_manager import WorkerManager
-from src.ui.main_window.event_handler import EventHandler
-from src.ui.main_window.file_operations_coordinator import FileOperationsCoordinator
 
 # 🚀 ETAP 2: Nowe zoptymalizowane komponenty
 from src.utils.logging_config import get_main_window_logger
@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
 
         # Pokaż preferencje wczytane
         self._show_preferences_loaded_confirmation()
-        
+
         # Zainicjalizuj drzewo katalogów z domyślnym folderem ale BEZ skanowania i rozwijania
         default_folder = self.app_config.get("default_working_directory", "")
         if (
@@ -97,13 +97,13 @@ class MainWindow(QMainWindow):
         """Inicjalizuje dane aplikacji."""
         # 🚀 ETAP 2: Zoptymalizowany logger bez emoji
         self.logger = get_main_window_logger()
-        
+
         # KRYTYCZNE: AppConfig musi być pierwsze - inne komponenty go używają!
         self.app_config = app_config.AppConfig()
 
         # 🚀 ETAP 2: Event Bus - eliminuje tight coupling
         self.event_bus = get_event_bus()
-        
+
         # 🚀 ETAP 2: View Refresh Manager - inteligentne odświeżanie
         self.view_refresh_manager = ViewRefreshManager(self)
 
@@ -112,18 +112,33 @@ class MainWindow(QMainWindow):
 
         # 🚀 ETAP 1: UI Manager - zarządzanie interfejsem użytkownika
         self.ui_manager = UIManager(self)
-        
+
         # 🚀 ETAP 1: Progress Manager - zarządzanie postępem
         self.progress_manager = ProgressManager(self)
-        
+
         # 🚀 ETAP 1: Worker Manager - zarządzanie wątkami
         self.worker_manager = WorkerManager(self)
-        
+
         # 🚀 ETAP 1: Event Handler - obsługa zdarzeń
         self.event_handler = EventHandler(self)
-        
+
         # 🚀 ETAP 1: File Operations Coordinator - operacje na plikach
         self.file_operations_coordinator = FileOperationsCoordinator(self)
+
+        # 🚀 REFAKTORYZACJA: Nowe wyspecjalizowane managery
+        from src.ui.main_window.bulk_operations_manager import BulkOperationsManager
+        from src.ui.main_window.data_manager import DataManager
+        from src.ui.main_window.metadata_manager import MetadataManager
+        from src.ui.main_window.scan_manager import ScanManager
+        from src.ui.main_window.selection_manager import SelectionManager
+        from src.ui.main_window.tile_manager import TileManager
+
+        self.data_manager = DataManager(self)
+        self.tile_manager = TileManager(self)
+        self.scan_manager = ScanManager(self)
+        self.metadata_manager = MetadataManager(self)
+        self.selection_manager = SelectionManager(self)
+        self.bulk_operations_manager = BulkOperationsManager(self)
 
     def _init_window(self):
         """Inicjalizuje okno aplikacji."""
@@ -257,15 +272,15 @@ class MainWindow(QMainWindow):
     def show_preferences(self):
         """Delegacja do UIManager."""
         return self.ui_manager.show_preferences()
-    
+
     def remove_all_metadata_folders(self):
         """Delegacja do UIManager."""
         return self.ui_manager.remove_all_metadata_folders()
-    
+
     def start_metadata_cleanup_worker(self):
         """Delegacja do UIManager."""
         return self.ui_manager.start_metadata_cleanup_worker()
-    
+
     def show_about(self):
         """Delegacja do UIManager."""
         return self.ui_manager.show_about()
@@ -372,493 +387,63 @@ class MainWindow(QMainWindow):
         # 🚀 ETAP 1: Delegacja do EventHandler
         self.event_handler.handle_close_event(event)
 
-
-
     def _select_working_directory(self, directory_path=None):
-        """
-        Otwiera dialog wyboru folderu lub używa podanej ścieżki.
-        Problem #4: Dodano walidację danych wejściowych.
-        """
-        # Przerwanie poprzedniego skanowania jeśli aktywne
-        self._stop_current_scanning()
-
-        if directory_path:
-            path = directory_path
-        else:
-            path = QFileDialog.getExistingDirectory(self, "Wybierz Folder Roboczy")
-
-        if not path:
-            logging.debug("Nie wybrano folderu.")
-            return
-
-        # Problem #4: Walidacja ścieżki
-        if not self._validate_directory_path(path):
-            return
-
-        # Ustaw nowy folder roboczy przez kontroler
-        normalized_path = normalize_path(path)
-        base_folder_name = os.path.basename(normalized_path)
-        self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
-
-        # NIGDY NIE NADPISUJ DOMYŚLNEGO FOLDERU AUTOMATYCZNIE!
-        # To jest NIEDOPUSZCZALNE zachowanie!
-        if not hasattr(self, "_is_auto_loading"):
-            logging.info(f"📂 Folder wybrany ręcznie ale NIE nadpisuję domyślnego!")
-        else:
-            logging.debug("Auto-loading from default folder")
-
-        logging.info("Wybrano folder roboczy: %s", normalized_path)
-
-        # Wyczyść dane i rozpocznij skanowanie
-        self._clear_all_data_and_views()
-        self._start_folder_scanning(normalized_path)
+        """Delegacja do ScanManager."""
+        return self.scan_manager.select_working_directory(directory_path)
 
     def _validate_directory_path(self, path: str) -> bool:
-        """
-        Waliduje ścieżkę do folderu - Problem #4.
-
-        Args:
-            path: Ścieżka do walidacji
-
-        Returns:
-            True jeśli ścieżka jest poprawna
-        """
-        if not path or not isinstance(path, str):
-            QMessageBox.warning(self, "Błąd", "Nieprawidłowa ścieżka do folderu.")
-            return False
-
-        if not os.path.exists(path):
-            QMessageBox.warning(self, "Błąd", f"Folder nie istnieje:\n{path}")
-            return False
-
-        if not os.path.isdir(path):
-            QMessageBox.warning(
-                self, "Błąd", f"Ścieżka nie wskazuje na folder:\n{path}"
-            )
-            return False
-
-        if not os.access(path, os.R_OK):
-            QMessageBox.warning(
-                self, "Błąd", f"Brak uprawnień do odczytu folderu:\n{path}"
-            )
-            return False
-
-        return True
+        """Delegacja do ScanManager."""
+        return self.scan_manager.validate_directory_path(path)
 
     def _stop_current_scanning(self):
-        """
-        Przerywa aktualnie działające skanowanie.
-        """
-        if self.scan_thread and self.scan_thread.isRunning():
-            logging.warning(
-                "Nowe skanowanie żądane, gdy poprzednie jest aktywne. "
-                "Przerywam stary wątek i uruchamiam nowy."
-            )
-            if self.scan_worker:
-                self.scan_worker.stop()
-            try:
-                self.scan_worker.finished.disconnect()
-                self.scan_worker.error.disconnect()
-            except (TypeError, AttributeError):
-                logging.debug("Nie można było odłączyć sygnałów od starego workera.")
-            self.scan_thread.quit()
-            self.scan_thread.wait(self.app_config.thread_wait_timeout_ms // 2)
+        """Delegacja do ScanManager."""
+        return self.scan_manager.stop_current_scanning()
 
     def _start_folder_scanning(self, directory_path: str):
-        """
-        ETAP 2 FINAL: Delegacja skanowania do MainWindowController (MVC).
-        """
-        # UI Feedback
-        self.select_folder_button.setText("Skanowanie...")
-        self.select_folder_button.setEnabled(False)
-
-        # DELEGACJA DO KONTROLERA - NO MORE WORKER THREADS!
-        success = self.controller.handle_folder_selection(directory_path)
-
-        # 🚨 ETAP 2 - POPRAWKA 5: Ustaw root path dla eksploratora plików
-        if hasattr(self, "file_explorer_tab") and success:
-            self.file_explorer_tab.set_root_path(directory_path)
-
-        # Przywróć UI state
-        self.select_folder_button.setText("Wybierz Folder")
-        self.select_folder_button.setEnabled(True)
-
-        if success:
-            logging.info(f"Controller scan SUCCESS: {directory_path}")
-        else:
-            logging.warning(f"Controller scan FAILED: {directory_path}")
+        """Delegacja do ScanManager."""
+        return self.scan_manager.start_folder_scanning(directory_path)
 
     def _on_scan_thread_finished(self):
-        """
-        Slot wywoływany po zakończeniu pracy wątku skanującego.
-        """
-        # Przywróć przycisk skanowania
-        self.select_folder_button.setText("Wybierz Folder")
-        self.select_folder_button.setEnabled(True)
-
-        # Wyczyść referencje do wątku
-        if self.scan_thread:
-            self.scan_thread.deleteLater()
-            self.scan_thread = None
-        if self.scan_worker:
-            self.scan_worker.deleteLater()
-            self.scan_worker = None
-        logging.debug("Wątek skanujący i worker zostały bezpiecznie wyczyszczone.")
+        """Delegacja do ScanManager."""
+        return self.scan_manager.on_scan_thread_finished()
 
     def _force_refresh(self):
-        """
-        Wymusza ponowne skanowanie poprzez czyszczenie cache.
-        """
-        if self.controller.current_directory:
-            from src.logic.scanner import clear_cache
-
-            clear_cache()
-            logging.info("Cache wyczyszczony - wymuszono ponowne skanowanie")
-            # NAPRAWKA: Użyj change_directory zamiast _select_working_directory
-            # aby zachować drzewo folderów
-            self.change_directory(self.controller.current_directory)
+        """Delegacja do DataManager."""
+        return self.data_manager.force_refresh()
 
     def _clear_all_data_and_views(self):
-        """
-        Czyści wszystkie dane plików i odpowiednie widoki.
-        """
-        self.controller.clear_all_data_and_views()
+        """Delegacja do DataManager."""
+        return self.data_manager.clear_all_data_and_views()
 
     def _clear_unpaired_files_lists(self):
-        """
-        Czyści listy niesparowanych plików w interfejsie użytkownika.
-        """
-        self.unpaired_archives_list_widget.clear()
-        self.unpaired_previews_list_widget.clear()
-
-        # Wyczyść kontener miniaturek
-        while self.unpaired_previews_layout.count():
-            widget_to_remove = self.unpaired_previews_layout.itemAt(0).widget()
-            if widget_to_remove:
-                widget_to_remove.setParent(None)
-                self.unpaired_previews_layout.removeWidget(widget_to_remove)
-
-        # NAPRAWKA: Sortuj alfabetycznie przed wyświetleniem
-        sorted_archives = sorted(
-            self.controller.unpaired_archives, key=lambda x: os.path.basename(x).lower()
-        )
-        sorted_previews = sorted(
-            self.controller.unpaired_previews, key=lambda x: os.path.basename(x).lower()
-        )
-
-        # Aktualizuj listę archiwów (posortowane)
-        for archive_path in sorted_archives:
-            item = QListWidgetItem(os.path.basename(archive_path))
-            item.setData(Qt.ItemDataRole.UserRole, archive_path)
-            self.unpaired_archives_list_widget.addItem(item)
-
-        # Aktualizuj miniaturki podglądów (posortowane)
-        for preview_path in sorted_previews:
-            # Dodaj do ukrytego QListWidget dla kompatybilności
-            item = QListWidgetItem(os.path.basename(preview_path))
-            item.setData(Qt.ItemDataRole.UserRole, preview_path)
-            self.unpaired_previews_list_widget.addItem(item)
-
-            # Dodaj miniaturkę przez manager unpaired files
-            if hasattr(self, "unpaired_files_tab_manager"):
-                self.unpaired_files_tab_manager._add_preview_thumbnail(preview_path)
-
-        logging.debug(
-            f"Zaktualizowano listy niesparowanych: "
-            f"{len(self.controller.unpaired_archives)} archiwów, "
-            f"{len(self.controller.unpaired_previews)} podglądów."
-        )
-        # Deleguj update przycisku parowania do managera unpaired files
-        if hasattr(self, "unpaired_files_tab_manager"):
-            logging.info(
-                "🔍 Sprawdzam stan unpaired_files_tab_manager w _on_tile_loading_finished..."
-            )
-            logging.info(
-                f"📋 unpaired_archives_list_widget: {hasattr(self.unpaired_files_tab_manager, 'unpaired_archives_list_widget')}"
-            )
-            if hasattr(
-                self.unpaired_files_tab_manager, "unpaired_archives_list_widget"
-            ):
-                logging.info(
-                    f"📋 unpaired_archives_list_widget value: {self.unpaired_files_tab_manager.unpaired_archives_list_widget}"
-                )
-            logging.info(
-                f"📋 unpaired_previews_list_widget: {hasattr(self.unpaired_files_tab_manager, 'unpaired_previews_list_widget')}"
-            )
-
-            # BEZPOŚREDNIA AKTUALIZACJA jako FALLBACK
-            logging.debug("FALLBACK: Bezpośrednia aktualizacja unpaired")
-            self._update_unpaired_files_direct()
+        """Delegacja do DataManager."""
+        return self.data_manager.clear_unpaired_files_lists()
 
     def _update_unpaired_files_direct(self):
-        """
-        NAPRAWKA PAROWANIE: Bezpośrednia aktualizacja niesparowanych plików przez manager.
-        Używana do odświeżenia UI po parowaniu plików.
-        """
-        try:
-            logging.debug("FALLBACK: Rozpoczynam aktualizację unpaired przez manager")
-
-            # NAPRAWKA: Użyj unpaired_files_tab_manager zamiast bezpośrednich widgetów
-            if (
-                hasattr(self, "unpaired_files_tab_manager")
-                and self.unpaired_files_tab_manager
-            ):
-                logging.debug(
-                    "NAPRAWKA: Używam unpaired_files_tab_manager.update_unpaired_files_lists()"
-                )
-                self.unpaired_files_tab_manager.update_unpaired_files_lists()
-                logging.debug(
-                    "NAPRAWKA: unpaired_files_tab_manager.update_unpaired_files_lists() zakończone"
-                )
-                return
-
-            # FALLBACK: Sprawdź czy mamy widgety przypisane bezpośrednio do main_window (stary sposób)
-            if (
-                not hasattr(self, "unpaired_archives_list_widget")
-                or not self.unpaired_archives_list_widget
-            ):
-                logging.warning(
-                    "⚠️ FALLBACK: Brak widgetów w main_window i brak managera - pomijam aktualizację"
-                )
-                return
-
-            # Wyczyść stare dane (stary sposób fallback)
-            self.unpaired_archives_list_widget.clear()
-            self.unpaired_previews_list_widget.clear()
-
-            # NAPRAWKA FALLBACK: Sortuj alfabetycznie przed wyświetleniem
-            sorted_archives = sorted(
-                self.controller.unpaired_archives,
-                key=lambda x: os.path.basename(x).lower(),
-            )
-            sorted_previews = sorted(
-                self.controller.unpaired_previews,
-                key=lambda x: os.path.basename(x).lower(),
-            )
-
-            # Dodaj archiwa (posortowane)
-            archives_added = 0
-            for archive_path in sorted_archives:
-                item = QListWidgetItem(os.path.basename(archive_path))
-                item.setData(Qt.ItemDataRole.UserRole, archive_path)
-                self.unpaired_archives_list_widget.addItem(item)
-                archives_added += 1
-
-            # Dodaj podglądy (posortowane)
-            previews_added = 0
-            for preview_path in sorted_previews:
-                item = QListWidgetItem(os.path.basename(preview_path))
-                item.setData(Qt.ItemDataRole.UserRole, preview_path)
-                self.unpaired_previews_list_widget.addItem(item)
-                previews_added += 1
-
-            logging.debug(
-                f"FALLBACK: Dodano {archives_added} archiwów, {previews_added} podglądów"
-            )
-
-        except Exception as e:
-            self.logger.error(f"FALLBACK ERROR: {e}")
-            # NAPRAWKA KRYTYCZNA: Nie wywołuj manager który może także crashować
-            # Po błędzie w fallback nie wykonuj żadnych dalszych operacji
+        """Delegacja do DataManager."""
+        return self.data_manager.update_unpaired_files_direct()
 
     def _handle_scan_finished(self, found_pairs, unpaired_archives, unpaired_previews):
-        """
-        Obsługuje wyniki pomyślnie zakończonego skanowania folderu.
-        """
-        logging.info(
-            f"Skanowanie folderu {self.controller.current_directory} "
-            f"zakończone pomyślnie."
-        )
-
-        self.controller.handle_scan_finished(
+        """Delegacja do ScanManager."""
+        return self.scan_manager.handle_scan_finished(
             found_pairs, unpaired_archives, unpaired_previews
         )
 
-        # Wyczyść poprzednie widgety kafelków
-        self.gallery_manager.clear_gallery()
-
-        # Uruchom workera do tworzenia kafelków w tle
-        if found_pairs:
-            self.worker_manager.start_data_processing_worker(found_pairs)
-        else:
-            self._on_tile_loading_finished()
-
-
-
-
-
     def _create_tile_widget_for_pair(self, file_pair: FilePair):
-        """
-        Tworzy pojedynczy kafelek dla pary plików.
-        """
-        # Walidacja danych wejściowych - Problem #4
-        if not file_pair:
-            logging.warning("Otrzymano None zamiast FilePair")
-            return None
-
-        if not hasattr(file_pair, "archive_path") or not file_pair.archive_path:
-            logging.error(f"Nieprawidłowy FilePair - brak archive_path: {file_pair}")
-            return None
-
-        tile = self.gallery_manager.create_tile_widget_for_pair(file_pair, self)
-        if tile:
-            # Podłącz sygnały kafelka
-            tile.archive_open_requested.connect(self.open_archive)
-            tile.preview_image_requested.connect(self._show_preview_dialog)
-            tile.tile_selected.connect(self._handle_tile_selection_changed)
-            tile.stars_changed.connect(self._handle_stars_changed)
-            tile.color_tag_changed.connect(self._handle_color_tag_changed)
-            tile.tile_context_menu_requested.connect(self._show_file_context_menu)
-            
-            # NAPRAWKA: Podłącz callback do śledzenia ładowania miniaturek
-            original_on_thumbnail_loaded = tile._on_thumbnail_loaded
-
-            def thumbnail_loaded_callback(*args, **kwargs):
-                # NAPRAWKA: Sprawdź czy widget nadal istnieje przed wywołaniem callback
-                try:
-                    # Sprawdź czy thumbnail_label nadal istnieje
-                    if hasattr(tile, 'thumbnail_label') and tile.thumbnail_label is not None:
-                        # Sprawdź czy QLabel nie został usunięty z pamięci
-                        try:
-                            tile.thumbnail_label.isVisible()  # Test czy obiekt C++ nadal istnieje
-                            result = original_on_thumbnail_loaded(*args, **kwargs)
-                            self._on_thumbnail_progress()
-                            return result
-                        except RuntimeError:
-                            # QLabel został usunięty z pamięci - ignoruj callback
-                            logging.debug("Thumbnail callback: Widget został usunięty - pomijam")
-                            return None
-                    else:
-                        logging.debug("Thumbnail callback: thumbnail_label nie istnieje - pomijam")
-                        return None
-                except Exception as e:
-                    logging.warning(f"Błąd w thumbnail callback: {e}")
-                    return None
-
-            tile._on_thumbnail_loaded = thumbnail_loaded_callback
-
-        return tile
+        """Delegacja do TileManager."""
+        return self.tile_manager.create_tile_widget_for_pair(file_pair)
 
     def _on_thumbnail_progress(self):
         """Delegacja do ProgressManager."""
         return self.progress_manager.on_thumbnail_progress()
 
     def _create_tile_widgets_batch(self, file_pairs_batch: list):
-        """
-        Tworzy kafelki dla batch'a par plików - OPTYMALIZACJA dla wydajności.
-        Zamiast tworzyć po jednym kafelku, tworzy je grupami aby zmniejszyć obciążenie UI.
-
-        Args:
-            file_pairs_batch: Lista obiektów FilePair do przetworzenia w tym batch'u
-        """
-        # Resetuj liczniki na początku nowej operacji ładowania
-        if not self.progress_manager.is_batch_processing():
-            total_thumbnails = len(self.controller.current_file_pairs)
-            self.progress_manager.init_batch_processing(total_thumbnails)
-        
-        batch_size = len(file_pairs_batch)
-        
-        # Aktualizuj progress bar dla tworzenia kafelków (bez miniaturek)
-        self.progress_manager.update_batch_progress(self.progress_manager.get_thumbnails_loaded())
-
-        # NAPRAWKA WYDAJNOŚCI: Wyłącz aktualizacje UI dla całego batch'a
-        self.gallery_manager.tiles_container.setUpdatesEnabled(False)
-        
-        # NAPRAWKA WYDAJNOŚCI: Wyłącz również repaint dla lepszej wydajności
-        self.gallery_manager.tiles_container.setVisible(False)
-
-        try:
-            created_count = 0
-            for file_pair in file_pairs_batch:
-                tile = self._create_tile_widget_for_pair(file_pair)
-                if tile:
-                    created_count += 1
-                    # NAPRAWKA WYDAJNOŚCI: Aktualizuj licznik tylko gdy potrzeba
-                    current_loaded = self.progress_manager.get_thumbnails_loaded() + created_count
-                    
-                    # NAPRAWKA PROGRESS BAR: Inteligentny throttling dla płynnego progress bara
-                    total_thumbnails = self.progress_manager.get_total_thumbnails()
-                    
-                    if total_thumbnails <= 100:
-                        # Małe foldery: aktualizuj co 2 kafelki dla płynnego progress bara
-                        should_update_progress = (current_loaded % 2 == 0 or current_loaded >= total_thumbnails)
-                    elif total_thumbnails <= 500:
-                        # Średnie foldery: aktualizuj co 5 kafelków
-                        should_update_progress = (current_loaded % 5 == 0 or current_loaded >= total_thumbnails)
-                    else:
-                        # Duże foldery: aktualizuj co 10 kafelków
-                        should_update_progress = (current_loaded % 10 == 0 or current_loaded >= total_thumbnails)
-                    
-                    if should_update_progress:
-                        # NAPRAWKA PROGRESS BAR: Użyj RZECZYWISTEGO licznika kafelków z galerii!
-                        actual_tiles_count = len(self.gallery_manager.file_pairs_list)
-                        total_thumbnails = self.progress_manager.get_total_thumbnails()
-                        
-                        # Progress bar: 0-90% tworzenie kafelków, 90-100% finalizacja
-                        percent = int((actual_tiles_count / max(total_thumbnails, 1)) * 90)
-                        self.progress_manager.show_progress(
-                            percent,
-                            f"Tworzenie kafelków: {actual_tiles_count}/{total_thumbnails}..."
-                        )
-
-        finally:
-            # NAPRAWKA WYDAJNOŚCI: Przywróć widoczność i aktualizacje UI
-            self.gallery_manager.tiles_container.setVisible(True)
-            self.gallery_manager.tiles_container.setUpdatesEnabled(True)
-            self.gallery_manager.tiles_container.update()  # Wymuś odświeżenie
+        """Delegacja do TileManager."""
+        return self.tile_manager.create_tile_widgets_batch(file_pairs_batch)
 
     def _on_tile_loading_finished(self):
-        """
-        Wywoływane po zakończeniu tworzenia wszystkich kafelków.
-        """
-        logging.info("Zakończono tworzenie wszystkich kafelków.")
-
-        # NAPRAWKA PROGRESS BAR: TERAZ dopiero ustaw na 100% po stworzeniu wszystkich kafelków!
-        # Użyj RZECZYWISTEGO licznika kafelków z galerii (zsynchronizowanego z status barem)
-        actual_tiles_count = len(self.gallery_manager.file_pairs_list)
-        self.progress_manager.show_progress(100, f"✅ Załadowano {actual_tiles_count} kafelków!")
-        
-        # Krótkie opóźnienie żeby użytkownik zobaczył 100% przed ukryciem
-        QTimer.singleShot(500, self.progress_manager.hide_progress)
-
-        # Zastosuj filtry i odśwież widok
-        self._apply_filters_and_update_view()
-        # Delegacja do managera zamiast wywołania nieistniejącej metody
-        if hasattr(self, "unpaired_files_tab_manager"):
-            self.unpaired_files_tab_manager.update_unpaired_files_lists()
-
-        # Pokaż interfejs
-        self.filter_panel.setEnabled(True)  # Odblokuj panel filtrów
-        is_gallery_populated = bool(self.gallery_manager.file_pairs_list)
-        self.size_control_panel.setVisible(is_gallery_populated)
-        # Zakładka parowania zawsze widoczna
-
-        # Inicjalizacja drzewa katalogów - TYLKO ustawienie root path, BEZ automatycznego rozwijania
-        if self.controller.current_directory:
-            self.directory_tree_manager.init_directory_tree_without_expansion(
-                self.controller.current_directory
-            )
-
-        # Upewnij się że drzewo folderów jest widoczne
-        if hasattr(self, "folder_tree"):
-            self.folder_tree.setVisible(True)
-            logging.debug(f"Drzewo folderów widoczne: {self.folder_tree.isVisible()}")
-            logging.debug(f"Splitter rozmiary: {self.splitter.sizes()}")
-
-        # Przywróć przycisk
-        self.select_folder_button.setText("Wybierz Folder Roboczy")
-        self.select_folder_button.setEnabled(True)
-
-        # Pokaż przycisk odświeżania cache
-        self.clear_cache_button.setVisible(True)
-
-        # Zapisz metadane
-        self._save_metadata()
-
-        logging.info(
-            f"Widok zaktualizowany. Wyświetlono po filtracji: "
-            f"{len(self.gallery_manager.file_pairs_list)}."
-        )
+        """Delegacja do TileManager."""
+        return self.tile_manager.on_tile_loading_finished()
 
     def _handle_scan_error(self, error_message: str):
         """
@@ -866,110 +451,31 @@ class MainWindow(QMainWindow):
         """
         # 🚀 ETAP 1: Delegacja do EventHandler
         self.event_handler.handle_scan_error(error_message)
-        
+
         # Przywróć przycisk
         self.select_folder_button.setText("Wybierz Folder Roboczy")
         self.select_folder_button.setEnabled(True)
         self.filter_panel.setEnabled(False)  # Zablokuj przy błędzie
 
     def _apply_filters_and_update_view(self):
-        """
-        Zbiera kryteria, filtruje pary i aktualizuje galerię.
-        """
-        # Deleguj do gallery_tab_manager
-        self.gallery_tab_manager.apply_filters_and_update_view()
+        """Delegacja do DataManager."""
+        return self.data_manager.apply_filters_and_update_view()
 
     def _update_gallery_view(self):
-        """
-        Aktualizuje widok galerii.
-        """
-        self.gallery_tab_manager.update_gallery_view()
+        """Delegacja do DataManager."""
+        return self.data_manager.update_gallery_view()
 
     def refresh_all_views(self, new_selection=None):
-        """
-        🚀 ETAP 2: Inteligentne odświeżanie widoków z ViewRefreshManager.
-        Eliminuje niepotrzebne przeładowania przez porównanie stanów.
-
-        Args:
-            new_selection: FilePair do zaznaczenia po odświeżeniu (opcjonalne)
-        """
-        if not self.controller.current_directory:
-            return
-
-        # Zapobiegnij duplikowaniu operacji skanowania
-        if (
-            hasattr(self, "scan_thread")
-            and self.scan_thread
-            and self.scan_thread.isRunning()
-        ):
-            self.logger.info("Skanowanie już w toku - pomijanie refresh_all_views")
-            return
-
-        self.logger.info("Inteligentne odświeżanie widoków po operacji na plikach")
-
-        try:
-            # 🚀 ETAP 2: Użyj ViewRefreshManager dla inteligentnego odświeżania
-            force_refresh = new_selection is not None  # Wymuś jeśli jest nowy element
-            self.view_refresh_manager.request_refresh_all(force=force_refresh)
-
-            # 🚀 ETAP 2: Emit event do Event Bus
-            self.event_bus.emit_event("view_refresh_requested", "all")
-
-            # Zapisz zaznaczenie do przywrócenia po odświeżeniu
-            if new_selection:
-                self._pending_selection = new_selection
-                self.event_bus.emit_event("file_pair_selected", new_selection)
-
-            # NAPRAWKA: Metadane są zapisywane asynchronicznie przez workery
-            # Nie wywołujemy _save_metadata() bo może powodować deadlock
-            self.logger.debug(
-                "Pomijam _save_metadata() - metadane zapisywane są przez workery"
-            )
-
-            self.logger.info("Odświeżanie zakończone - bez ponownego skanowania")
-            
-        except Exception as e:
-            self.logger.error(f"KRYTYCZNY BŁĄD w refresh_all_views: {e}")
-            # Fallback - podstawowe odświeżenie
-            try:
-                self._update_gallery_view()
-                self._update_unpaired_files_direct()
-                self.logger.info("Użyto fallback odświeżenia")
-            except Exception as fallback_error:
-                self.logger.error(f"Również fallback nie zadziałał: {fallback_error}")
+        """Delegacja do DataManager."""
+        return self.data_manager.refresh_all_views(new_selection)
 
     def force_full_refresh(self):
-        """
-        Wymusza pełne ponowne skanowanie bieżącego katalogu i odświeżenie
-        wszystkich widoków.
-        """
-        current_folder = self.controller.current_directory
-        if current_folder and os.path.isdir(current_folder):
-            logging.info(f"Wymuszanie pełnego odświeżenia dla: {current_folder}")
-            # Użyj istniejącej metody do ponownego wybrania folderu,
-            # co uruchomi cały proces od nowa.
-            self._select_working_directory(current_folder)
-        else:
-            logging.warning(
-                "Nie można wymusić odświeżenia - brak bieżącego " "katalogu roboczego."
-            )
+        """Delegacja do DataManager."""
+        return self.data_manager.force_full_refresh()
 
     def _update_thumbnail_size(self):
-        """
-        Aktualizuje rozmiar miniatur na podstawie wartości suwaka.
-        """
-        # Deleguj do gallery_tab_manager
-        self.gallery_tab_manager.update_thumbnail_size()
-        
-        # NAPRAWKA: Deleguj również do unpaired_files_tab_manager dla skalowania
-        if (
-            hasattr(self, "unpaired_files_tab_manager")
-            and self.unpaired_files_tab_manager
-        ):
-            # Pobierz aktualny rozmiar z gallery managera
-            if hasattr(self, "gallery_manager") and self.gallery_manager:
-                current_size = self.gallery_manager._current_size_tuple
-                self.unpaired_files_tab_manager.update_thumbnail_size(current_size)
+        """Delegacja do TileManager."""
+        return self.tile_manager.update_thumbnail_size()
 
     def resizeEvent(self, event):
         """
@@ -979,91 +485,20 @@ class MainWindow(QMainWindow):
         self.event_handler.handle_resize_event(event)
 
     def _save_metadata(self):
-        """
-        Zapisuje metadane dla wszystkich par plików w osobnym wątku.
-        Używa buforowania zmian.
-        """
-        if not self.controller.current_directory:
-            logging.debug("Brak folderu roboczego lub par plików do zapisu metadanych.")
-            return
-
-        # Utwórz workera do zapisu metadanych używając fabryki
-        worker = WorkerFactory.create_save_metadata_worker(
-            self.controller.current_directory,
-            self.controller.current_file_pairs,
-            self.controller.unpaired_archives,
-            self.controller.unpaired_previews,
-        )
-
-        # Podłącz sygnały
-        self.worker_manager.setup_worker_connections(worker)
-        worker.signals.finished.connect(self._on_metadata_saved)
-
-        # Uruchom workera
-        self._show_progress(
-            0,
-            f"Zapisywanie metadanych dla {len(self.controller.current_file_pairs)} par plików...",
-        )
-        self.thread_pool.start(worker)
+        """Delegacja do MetadataManager."""
+        return self.metadata_manager.save_metadata()
 
     def _schedule_metadata_save(self):
-        """Planuje zapis metadanych z opóźnieniem."""
-        if not hasattr(self, "_metadata_save_timer"):
-            self._metadata_save_timer = QTimer()
-            self._metadata_save_timer.setSingleShot(True)
-            self._metadata_save_timer.timeout.connect(self._save_metadata)
-
-        # Zatrzymaj poprzedni timer jeśli istnieje
-        self._metadata_save_timer.stop()
-        # Uruchom nowy timer
-        self._metadata_save_timer.start(2000)  # 2 sekundy opóźnienia
+        """Delegacja do MetadataManager."""
+        return self.metadata_manager.schedule_metadata_save()
 
     def _force_immediate_metadata_save(self):
-        """
-        Wymusza natychmiastowy zapis metadanych w osobnym wątku.
-        Używany dla gwiazdek i tagów kolorów - NIE BLOKUJE UI!
-        """
-        if not self.controller.current_directory:
-            logging.debug("Brak folderu roboczego - pomijam zapis metadanych.")
-            return
-
-        # Utwórz workera dla natychmiastowego zapisu (bez timer delay)
-        worker = WorkerFactory.create_save_metadata_worker(
-            self.controller.current_directory,
-            self.controller.current_file_pairs,
-            self.controller.unpaired_archives,
-            self.controller.unpaired_previews,
-        )
-
-        # Podłącz sygnały (ale bez progress bar - to szybka operacja)
-        worker.signals.finished.connect(
-            lambda success: (
-                logging.info("✅ Gwiazdki/tagi zapisane w tle")
-                if success
-                else logging.error("❌ Błąd zapisu gwiazdek/tagów")
-            )
-        )
-        worker.signals.error.connect(
-            lambda error: logging.error(f"❌ Błąd workera zapisu metadanych: {error}")
-        )
-
-        # Uruchom w tle - NIE BLOKUJE UI!
-        self.thread_pool.start(worker)
-        logging.debug("🚀 Worker zapisu metadanych uruchomiony w tle")
+        """Delegacja do MetadataManager."""
+        return self.metadata_manager.force_immediate_metadata_save()
 
     def _on_metadata_saved(self, success):
-        """
-        Slot wywoływany po zakończeniu zapisu metadanych.
-
-        Args:
-            success: True jeśli metadane zostały zapisane pomyślnie
-        """
-        if success:
-            self._show_progress(100, "Metadane zapisane pomyślnie")
-            logging.debug("Metadane zapisane")
-        else:
-            self._show_progress(100, "Nie udało się zapisać metadanych")
-            self.logger.error("Nie udało się zapisać metadanych.")
+        """Delegacja do MetadataManager."""
+        return self.metadata_manager.on_metadata_saved(success)
 
     def open_archive(self, file_pair: FilePair):
         """
@@ -1105,61 +540,26 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Błąd Podglądu", error_message)
 
     def _handle_tile_selection_changed(self, file_pair: FilePair, is_selected: bool):
-        """Obsługuje zmianę selekcji kafelka."""
-        # 🚀 ETAP 1: Delegacja do EventHandler
-        self.event_handler.handle_tile_selection_changed(file_pair, is_selected)
-
-    def _update_bulk_operations_visibility(self):
-        """Updates visibility of bulk operations controls based on selection count."""
-        has_selection = len(self.controller.selected_tiles) > 0
-        if hasattr(self, "bulk_operations_panel"):
-            self.bulk_operations_panel.setVisible(has_selection)
-            if hasattr(self, "selected_count_label"):
-                count = len(self.controller.selected_tiles)
-                self.selected_count_label.setText(f"Zaznaczone: {count}")
-
-    def _clear_all_selections(self):
-        """Clears all tile selections."""
-        self.controller.selected_tiles.clear()  # Update all visible tiles to reflect cleared selection
-        if hasattr(self, "gallery_manager") and self.gallery_manager:
-            for tile_widget in self.gallery_manager.get_all_tile_widgets():
-                if hasattr(tile_widget, "metadata_controls"):
-                    tile_widget.metadata_controls.update_selection_display(False)
-
-        self._update_bulk_operations_visibility()
-        logging.debug("Cleared all tile selections")
-
-    def _select_all_tiles(self):
-        """Selects all currently visible tiles."""
-        if hasattr(self, "gallery_manager") and self.gallery_manager:
-            for tile_widget in self.gallery_manager.get_all_tile_widgets():
-                if hasattr(tile_widget, "file_pair") and tile_widget.file_pair:
-                    self.controller.selected_tiles.add(tile_widget.file_pair)
-                    if hasattr(tile_widget, "metadata_controls"):
-                        tile_widget.metadata_controls.update_selection_display(True)
-
-            self._update_bulk_operations_visibility()
-            logging.debug(
-                f"Selected all {len(self.controller.selected_tiles)} visible tiles"
-            )
-
-    def _perform_bulk_delete(self):
-        """ETAP 2 FINAL: Delegacja bulk delete do MainWindowController (MVC)."""
-        if not self.controller.selected_tiles:
-            return
-
-        # DELEGACJA DO KONTROLERA - NO MORE DIRECT UI LOGIC!
-        success = self.controller.handle_bulk_delete(
-            list(self.controller.selected_tiles)
+        """Delegacja do SelectionManager."""
+        return self.selection_manager.handle_tile_selection_changed(
+            file_pair, is_selected
         )
 
-        if success:
-            # Wyczyść selekcję po pomyślnej operacji
-            self.controller.selected_tiles.clear()
-            self._update_bulk_operations_visibility()
-            logging.info("Controller bulk delete SUCCESS")
-        else:
-            logging.warning("Controller bulk delete FAILED or CANCELLED")
+    def _update_bulk_operations_visibility(self):
+        """Delegacja do SelectionManager."""
+        return self.selection_manager.update_bulk_operations_visibility()
+
+    def _clear_all_selections(self):
+        """Delegacja do SelectionManager."""
+        return self.selection_manager.clear_all_selections()
+
+    def _select_all_tiles(self):
+        """Delegacja do SelectionManager."""
+        return self.selection_manager.select_all_tiles()
+
+    def _perform_bulk_delete(self):
+        """Delegacja do BulkOperationsManager."""
+        return self.bulk_operations_manager.perform_bulk_delete()
 
     def _on_bulk_delete_finished(self, deleted_pairs):
         """
@@ -1230,10 +630,10 @@ class MainWindow(QMainWindow):
         """
         # Obsługa nowego formatu wyniku
         if isinstance(result, dict):
-            moved_pairs = result.get('moved_pairs', [])
-            detailed_errors = result.get('detailed_errors', [])
-            skipped_files = result.get('skipped_files', [])
-            summary = result.get('summary', {})
+            moved_pairs = result.get("moved_pairs", [])
+            detailed_errors = result.get("detailed_errors", [])
+            skipped_files = result.get("skipped_files", [])
+            summary = result.get("summary", {})
         else:
             # Fallback dla starych workerów
             moved_pairs = result if isinstance(result, list) else []
@@ -1267,7 +667,7 @@ class MainWindow(QMainWindow):
         else:
             # Fallback - tylko jeśli nie ma current_directory
             self._apply_filters_and_update_view()
-        
+
         self._save_metadata()
 
         destination = (
@@ -1277,7 +677,9 @@ class MainWindow(QMainWindow):
 
         # Pokaż szczegółowy raport błędów jeśli wystąpiły
         if isinstance(result, dict) and (detailed_errors or skipped_files):
-            self._show_detailed_move_report(moved_pairs, detailed_errors, skipped_files, summary)
+            self._show_detailed_move_report(
+                moved_pairs, detailed_errors, skipped_files, summary
+            )
         else:
             QMessageBox.information(
                 self,
@@ -1306,7 +708,7 @@ class MainWindow(QMainWindow):
                 f"Rozpoczynanie ponownego skanowania folderu: {self.controller.current_directory}"
             )
 
-            # NAPRAWKA DRAG&DROP: NIE wyczyścićmy cache miniaturek! 
+            # NAPRAWKA DRAG&DROP: NIE wyczyścićmy cache miniaturek!
             # Scanner cache może zostać wyczyszczony ale thumbnail cache NIE!
             # Miniaturki nie zmieniają się przy przeniesieniu plików do innego folderu
             from src.logic.scanner import clear_cache
@@ -1336,36 +738,12 @@ class MainWindow(QMainWindow):
             logging.error(f"Błąd podczas odświeżania folderu źródłowego: {e}")
 
     def _handle_stars_changed(self, file_pair: FilePair, new_star_count: int):
-        """
-        Obsługuje zmianę liczby gwiazdek dla pary plików.
-        """
-        logging.info(
-            f"⭐ _handle_stars_changed wywołane: {file_pair.get_base_name()} -> {new_star_count} gwiazdek"
-        )
-        if file_pair:
-            file_pair.set_stars(new_star_count)
-            # NATYCHMIASTOWY ZAPIS zamiast timer!
-            self._force_immediate_metadata_save()
-            logging.info(
-                f"✅ Gwiazdki zapisane natychmiastowo: "
-                f"{file_pair.get_base_name()} -> {new_star_count} gwiazdek"
-            )
+        """Delegacja do MetadataManager."""
+        return self.metadata_manager.handle_stars_changed(file_pair, new_star_count)
 
     def _handle_color_tag_changed(self, file_pair: FilePair, new_color_tag: str):
-        """
-        Obsługuje zmianę tagu koloru dla pary plików.
-        """
-        logging.info(
-            f"🎨 _handle_color_tag_changed wywołane: {file_pair.get_base_name()} -> {new_color_tag}"
-        )
-        if file_pair:
-            file_pair.set_color_tag(new_color_tag)
-            # NATYCHMIASTOWY ZAPIS zamiast timer!
-            self._force_immediate_metadata_save()
-            logging.info(
-                f"✅ Tag koloru zapisany natychmiastowo: "
-                f"{file_pair.get_base_name()} -> {new_color_tag}"
-            )
+        """Delegacja do MetadataManager."""
+        return self.metadata_manager.handle_color_tag_changed(file_pair, new_color_tag)
 
     def _show_file_context_menu(self, file_pair: FilePair, widget: QWidget, position):
         """
@@ -1418,11 +796,22 @@ class MainWindow(QMainWindow):
         """Delegacja do ProgressManager."""
         return self.progress_manager.handle_worker_error(error_message)
 
-    def _show_detailed_move_report(self, moved_pairs, detailed_errors, skipped_files, summary):
+    def _show_detailed_move_report(
+        self, moved_pairs, detailed_errors, skipped_files, summary
+    ):
         """
         Wyświetla szczegółowy raport z operacji przenoszenia plików.
         """
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QLabel, QTabWidget, QWidget
+        from PyQt6.QtWidgets import (
+            QDialog,
+            QHBoxLayout,
+            QLabel,
+            QPushButton,
+            QTabWidget,
+            QTextEdit,
+            QVBoxLayout,
+            QWidget,
+        )
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Raport przenoszenia plików")
@@ -1439,7 +828,7 @@ class MainWindow(QMainWindow):
 <p><b>Błędy:</b> {summary.get('errors', 0)} plików</p>
 <p><b>Pominięto:</b> {summary.get('skipped', 0)} plików</p>
         """
-        
+
         summary_label = QLabel(summary_text)
         summary_label.setWordWrap(True)
         layout.addWidget(summary_label)
@@ -1452,33 +841,35 @@ class MainWindow(QMainWindow):
         if detailed_errors:
             errors_widget = QWidget()
             errors_layout = QVBoxLayout(errors_widget)
-            
+
             errors_text = QTextEdit()
             errors_text.setReadOnly(True)
-            
+
             error_content = "<h4>Szczegółowe błędy:</h4>\n"
-            
+
             # Grupuj błędy według typu
             error_groups = {}
             for error in detailed_errors:
-                error_type = error.get('error_type', 'NIEZNANY')
+                error_type = error.get("error_type", "NIEZNANY")
                 if error_type not in error_groups:
                     error_groups[error_type] = []
                 error_groups[error_type].append(error)
-            
+
             for error_type, errors in error_groups.items():
-                error_content += f"<h5>{error_type} ({len(errors)} plików):</h5>\n<ul>\n"
+                error_content += (
+                    f"<h5>{error_type} ({len(errors)} plików):</h5>\n<ul>\n"
+                )
                 for error in errors:
-                    file_pair = error.get('file_pair', 'Nieznany')
-                    file_type = error.get('file_type', 'nieznany')
-                    file_path = error.get('file_path', 'nieznana ścieżka')
-                    error_msg = error.get('error', 'nieznany błąd')
-                    
+                    file_pair = error.get("file_pair", "Nieznany")
+                    file_type = error.get("file_type", "nieznany")
+                    file_path = error.get("file_path", "nieznana ścieżka")
+                    error_msg = error.get("error", "nieznany błąd")
+
                     error_content += f"<li><b>Para:</b> {file_pair} ({file_type})<br/>"
                     error_content += f"<b>Plik:</b> {file_path}<br/>"
                     error_content += f"<b>Błąd:</b> {error_msg}</li>\n"
                 error_content += "</ul>\n"
-            
+
             errors_text.setHtml(error_content)
             errors_layout.addWidget(errors_text)
             tab_widget.addTab(errors_widget, f"Błędy ({len(detailed_errors)})")
@@ -1487,24 +878,24 @@ class MainWindow(QMainWindow):
         if skipped_files:
             skipped_widget = QWidget()
             skipped_layout = QVBoxLayout(skipped_widget)
-            
+
             skipped_text = QTextEdit()
             skipped_text.setReadOnly(True)
-            
+
             skipped_content = "<h4>Pominięte pliki:</h4>\n<ul>\n"
             for skipped in skipped_files:
-                file_pair = skipped.get('file_pair', 'Nieznany')
-                file_type = skipped.get('file_type', 'nieznany')
-                file_path = skipped.get('file_path', 'nieznana ścieżka')
-                target_path = skipped.get('target_path', 'nieznana ścieżka docelowa')
-                reason = skipped.get('reason', 'nieznany powód')
-                
+                file_pair = skipped.get("file_pair", "Nieznany")
+                file_type = skipped.get("file_type", "nieznany")
+                file_path = skipped.get("file_path", "nieznana ścieżka")
+                target_path = skipped.get("target_path", "nieznana ścieżka docelowa")
+                reason = skipped.get("reason", "nieznany powód")
+
                 skipped_content += f"<li><b>Para:</b> {file_pair} ({file_type})<br/>"
                 skipped_content += f"<b>Plik źródłowy:</b> {file_path}<br/>"
                 skipped_content += f"<b>Plik docelowy:</b> {target_path}<br/>"
                 skipped_content += f"<b>Powód:</b> {reason}</li>\n"
             skipped_content += "</ul>\n"
-            
+
             skipped_text.setHtml(skipped_content)
             skipped_layout.addWidget(skipped_text)
             tab_widget.addTab(skipped_widget, f"Pominięte ({len(skipped_files)})")
@@ -1513,33 +904,37 @@ class MainWindow(QMainWindow):
         if moved_pairs:
             success_widget = QWidget()
             success_layout = QVBoxLayout(success_widget)
-            
+
             success_text = QTextEdit()
             success_text.setReadOnly(True)
-            
+
             success_content = "<h4>Pomyślnie przeniesione pary:</h4>\n<ul>\n"
             for pair in moved_pairs:
-                pair_name = pair.get_base_name() if hasattr(pair, 'get_base_name') else 'Nieznana para'
-                archive_path = getattr(pair, 'archive_path', 'brak')
-                preview_path = getattr(pair, 'preview_path', 'brak')
-                
+                pair_name = (
+                    pair.get_base_name()
+                    if hasattr(pair, "get_base_name")
+                    else "Nieznana para"
+                )
+                archive_path = getattr(pair, "archive_path", "brak")
+                preview_path = getattr(pair, "preview_path", "brak")
+
                 success_content += f"<li><b>Para:</b> {pair_name}<br/>"
                 success_content += f"<b>Archiwum:</b> {archive_path}<br/>"
                 success_content += f"<b>Podgląd:</b> {preview_path}</li>\n"
             success_content += "</ul>\n"
-            
+
             success_text.setHtml(success_content)
             success_layout.addWidget(success_text)
             tab_widget.addTab(success_widget, f"Sukces ({len(moved_pairs)})")
 
         # Przyciski
         button_layout = QHBoxLayout()
-        
+
         close_button = QPushButton("Zamknij")
         close_button.clicked.connect(dialog.accept)
         button_layout.addStretch()
         button_layout.addWidget(close_button)
-        
+
         layout.addLayout(button_layout)
 
         dialog.exec()
@@ -1575,15 +970,8 @@ class MainWindow(QMainWindow):
         # Nie wywołujemy tutaj aby uniknąć błędów z niezainicjalizowanymi widgetami
 
     def confirm_bulk_delete(self, count: int) -> bool:
-        """Potwierdza operację bulk delete z użytkownikiem."""
-        reply = QMessageBox.question(
-            self,
-            "Potwierdzenie usunięcia",
-            f"Czy na pewno chcesz usunąć {count} par plików?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return reply == QMessageBox.StandardButton.Yes
+        """Delegacja do BulkOperationsManager."""
+        return self.bulk_operations_manager.confirm_bulk_delete(count)
 
     def update_after_bulk_operation(self, processed_pairs, operation_name: str):
         """Aktualizuje UI po operacji bulk."""
@@ -1600,8 +988,10 @@ class MainWindow(QMainWindow):
         )
 
     def update_bulk_operations_visibility(self, selected_count: int):
-        """Aktualizuje widoczność operacji bulk."""
-        self._update_bulk_operations_visibility()
+        """Delegacja do SelectionManager."""
+        return self.selection_manager.update_bulk_operations_visibility_with_count(
+            selected_count
+        )
 
     def add_new_pair(self, new_pair):
         """Dodaje nową parę do UI."""
@@ -1619,8 +1009,8 @@ class MainWindow(QMainWindow):
             self.unpaired_files_tab_manager.update_unpaired_files_lists()
 
     def request_metadata_save(self):
-        """Żąda zapisu metadanych - używane przez tile widgety."""
-        self._schedule_metadata_save()
+        """Delegacja do MetadataManager."""
+        return self.metadata_manager.request_metadata_save()
 
     def change_directory(self, folder_path: str):
         """
@@ -1632,13 +1022,13 @@ class MainWindow(QMainWindow):
             normalized_path = normalize_path(folder_path)
             base_folder_name = os.path.basename(normalized_path)
             self.setWindowTitle(f"CFAB_3DHUB - {base_folder_name}")
-            
+
             logging.info(f"Zmiana katalogu na: {normalized_path}")
-            
+
             # Wyczyść tylko galerię i dane, ale ZACHOWAJ drzewo katalogów
             self.gallery_manager.clear_gallery()
             self._clear_unpaired_files_lists()
-            
+
             # Skanuj tylko wybrany folder przez kontroler BEZ resetowania drzewa
             # Używamy bezpośrednio serwisu skanowania zamiast handle_folder_selection
             # aby uniknąć wywołania update_scan_results -> _on_tile_loading_finished -> init_directory_tree
@@ -1648,24 +1038,24 @@ class MainWindow(QMainWindow):
                 scan_result = self.controller.scan_service.scan_directory(
                     normalized_path, max_depth=0
                 )
-                
+
                 if scan_result.error_message:
                     self.show_error_message(
                         "Błąd skanowania", scan_result.error_message
                     )
                     return
-                
+
                 # Zaktualizuj stan kontrolera ręcznie
                 self.controller.current_directory = normalized_path
                 self.controller.current_file_pairs = scan_result.file_pairs
                 self.controller.unpaired_archives = scan_result.unpaired_archives
                 self.controller.unpaired_previews = scan_result.unpaired_previews
-                
+
                 # 🚨 NAPRAWKA: Ustaw ścieżkę w eksploratorze plików!
                 if hasattr(self, "file_explorer_tab"):
                     self.file_explorer_tab.set_root_path(normalized_path)
                     logging.info(f"EKSPLORATOR: Ustawiono ścieżkę na {normalized_path}")
-                
+
                 # Utwórz kafelki BEZ resetowania drzewa
                 if scan_result.file_pairs:
                     self.worker_manager.start_data_processing_worker_without_tree_reset(
@@ -1674,16 +1064,16 @@ class MainWindow(QMainWindow):
                 else:
                     # Wywołaj końcowe akcje BEZ init_directory_tree
                     self._finish_folder_change_without_tree_reset()
-                
+
                 logging.info(
                     f"Folder change SUCCESS: {normalized_path}, {len(scan_result.file_pairs)} par"
                 )
-                
+
             except Exception as scan_error:
                 error_msg = f"Błąd skanowania folderu: {scan_error}"
                 logging.error(error_msg)
                 self.show_error_message("Błąd", error_msg)
-            
+
         except Exception as e:
             error_msg = f"Błąd zmiany katalogu: {e}"
             logging.error(error_msg)
@@ -1716,7 +1106,7 @@ class MainWindow(QMainWindow):
 
         # Zapisz metadane
         self._save_metadata()
-        
+
         # NAPRAWKA: Uruchom obliczanie statystyk folderów także w change_directory
         if hasattr(self, "directory_tree_manager"):
             QTimer.singleShot(
@@ -1725,11 +1115,13 @@ class MainWindow(QMainWindow):
 
         # NAPRAWKA PROGRESS BAR: Ustaw na 100% po zakończeniu bez resetowania drzewa
         actual_tiles_count = len(self.gallery_manager.file_pairs_list)
-        self.progress_manager.show_progress(100, f"✅ Załadowano {actual_tiles_count} kafelków!")
-        
+        self.progress_manager.show_progress(
+            100, f"✅ Załadowano {actual_tiles_count} kafelków!"
+        )
+
         # Krótkie opóźnienie żeby użytkownik zobaczył 100% przed ukryciem
         QTimer.singleShot(500, self.progress_manager.hide_progress)
-        
+
         logging.info(
             f"Widok zaktualizowany bez resetowania drzewa. Wyświetlono po filtracji: "
             f"{actual_tiles_count}."

@@ -6,10 +6,11 @@ import logging
 import os
 import shutil
 
-from .base_workers import UnifiedBaseWorker, TransactionalWorker
-from src.models.file_pair import FilePair
 from src.logic import metadata_manager
+from src.models.file_pair import FilePair
 from src.utils.path_utils import normalize_path
+
+from .base_workers import TransactionalWorker, UnifiedBaseWorker
 
 logger = logging.getLogger(__name__)
 
@@ -243,25 +244,37 @@ class RenameFilePairWorker(TransactionalWorker):
                 return
 
             # Zmiana nazwy pliku archiwum
-            self.emit_progress(30, f"Zmiana nazwy pliku archiwum na {new_archive_filename}...")
+            self.emit_progress(
+                30, f"Zmiana nazwy pliku archiwum na {new_archive_filename}..."
+            )
             if new_archive_path != archive_path:
                 self.new_archive_path = self.execute_with_rollback(
-                    self._rename_file, self._rollback_rename, archive_path, new_archive_path
+                    self._rename_file,
+                    self._rollback_rename,
+                    archive_path,
+                    new_archive_path,
                 )
             else:
                 self.new_archive_path = archive_path
 
             # Zmiana nazwy pliku podglądu
-            self.emit_progress(60, f"Zmiana nazwy pliku podglądu na {new_preview_filename}...")
+            self.emit_progress(
+                60, f"Zmiana nazwy pliku podglądu na {new_preview_filename}..."
+            )
             if new_preview_path != preview_path:
                 self.new_preview_path = self.execute_with_rollback(
-                    self._rename_file, self._rollback_rename, preview_path, new_preview_path
+                    self._rename_file,
+                    self._rollback_rename,
+                    preview_path,
+                    new_preview_path,
                 )
             else:
                 self.new_preview_path = preview_path
 
             # Utworzenie nowego obiektu FilePair z zaktualizowanymi ścieżkami
-            updated_file_pair = FilePair(self.new_archive_path, self.new_preview_path)
+            updated_file_pair = FilePair(
+                self.new_archive_path, self.new_preview_path, working_dir
+            )
 
             # Zapisanie zaktualizowanych metadanych
             self.emit_progress(80, "Aktualizacja metadanych pary plików...")
@@ -321,7 +334,9 @@ class DeleteFilePairWorker(UnifiedBaseWorker):
 
             # Usuwanie pliku archiwum
             if archive_path and os.path.exists(archive_path):
-                self.emit_progress(33, f"Usuwanie pliku archiwum {os.path.basename(archive_path)}...")
+                self.emit_progress(
+                    33, f"Usuwanie pliku archiwum {os.path.basename(archive_path)}..."
+                )
                 try:
                     os.remove(archive_path)
                     deleted_files.append(("archive", archive_path))
@@ -333,7 +348,9 @@ class DeleteFilePairWorker(UnifiedBaseWorker):
 
             # Usuwanie pliku podglądu
             if preview_path and os.path.exists(preview_path):
-                self.emit_progress(66, f"Usuwanie pliku podglądu {os.path.basename(preview_path)}...")
+                self.emit_progress(
+                    66, f"Usuwanie pliku podglądu {os.path.basename(preview_path)}..."
+                )
                 try:
                     os.remove(preview_path)
                     deleted_files.append(("preview", preview_path))
@@ -346,7 +363,9 @@ class DeleteFilePairWorker(UnifiedBaseWorker):
             # Sprawdzenie czy wystąpiły błędy
             if errors:
                 error_message = "\n".join(errors)
-                self.emit_error(f"Wystąpiły błędy podczas usuwania plików:\n{error_message}")
+                self.emit_error(
+                    f"Wystąpiły błędy podczas usuwania plików:\n{error_message}"
+                )
                 return
 
             # Operacja zakończona sukcesem
@@ -387,14 +406,20 @@ class MoveFilePairWorker(TransactionalWorker):
         if not self.new_target_directory:
             raise ValueError("Katalog docelowy nie może być pusty")
         if not os.path.isdir(self.new_target_directory):
-            raise ValueError(f"Katalog docelowy nie istnieje: {self.new_target_directory}")
+            raise ValueError(
+                f"Katalog docelowy nie istnieje: {self.new_target_directory}"
+            )
 
         # Sprawdź czy pliki istnieją
-        if not self.file_pair.archive_path or not os.path.isfile(self.file_pair.archive_path):
+        if not self.file_pair.archive_path or not os.path.isfile(
+            self.file_pair.archive_path
+        ):
             raise ValueError(
                 f"Plik archiwum nie istnieje: {self.file_pair.archive_path}"
             )
-        if not self.file_pair.preview_path or not os.path.isfile(self.file_pair.preview_path):
+        if not self.file_pair.preview_path or not os.path.isfile(
+            self.file_pair.preview_path
+        ):
             raise ValueError(
                 f"Plik podglądu nie istnieje: {self.file_pair.preview_path}"
             )
@@ -423,7 +448,7 @@ class MoveFilePairWorker(TransactionalWorker):
             # Sprawdź czy pliki nie są już w katalogu docelowym
             archive_dir = os.path.dirname(archive_path)
             preview_dir = os.path.dirname(preview_path)
-            
+
             if archive_dir == target_dir and preview_dir == target_dir:
                 self.emit_error("Pliki są już w katalogu docelowym.")
                 return
@@ -431,7 +456,7 @@ class MoveFilePairWorker(TransactionalWorker):
             # Określ nowe ścieżki plików
             archive_filename = os.path.basename(archive_path)
             preview_filename = os.path.basename(preview_path)
-            
+
             new_archive_path = os.path.join(target_dir, archive_filename)
             new_preview_path = os.path.join(target_dir, preview_filename)
 
@@ -451,7 +476,8 @@ class MoveFilePairWorker(TransactionalWorker):
             # Przeniesienie pliku archiwum
             if archive_dir != target_dir:
                 self.emit_progress(
-                    30, f"Przenoszenie pliku archiwum {archive_filename} do {target_dir}..."
+                    30,
+                    f"Przenoszenie pliku archiwum {archive_filename} do {target_dir}...",
                 )
                 self.new_archive_path = self.execute_with_rollback(
                     self._move_file, self._rollback_move, archive_path, new_archive_path
@@ -462,7 +488,8 @@ class MoveFilePairWorker(TransactionalWorker):
             # Przeniesienie pliku podglądu
             if preview_dir != target_dir:
                 self.emit_progress(
-                    60, f"Przenoszenie pliku podglądu {preview_filename} do {target_dir}..."
+                    60,
+                    f"Przenoszenie pliku podglądu {preview_filename} do {target_dir}...",
                 )
                 self.new_preview_path = self.execute_with_rollback(
                     self._move_file, self._rollback_move, preview_path, new_preview_path
@@ -471,7 +498,11 @@ class MoveFilePairWorker(TransactionalWorker):
                 self.new_preview_path = preview_path
 
             # Utworzenie nowego obiektu FilePair z zaktualizowanymi ścieżkami
-            updated_file_pair = FilePair(self.new_archive_path, self.new_preview_path)
+            # Używamy working_directory z oryginalnego file_pair
+            working_dir = self.file_pair.working_directory
+            updated_file_pair = FilePair(
+                self.new_archive_path, self.new_preview_path, working_dir
+            )
 
             # Operacja zakończona sukcesem
             self.emit_progress(100, "Przenoszenie plików zakończone pomyślnie.")
@@ -485,4 +516,4 @@ class MoveFilePairWorker(TransactionalWorker):
 
     def _rollback(self):
         """Przywraca pliki do oryginalnej lokalizacji."""
-        self._rollback_operations() 
+        self._rollback_operations()

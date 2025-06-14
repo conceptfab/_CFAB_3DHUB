@@ -78,14 +78,15 @@ class FileOperationsService:
 
         for file_pair in file_pairs:
             try:
-                new_pair = FilePair()
+                # Przygotuj nowe ścieżki
+                new_archive_path = None
+                new_preview_path = None
 
                 # Przenieś archiwum
                 if file_pair.archive_path and os.path.exists(file_pair.archive_path):
                     archive_name = os.path.basename(file_pair.archive_path)
                     new_archive_path = os.path.join(destination, archive_name)
                     shutil.move(file_pair.archive_path, new_archive_path)
-                    new_pair.archive_path = new_archive_path
                     self.logger.info(f"Przeniesiono archiwum: {new_archive_path}")
 
                 # Przenieś podgląd
@@ -93,13 +94,18 @@ class FileOperationsService:
                     preview_name = os.path.basename(file_pair.preview_path)
                     new_preview_path = os.path.join(destination, preview_name)
                     shutil.move(file_pair.preview_path, new_preview_path)
-                    new_pair.preview_path = new_preview_path
                     self.logger.info(f"Przeniesiono podgląd: {new_preview_path}")
 
+                # Utwórz nową parę z poprawnym working_directory
+                new_pair = FilePair(
+                    new_archive_path or file_pair.archive_path,
+                    new_preview_path or file_pair.preview_path,
+                    destination,  # nowy working_directory to destination
+                )
+
                 # Kopiuj metadane
-                new_pair.rating = file_pair.rating
-                new_pair.color = file_pair.color
-                new_pair.description = file_pair.description
+                new_pair.stars = file_pair.stars
+                new_pair.color_tag = file_pair.color_tag
 
                 successfully_moved.append(new_pair)
 
@@ -131,10 +137,9 @@ class FileOperationsService:
                 self.logger.error(f"Podgląd nie istnieje: {preview_path}")
                 return None
 
-            # Utwórz parę
-            file_pair = FilePair()
-            file_pair.archive_path = archive_path
-            file_pair.preview_path = preview_path
+            # Utwórz parę - working_directory to katalog zawierający archiwum
+            working_directory = os.path.dirname(archive_path)
+            file_pair = FilePair(archive_path, preview_path, working_directory)
 
             self.logger.info(f"Utworzono ręczną parę: {file_pair.name}")
             return file_pair
