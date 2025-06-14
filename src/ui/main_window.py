@@ -1154,9 +1154,26 @@ class MainWindow(QMainWindow):
             original_on_thumbnail_loaded = tile._on_thumbnail_loaded
 
             def thumbnail_loaded_callback(*args, **kwargs):
-                result = original_on_thumbnail_loaded(*args, **kwargs)
-                self._on_thumbnail_progress()
-                return result
+                # NAPRAWKA: Sprawdź czy widget nadal istnieje przed wywołaniem callback
+                try:
+                    # Sprawdź czy thumbnail_label nadal istnieje
+                    if hasattr(tile, 'thumbnail_label') and tile.thumbnail_label is not None:
+                        # Sprawdź czy QLabel nie został usunięty z pamięci
+                        try:
+                            tile.thumbnail_label.isVisible()  # Test czy obiekt C++ nadal istnieje
+                            result = original_on_thumbnail_loaded(*args, **kwargs)
+                            self._on_thumbnail_progress()
+                            return result
+                        except RuntimeError:
+                            # QLabel został usunięty z pamięci - ignoruj callback
+                            logging.debug("Thumbnail callback: Widget został usunięty - pomijam")
+                            return None
+                    else:
+                        logging.debug("Thumbnail callback: thumbnail_label nie istnieje - pomijam")
+                        return None
+                except Exception as e:
+                    logging.warning(f"Błąd w thumbnail callback: {e}")
+                    return None
 
             tile._on_thumbnail_loaded = thumbnail_loaded_callback
 
