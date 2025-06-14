@@ -125,7 +125,6 @@ def filter_file_pairs(
         f"Crit: S>={min_stars}, " f"C='{required_color_tag}', Path='{path_prefix}'"
     )
 
-    # Zmienna do zliczania liczby odrzuconych elementów (dla debugowania)
     rejected_count = 0
 
     for i, pair in enumerate(file_pairs_list):

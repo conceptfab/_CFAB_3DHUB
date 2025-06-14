@@ -369,7 +369,7 @@ class FileOperationsUI:
         )
 
         try:
-            # NAPRAWKA CRASH: Thread-safe aktualizacja kontrolera
+
             if (
                 hasattr(self.parent_window, "controller")
                 and self.parent_window.controller

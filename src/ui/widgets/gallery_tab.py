@@ -9,6 +9,8 @@ from PyQt6.QtCore import QDir
 from PyQt6.QtGui import QFileSystemModel
 from PyQt6.QtWidgets import (
     QGridLayout,
+    QHBoxLayout,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QSplitter,
@@ -77,6 +79,10 @@ class GalleryTab:
         logging.debug(f"Splitter ma {self.splitter.count()} widgetów")
 
         self.gallery_tab_layout.addWidget(self.splitter)
+
+        # Pasek ulubionych folderów na dole
+        self._create_favorite_folders_bar()
+
         return self.gallery_tab
 
     def _create_filter_panel(self):
@@ -126,7 +132,6 @@ class GalleryTab:
         # Dodaj drzewo do kontenera
         folder_tree_layout.addWidget(self.folder_tree)
 
-        # Dodaj debug info
         logging.debug("Dodaję kontener drzewa folderów do splitter")
         self.splitter.addWidget(self.folder_tree_container)
 
@@ -148,6 +153,290 @@ class GalleryTab:
 
         self.scroll_area.setWidget(self.tiles_container)
         self.splitter.addWidget(self.scroll_area)
+
+    def _create_favorite_folders_bar(self):
+        """
+        Tworzy pasek z przyciskami ulubionych folderów na dole zakładki.
+        """
+
+        # Kontener dla paska ulubionych folderów
+        self.favorite_folders_bar = QWidget()
+        self.favorite_folders_bar.setFixedHeight(18)  # Wysokość 18px
+        self.favorite_folders_bar.setStyleSheet(
+            """
+            QWidget {
+                background-color: #252526;
+                border-top: 1px solid #3F3F46;
+            }
+        """
+        )
+
+        # Layout poziomy dla przycisków
+        self.favorite_folders_layout = QHBoxLayout(self.favorite_folders_bar)
+        self.favorite_folders_layout.setContentsMargins(0, 0, 0, 0)
+        self.favorite_folders_layout.setSpacing(1)
+
+        # Dodaj przyciski ulubionych folderów
+        self._update_favorite_folders_buttons()
+
+        # Dodaj pasek do layoutu zakładki
+        self.gallery_tab_layout.addWidget(self.favorite_folders_bar)
+
+    def _update_favorite_folders_buttons(self):
+        """
+        Aktualizuje przyciski ulubionych folderów na podstawie konfiguracji.
+        """
+        from src.config.config_core import AppConfig
+
+        # Wyczyść istniejące przyciski
+        for i in reversed(range(self.favorite_folders_layout.count())):
+            child = self.favorite_folders_layout.itemAt(i).widget()
+            if child:
+                child.setParent(None)
+
+                # Dodaj przycisk "Domek" na początku
+        self._create_home_button()
+
+        # Pobierz konfigurację ulubionych folderów
+        app_config = AppConfig.get_instance()
+        favorite_folders = app_config.get("favorite_folders", [])
+
+        # Utwórz przyciski dla każdego ulubionego folderu
+        for i, folder_config in enumerate(favorite_folders):
+            if i >= 4:  # Maksymalnie 4 przyciski
+                break
+
+            name = folder_config.get("name", f"Folder {i+1}")
+            path = folder_config.get("path", "")
+            color = folder_config.get("color", "#007ACC")
+            description = folder_config.get("description", "")
+
+            # Utwórz przycisk
+            button = QPushButton(name)
+            button.setFixedHeight(14)  # Wysokość 14px
+            button.setMaximumHeight(14)  # Maksymalna wysokość 14px
+            button.setMinimumWidth(80)
+            button.setContentsMargins(0, 0, 0, 0)  # Brak marginesów wewnętrznych
+            button.setToolTip(
+                f"{description}\nŚcieżka: {path}" if path else description
+            )
+
+            # Style przycisku z kolorem
+            button.setStyleSheet(
+                f"""
+                QPushButton {{
+                    background-color: {color};
+                    color: white;
+                    border: none;
+                    border-radius: 2px;
+                    font-size: 10px;
+                    font-weight: bold;
+                    padding: 0px;
+                    min-height: 14px;
+                    max-height: 14px;
+                }}
+                QPushButton:hover {{
+                    background-color: {self._lighten_color(color, 20)};
+                }}
+                QPushButton:pressed {{
+                    background-color: {self._darken_color(color, 20)};
+                }}
+                QPushButton:disabled {{
+                    background-color: #3F3F46;
+                    color: #888888;
+                }}
+            """
+            )
+
+            # Podłącz sygnał kliknięcia
+            if path:  # Tylko jeśli ścieżka jest ustawiona
+                button.clicked.connect(
+                    lambda checked, p=path: self._on_favorite_folder_clicked(p)
+                )
+            else:
+                button.setEnabled(False)  # Wyłącz przycisk jeśli brak ścieżki
+
+            # Dodaj przycisk do layoutu
+            self.favorite_folders_layout.addWidget(button)
+
+            # Dodaj spacer na końcu
+        self.favorite_folders_layout.addStretch()
+
+    def _create_home_button(self):
+        """
+        Tworzy przycisk "Domek" do przechodzenia do domyślnego folderu roboczego.
+        """
+        home_button = QPushButton("🏠")
+        home_button.setFixedHeight(14)  # Wysokość 14px
+        home_button.setMaximumHeight(14)  # Maksymalna wysokość 14px
+        home_button.setFixedWidth(28)  # Szerokość 28px dla ikony
+        home_button.setContentsMargins(0, 0, 0, 0)  # Brak marginesów
+        home_button.setToolTip("Przejdź do domyślnego folderu roboczego")
+
+        # Style przycisku domku
+        home_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #3F3F46;
+                color: white;
+                border: none;
+                border-radius: 2px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 0px;
+                min-height: 14px;
+                max-height: 14px;
+            }
+            QPushButton:hover {
+                background-color: #4A4A4F;
+            }
+            QPushButton:pressed {
+                background-color: #2A2A2F;
+            }
+        """
+        )
+
+        # Podłącz sygnał kliknięcia
+        home_button.clicked.connect(self._on_home_button_clicked)
+
+        # Dodaj przycisk do layoutu
+        self.favorite_folders_layout.addWidget(home_button)
+
+        # Dodaj separator po przycisku domku
+        separator = QWidget()
+        separator.setFixedWidth(1)
+        separator.setStyleSheet("background-color: #3F3F46;")
+        self.favorite_folders_layout.addWidget(separator)
+
+    def _on_home_button_clicked(self):
+        """
+        Obsługuje kliknięcie przycisku domku - przechodzi do domyślnego folderu.
+        """
+        import os
+
+        # Pobierz domyślny folder roboczy z konfiguracji
+        from src.config.config_core import AppConfig
+
+        app_config = AppConfig.get_instance()
+
+        # Sprawdź czy jest ustawiony domyślny folder w konfiguracji
+        default_folder = app_config.get("default_working_directory", "")
+
+        # Jeśli nie ma ustawionego domyślnego folderu, użyj folderu domowego
+        if not default_folder:
+            default_folder = os.path.expanduser("~")
+
+        # Jeśli nadal nie ma folderu, spróbuj pierwszy ulubiony folder
+        if not os.path.exists(default_folder):
+            favorite_folders = app_config.get("favorite_folders", [])
+            if favorite_folders and favorite_folders[0].get("path"):
+                potential_default = favorite_folders[0]["path"]
+                if os.path.exists(potential_default) and os.path.isdir(
+                    potential_default
+                ):
+                    default_folder = potential_default
+
+        # Sprawdź czy folder istnieje
+        if not os.path.exists(default_folder) or not os.path.isdir(default_folder):
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self.main_window,
+                "Błąd",
+                f"Domyślny folder nie istnieje lub nie jest dostępny:\n{default_folder}",
+            )
+            return
+
+        # Zmień folder roboczy
+        self.main_window._select_working_directory(default_folder)
+
+    def _lighten_color(self, color_hex: str, percent: int) -> str:
+        """
+        Rozjaśnia kolor o określony procent.
+
+        Args:
+            color_hex: Kolor w formacie hex (#RRGGBB)
+            percent: Procent rozjaśnienia (0-100)
+
+        Returns:
+            Rozjaśniony kolor w formacie hex
+        """
+        try:
+            # Usuń # jeśli jest
+            color_hex = color_hex.lstrip("#")
+
+            # Konwertuj na RGB
+            r = int(color_hex[0:2], 16)
+            g = int(color_hex[2:4], 16)
+            b = int(color_hex[4:6], 16)
+
+            # Rozjaśnij
+            r = min(255, r + int((255 - r) * percent / 100))
+            g = min(255, g + int((255 - g) * percent / 100))
+            b = min(255, b + int((255 - b) * percent / 100))
+
+            return f"#{r:02x}{g:02x}{b:02x}"
+        except Exception:
+            return color_hex  # Zwróć oryginalny kolor w przypadku błędu
+
+    def _darken_color(self, color_hex: str, percent: int) -> str:
+        """
+        Przyciemnia kolor o określony procent.
+
+        Args:
+            color_hex: Kolor w formacie hex (#RRGGBB)
+            percent: Procent przyciemnienia (0-100)
+
+        Returns:
+            Przyciemniony kolor w formacie hex
+        """
+        try:
+            # Usuń # jeśli jest
+            color_hex = color_hex.lstrip("#")
+
+            # Konwertuj na RGB
+            r = int(color_hex[0:2], 16)
+            g = int(color_hex[2:4], 16)
+            b = int(color_hex[4:6], 16)
+
+            # Przyciemnij
+            r = max(0, r - int(r * percent / 100))
+            g = max(0, g - int(g * percent / 100))
+            b = max(0, b - int(b * percent / 100))
+
+            return f"#{r:02x}{g:02x}{b:02x}"
+        except Exception:
+            return color_hex  # Zwróć oryginalny kolor w przypadku błędu
+
+    def _on_favorite_folder_clicked(self, folder_path: str):
+        """
+        Obsługuje kliknięcie przycisku ulubionego folderu.
+
+        Args:
+            folder_path: Ścieżka do folderu
+        """
+        import os
+
+        # Sprawdź czy folder istnieje
+        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self.main_window,
+                "Błąd",
+                f"Folder nie istnieje lub nie jest dostępny:\n{folder_path}",
+            )
+            return
+
+        # Zmień folder roboczy
+        self.main_window._select_working_directory(folder_path)
+
+    def update_favorite_folders_bar(self):
+        """
+        Aktualizuje pasek ulubionych folderów (wywoływane po zmianie konfiguracji).
+        """
+        if hasattr(self, "favorite_folders_bar"):
+            self._update_favorite_folders_buttons()
 
     def folder_tree_item_clicked(self, index):
         """

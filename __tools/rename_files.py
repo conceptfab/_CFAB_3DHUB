@@ -1,17 +1,31 @@
-import sys
 import os
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLineEdit, QLabel, QFileDialog, QTextEdit,
-    QRadioButton, QProgressBar, QMessageBox, QGroupBox, QFormLayout
-)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+import sys
 
-# --- Wątek roboczy do obsługi zmiany nazw plików ---
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QRadioButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+
 class RenamerWorker(QThread):
     """
     Wątek, który wykonuje operację zmiany nazw plików w tle.
     """
+
     progress_signal = pyqtSignal(int)
     log_signal = pyqtSignal(str)
     finished_signal = pyqtSignal(int)
@@ -25,7 +39,7 @@ class RenamerWorker(QThread):
         self.is_running = True
 
     def run(self):
-        """Główna logika wątku - iteracja i zmiana nazw plików (wersja poprawiona)."""
+        """Główna logika wątku - iteracja i zmiana nazw plików."""
         renamed_count = 0
         processed_count = 0
 
@@ -53,33 +67,35 @@ class RenamerWorker(QThread):
 
             processed_count += 1
             directory, filename_with_ext = os.path.split(full_path)
-            
-            # KLUCZOWA ZMIANA: Rozdzielenie nazwy pliku od rozszerzenia
+
             filename_base, file_extension = os.path.splitext(filename_with_ext)
-            
             new_filename_base = None
 
-            # Sprawdzanie prefixu/sufixu na samej nazwie, BEZ rozszerzenia
-            if self.mode == 'prefix' and filename_base.startswith(self.text_to_remove):
+            if self.mode == "prefix" and filename_base.startswith(self.text_to_remove):
                 new_filename_base = filename_base.removeprefix(self.text_to_remove)
-            elif self.mode == 'suffix' and filename_base.endswith(self.text_to_remove):
+            elif self.mode == "suffix" and filename_base.endswith(self.text_to_remove):
                 new_filename_base = filename_base.removesuffix(self.text_to_remove)
 
             if new_filename_base is not None:
-                # Złożenie nowej, pełnej nazwy z powrotem z rozszerzeniem
                 new_full_filename = new_filename_base + file_extension
-                
+
                 old_path = os.path.join(directory, filename_with_ext)
                 new_path = os.path.join(directory, new_full_filename)
-                
+
                 try:
                     os.rename(old_path, new_path)
-                    self.log_signal.emit(f"Zmieniono: '{filename_with_ext}' -> '{new_full_filename}'")
+                    self.log_signal.emit(
+                        f"Zmieniono: '{filename_with_ext}' -> '{new_full_filename}'"
+                    )
                     renamed_count += 1
                 except FileExistsError:
-                    self.log_signal.emit(f"BŁĄD: Plik o nazwie '{new_full_filename}' już istnieje. Pomijam.")
+                    self.log_signal.emit(
+                        f"BŁĄD: Plik o nazwie '{new_full_filename}' już istnieje. Pomijam."
+                    )
                 except Exception as e:
-                    self.log_signal.emit(f"BŁĄD: Nie można zmienić nazwy '{filename_with_ext}'. Powód: {e}")
+                    self.log_signal.emit(
+                        f"BŁĄD: Nie można zmienić nazwy '{filename_with_ext}'. Powód: {e}"
+                    )
 
             self.progress_signal.emit(processed_count)
 
@@ -88,7 +104,7 @@ class RenamerWorker(QThread):
     def stop(self):
         self.is_running = False
 
-# --- Główne okno aplikacji ---
+
 class RenamerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -100,89 +116,97 @@ class RenamerApp(QMainWindow):
     def init_ui(self):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        
+
         main_layout = QVBoxLayout()
         main_widget.setLayout(main_layout)
 
         settings_group = QGroupBox("Ustawienia")
         main_layout.addWidget(settings_group)
-        
+
         form_layout = QFormLayout()
         settings_group.setLayout(form_layout)
-        
+
         self.folder_path_edit = QLineEdit()
         self.folder_path_edit.setReadOnly(True)
         self.folder_path_edit.setPlaceholderText("Wybierz folder do przetworzenia...")
-        
+
         browse_button = QPushButton("Przeglądaj...")
         browse_button.clicked.connect(self.select_folder)
-        
+
         folder_layout = QHBoxLayout()
         folder_layout.addWidget(self.folder_path_edit)
         folder_layout.addWidget(browse_button)
-        
+
         form_layout.addRow(QLabel("Folder:"), folder_layout)
 
         self.text_to_remove_edit = QLineEdit()
         self.text_to_remove_edit.setPlaceholderText("np. 'kopia_' lub '_1'")
         form_layout.addRow(QLabel("Tekst do usunięcia:"), self.text_to_remove_edit)
-        
+
         self.prefix_radio = QRadioButton("Usuń prefix (początek nazwy)")
         self.prefix_radio.setChecked(True)
-        self.suffix_radio = QRadioButton("Usuń sufix (koniec nazwy, przed rozszerzeniem)")
-        
+        self.suffix_radio = QRadioButton(
+            "Usuń sufix (koniec nazwy, przed rozszerzeniem)"
+        )
+
         radio_layout = QHBoxLayout()
         radio_layout.addWidget(self.prefix_radio)
         radio_layout.addWidget(self.suffix_radio)
         radio_layout.addStretch()
-        
+
         form_layout.addRow(QLabel("Tryb operacji:"), radio_layout)
-        
+
         self.start_button = QPushButton("Rozpocznij zmianę nazw")
         self.start_button.setStyleSheet("font-size: 14px; padding: 10px;")
         self.start_button.clicked.connect(self.start_renaming)
         main_layout.addWidget(self.start_button)
-        
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         main_layout.addWidget(self.progress_bar)
 
         log_group = QGroupBox("Log operacji")
         main_layout.addWidget(log_group)
-        
+
         log_layout = QVBoxLayout()
         log_group.setLayout(log_layout)
-        
+
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
         log_layout.addWidget(self.log_widget)
-        
+
     def select_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Wybierz folder")
         if folder:
             self.folder_path_edit.setText(folder)
-            
+
     def start_renaming(self):
         folder_path = self.folder_path_edit.text()
         text_to_remove = self.text_to_remove_edit.text()
-        
+
         if not folder_path:
-            QMessageBox.warning(self, "Brak folderu", "Proszę wybrać folder do przetworzenia.")
+            QMessageBox.warning(
+                self, "Brak folderu", "Proszę wybrać folder do przetworzenia."
+            )
             return
-            
+
         if not text_to_remove:
-            QMessageBox.warning(self, "Brak tekstu", "Proszę wpisać tekst (prefix/sufix) do usunięcia.")
+            QMessageBox.warning(
+                self, "Brak tekstu", "Proszę wpisać tekst (prefix/sufix) do usunięcia."
+            )
             return
-            
+
         self.set_ui_enabled(False)
         self.log_widget.clear()
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
 
-        mode = 'prefix' if self.prefix_radio.isChecked() else 'suffix'
-        
+        mode = "prefix" if self.prefix_radio.isChecked() else "suffix"
+
         self.log_widget.append(f"Rozpoczynam operację w folderze: {folder_path}")
-        self.log_widget.append(f"Tryb: usuwanie {'prefixu' if mode == 'prefix' else 'sufixu'}: '{text_to_remove}'\n")
+        self.log_widget.append(
+            f"Tryb: usuwanie {'prefixu' if mode == 'prefix' else 'sufixu'}: '{text_to_remove}'\n"
+        )
 
         self.worker = RenamerWorker(folder_path, text_to_remove, mode)
         self.worker.log_signal.connect(self.update_log)
@@ -200,23 +224,28 @@ class RenamerApp(QMainWindow):
 
     def update_log(self, message):
         self.log_widget.append(message)
-    
+
     def set_progress_max(self, max_value):
         self.progress_bar.setMaximum(max_value)
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)
-        
+
     def on_renaming_finished(self, renamed_count):
         self.log_widget.append(f"\n--- Zakończono ---")
         self.log_widget.append(f"Zmieniono nazwę {renamed_count} plików.")
         self.set_ui_enabled(True)
         self.progress_bar.setVisible(False)
-        QMessageBox.information(self, "Zakończono", f"Operacja zakończona. Zmieniono nazwę {renamed_count} plików.")
+        QMessageBox.information(
+            self,
+            "Zakończono",
+            f"Operacja zakończona. Zmieniono nazwę {renamed_count} plików.",
+        )
         self.worker = None
 
+
 # --- Główny blok uruchomieniowy ---
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = RenamerApp()
     window.show()

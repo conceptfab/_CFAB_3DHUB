@@ -332,23 +332,20 @@ class DataProcessingWorker(QObject):
         """NAPRAWKA PROGRESS BAR: Emituje postęp z inteligentnym throttling dla wydajności."""
         # Oblicz realny procent postępu
         percent = int((current / max(total, 1)) * 100)
-        
-        # NAPRAWKA PROGRESS BAR: Inteligentny throttling w zależności od rozmiaru folderu
+
         if total <= 100:
             # Małe foldery: emituj co 5 kafelków dla płynnego progress bara
-            should_emit = (current == 1 or current == total or current % 5 == 0)
+            should_emit = current == 1 or current == total or current % 5 == 0
         elif total <= 500:
             # Średnie foldery: emituj co 10 kafelków
-            should_emit = (current == 1 or current == total or current % 10 == 0)
+            should_emit = current == 1 or current == total or current % 10 == 0
         else:
             # Duże foldery: emituj co 25 kafelków ale minimum co 2% postępu
             progress_step = max(25, total // 50)  # Minimum 25, maksimum co 2%
             should_emit = (
-                current == 1 or 
-                current == total or 
-                current % progress_step == 0
+                current == 1 or current == total or current % progress_step == 0
             )
-        
+
         if should_emit:
             self.emit_progress(percent, message)
 
@@ -377,14 +374,18 @@ class DataProcessingWorker(QObject):
         try:
             # NAPRAWKA PROGRESS BAR: Wymuś progress 0% na samym początku
             self.emit_progress(0, "Rozpoczynanie ładowania...")
-            
+
             # NAPRAWKA PERFORMANCE: Szybkie ładowanie galerii bez metadanych
-            self.emit_progress(0, f"Szybkie ładowanie {len(self.file_pairs)} kafelków...")
+            self.emit_progress(
+                0, f"Szybkie ładowanie {len(self.file_pairs)} kafelków..."
+            )
 
             # NAPRAWKA PERFORMANCE: POMIŃ metadane podczas ładowania galerii!
             # Metadane będą załadowane asynchronicznie w tle przez osobny worker
             # To drastycznie przyspiesza ładowanie galerii po refaktoryzacji MetadataManager
-            logger.debug(f"DataProcessingWorker: Pomijam metadane dla szybkiego ładowania {len(self.file_pairs)} par")
+            logger.debug(
+                f"DataProcessingWorker: Pomijam metadane dla szybkiego ładowania {len(self.file_pairs)} par"
+            )
             metadata_applied = True  # Symuluj sukces żeby nie blokować UI
 
             processed_pairs = []
@@ -392,7 +393,7 @@ class DataProcessingWorker(QObject):
 
             # NAPRAWKA PERFORMANCE: Dynamiczny batch size w zależności od liczby kafelków
             # Dla małych folderów (do 100 par) - batch_size = 5
-            # Dla średnich folderów (100-500 par) - batch_size = 20  
+            # Dla średnich folderów (100-500 par) - batch_size = 20
             # Dla dużych folderów (500+ par) - batch_size = 50
             if total_pairs <= 100:
                 batch_size = 5
@@ -424,7 +425,7 @@ class DataProcessingWorker(QObject):
                 if len(current_batch) >= batch_size:
                     self.tiles_batch_ready.emit(current_batch.copy())
                     current_batch.clear()
-                    
+
                     # NAPRAWKA WYDAJNOŚCI: Krótka przerwa co batch żeby UI mogło się odświeżyć
                     # Tylko dla dużych folderów (500+ par) żeby nie blokować UI
                     if total_pairs >= 500 and i % (batch_size * 2) == 0:
@@ -434,35 +435,45 @@ class DataProcessingWorker(QObject):
             if current_batch:
                 self.tiles_batch_ready.emit(current_batch)
 
-            # NAPRAWKA PROGRESS BAR: NIE ustawiaj na 100% tutaj! 
+            # NAPRAWKA PROGRESS BAR: NIE ustawiaj na 100% tutaj!
             # Kafelki są tworzone dopiero w _create_tile_widgets_batch
-            self.emit_progress(90, f"Przygotowano {len(processed_pairs)} par plików. Tworzenie kafelków...")
+            self.emit_progress(
+                90,
+                f"Przygotowano {len(processed_pairs)} par plików. Tworzenie kafelków...",
+            )
             self.emit_finished(processed_pairs)
-            
+
             # NAPRAWKA PERFORMANCE: Załaduj metadane asynchronicznie w tle po załadowaniu galerii
             self._load_metadata_async()
 
         except Exception as e:
             self.emit_error(f"Błąd podczas przetwarzania danych: {str(e)}", e)
-    
+
     def _load_metadata_async(self):
         """Ładuje metadane asynchronicznie w tle po załadowaniu galerii."""
         try:
             import threading
-            
+
             def load_metadata_delayed():
                 try:
                     from src.logic.metadata_manager import MetadataManager
-                    metadata_manager = MetadataManager.get_instance(self.working_directory)
-                    metadata_applied = metadata_manager.apply_metadata_to_file_pairs(self.file_pairs)
-                    logger.debug(f"Metadane załadowane asynchronicznie: {metadata_applied}")
+
+                    metadata_manager = MetadataManager.get_instance(
+                        self.working_directory
+                    )
+                    metadata_applied = metadata_manager.apply_metadata_to_file_pairs(
+                        self.file_pairs
+                    )
+                    logger.debug(
+                        f"Metadane załadowane asynchronicznie: {metadata_applied}"
+                    )
                 except Exception as e:
                     logger.error(f"Błąd ładowania metadanych w tle: {e}")
-            
+
             # NAPRAWKA THREAD SAFETY: Użyj threading.Timer zamiast QTimer w worker thread
             timer = threading.Timer(1.0, load_metadata_delayed)
             timer.start()
-            
+
         except Exception as e:
             logger.error(f"Błąd planowania asynchronicznego ładowania metadanych: {e}")
 

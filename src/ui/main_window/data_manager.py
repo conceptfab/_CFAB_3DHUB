@@ -47,7 +47,6 @@ class DataManager:
                 widget_to_remove.setParent(None)
                 self.main_window.unpaired_previews_layout.removeWidget(widget_to_remove)
 
-        # NAPRAWKA: Sortuj alfabetycznie przed wyświetleniem
         sorted_archives = sorted(
             self.main_window.controller.unpaired_archives,
             key=lambda x: os.path.basename(x).lower(),

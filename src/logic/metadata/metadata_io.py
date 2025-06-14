@@ -14,6 +14,7 @@ from filelock import FileLock, Timeout
 
 # Import normalizacji ścieżek
 from src.utils.path_utils import normalize_path
+
 from .metadata_validator import MetadataValidator
 
 # Stałe związane z metadanymi
@@ -60,7 +61,7 @@ class MetadataIO:
         """
         metadata_path = self.get_metadata_path()
         lock_path = self.get_lock_path()
-        
+
         default_metadata = {
             "file_pairs": {},
             "unpaired_archives": [],
@@ -133,7 +134,7 @@ class MetadataIO:
 
         try:
             with lock:
-                # Create temporary file in same directory for atomic move
+
                 with tempfile.NamedTemporaryFile(
                     mode="w",
                     delete=False,
@@ -164,7 +165,7 @@ class MetadataIO:
             logger.error(f"Error writing metadata: {e}", exc_info=True)
             return False
         finally:
-            # Cleanup temp file if it still exists
+
             if temp_file_path and os.path.exists(temp_file_path):
                 try:
                     os.unlink(temp_file_path)
@@ -206,7 +207,7 @@ class MetadataIO:
             bool: True jeśli kopia została utworzona pomyślnie
         """
         metadata_path = self.get_metadata_path()
-        
+
         if not os.path.exists(metadata_path):
             logger.debug("Plik metadanych nie istnieje - brak potrzeby tworzenia kopii")
             return True
@@ -219,4 +220,4 @@ class MetadataIO:
             return True
         except Exception as e:
             logger.error(f"Błąd tworzenia kopii zapasowej: {e}", exc_info=True)
-            return False 
+            return False

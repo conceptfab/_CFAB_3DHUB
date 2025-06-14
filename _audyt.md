@@ -49,7 +49,7 @@ Na podstawie mapy przygotuj:
 
 ### Cel drugiego etapu:
 
-Szczegółowa analiza każdego pliku zgodnie z **mapą kodu (`code_map.md`)** i planem z etapu 1, z progressywnym zapisywaniem wyników. W tej aplikacji kluczowa jest wydajność - ma pracować z tysiącami plików oraz stabilność. Przeanalizuj kod szczególnie pod tym kątem i zaproponuj adekwatne poprawki. Zweryfikuje czy istnieje zduplikowany lub nadmiarowy kod, nieuzywany kod i nieaktualne komentarze. Przygotuj kod do przyszłych modernizacji.
+Szczegółowa analiza każdego pliku zgodnie z **mapą kodu (`code_map.md`)** i planem z etapu 1, z progressywnym zapisywaniem wyników. W tej aplikacji kluczowa jest wydajność - ma pracować z tysiącami plików oraz stabilność. Przeanalizuj kod szczególnie pod tym kątem i zaproponuj adekwatne poprawki. Zweryfikuje czy istnieje zduplikowany lub nadmiarowy kod, nieuzywany kod i nieaktualne komentarze. Zaproponuj podział duzych plików na logiczne części - pamiętając o strukturze projektu. Przygotuj kod do przyszłych modernizacji. Podziel plan poprawek na etapy, każdy powinien objemować jedną poprawkę i ma być zakończony testem i weryfikacja poprawności. Kolejna poprawka może być zrealizowana po bezbłednym wprowadzeniu poprzedniej - to jest istotne i trzeba to zapisać w planie. Wpisy aktualizacyjne w dokumentacji moga być zrealizowane po faktycznym potwierdzeniu przez użytkownika poprawności wprowadzenia poprawki. Proponowany kod do poprawek zapisz w czytelny sposób w pliku patch_code.md i odwołuj się do niego w dokumencie corrections.md
 
 
 
@@ -67,7 +67,7 @@ Przeanalizuj WSZYSTKIE PLIKI z mapy projektu pod kątem:
 #### 2.2 Wymagania dotyczące poprawek
 
 - **Język opisu:** Wszystkie opisy poprawek w języku polskim
-- **Precyzja:** Każda poprawka z dokładnymi informacjami o fragmentach kodu
+- **Precyzja:** Każda poprawka z dokładnymi informacjami o fragmentach kodu w pliku patch_code.md
 - **Kompletność:** Każda poprawka ma zawierać kompletny fragment kodu dotyczący poprawki
 - **Etapowość:** Poprawki podzielone na logiczne etapy
 - **Jeden etap = jeden główny plik + wszystkie jego zależności**

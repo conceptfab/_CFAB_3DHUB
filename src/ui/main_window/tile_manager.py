@@ -95,7 +95,6 @@ class TileManager:
             total_tiles = len(self.main_window.controller.current_file_pairs)
             self.main_window.progress_manager.init_batch_processing(total_tiles)
 
-        # NAPRAWKA WYDAJNOŚCI: Wyłącz tylko aktualizacje UI (NIE widoczność!)
         self.main_window.gallery_manager.tiles_container.setUpdatesEnabled(False)
 
         try:

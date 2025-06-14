@@ -9,13 +9,7 @@ import subprocess
 import time
 from typing import List, Optional
 
-from PyQt6.QtCore import (
-    QDir,
-    QModelIndex,
-    Qt,
-    QThreadPool,
-    QTimer,
-)
+from PyQt6.QtCore import QDir, QModelIndex, Qt, QThreadPool, QTimer
 from PyQt6.QtGui import (
     QDragEnterEvent,
     QDragLeaveEvent,
@@ -42,13 +36,14 @@ from src.logic.file_operations import (
 )
 from src.utils.path_utils import normalize_path
 
-# Importy z nowych modułów
-from .models import StatsProxyModel, FolderStatsDelegate
-from .delegates import DropHighlightDelegate
-from .workers import FolderStatisticsWorker, FolderScanWorker
-from .data_classes import FolderStatistics
 from .cache import FolderStatsCache
+from .data_classes import FolderStatistics
+from .delegates import DropHighlightDelegate
+
+# Importy z nowych modułów
+from .models import FolderStatsDelegate, StatsProxyModel
 from .throttled_scheduler import ThrottledWorkerScheduler
+from .workers import FolderScanWorker, FolderStatisticsWorker
 
 logger = logging.getLogger(__name__)
 
@@ -68,16 +63,20 @@ class DirectoryTreeManager:
 
         # ==================== NOWE FUNKCJONALNOŚCI ====================
         # Cache statystyk folderów - używamy nowej klasy FolderStatsCache
-        self._folder_stats_cache = FolderStatsCache(max_entries=100, timeout_seconds=300)
-        
+        self._folder_stats_cache = FolderStatsCache(
+            max_entries=100, timeout_seconds=300
+        )
+
         # 🚀 OPTYMALIZACJA: Cache dla _get_visible_folders() - ~70% mniej wywołań skanowania
         self._visible_folders_cache = None
         self._visible_folders_cache_timestamp = 0
         self._visible_folders_cache_timeout = 60  # 60 sekund cache
-        
+
         # 🚀 OPTYMALIZACJA: ThrottledWorkerScheduler - ~80% mniej przeciążenia systemu
-        self._worker_scheduler = ThrottledWorkerScheduler(max_concurrent_workers=2, base_delay_ms=150)
-        
+        self._worker_scheduler = ThrottledWorkerScheduler(
+            max_concurrent_workers=2, base_delay_ms=150
+        )
+
         # Dedykowany thread pool z kontrolą wątków (zachowany dla kompatybilności)
         self._folder_thread_pool = QThreadPool()
         self._folder_thread_pool.setMaxThreadCount(3)  # Limit równoczesnych zadań
@@ -112,8 +111,12 @@ class DirectoryTreeManager:
         # WŁĄCZ DropHighlightDelegate dla podświetlania podczas drag and drop
         self.drop_highlight_delegate = DropHighlightDelegate(self, self.folder_tree)
         self.folder_tree.setItemDelegate(self.drop_highlight_delegate)
-        logger.info(f"DELEGATE SETUP: Ustawiono delegate: {self.drop_highlight_delegate}")
-        logger.info(f"DELEGATE SETUP: Aktualny delegate: {self.folder_tree.itemDelegate()}")
+        logger.info(
+            f"DELEGATE SETUP: Ustawiono delegate: {self.drop_highlight_delegate}"
+        )
+        logger.info(
+            f"DELEGATE SETUP: Aktualny delegate: {self.folder_tree.itemDelegate()}"
+        )
 
         self.current_scan_path: str | None = None
         self._main_working_directory = None
@@ -128,12 +131,12 @@ class DirectoryTreeManager:
         if len(self._active_workers) >= 5:  # Limit globalny
             # Ciche odrzucanie dla zadań w tle - bez spamowania logów
             return False
-        
+
         self._active_workers.add(worker)
         # Połącz sygnał finished do usunięcia workera z zestawu - używamy sygnałów UnifiedBaseWorker
         worker.signals.finished.connect(lambda: self._remove_worker(worker))
         worker.signals.error.connect(lambda: self._remove_worker(worker))
-        
+
         self._folder_thread_pool.start(worker)
         return True
 
@@ -143,7 +146,9 @@ class DirectoryTreeManager:
 
     # ==================== ZAKTUALIZOWANE METODY CACHE ====================
 
-    def get_cached_folder_statistics(self, folder_path: str) -> Optional[FolderStatistics]:
+    def get_cached_folder_statistics(
+        self, folder_path: str
+    ) -> Optional[FolderStatistics]:
         """Pobiera statystyki z cache z sprawdzeniem ważności."""
         return self._folder_stats_cache.get(folder_path)
 
@@ -154,7 +159,7 @@ class DirectoryTreeManager:
     def invalidate_folder_cache(self, folder_path: str):
         """Usuwa statystyki z cache dla konkretnego folderu."""
         self._folder_stats_cache.invalidate(folder_path)
-        
+
     def invalidate_visible_folders_cache(self):
         """🚀 OPTYMALIZACJA: Invaliduje cache widocznych folderów."""
         self._visible_folders_cache = None
@@ -224,21 +229,26 @@ class DirectoryTreeManager:
             if not self.get_cached_folder_statistics(folder_path):
                 folders_to_process.append(folder_path)
 
-        logger.debug(f"🚀 SCHEDULER: Planowanie statystyk dla {len(folders_to_process)} folderów")
-        
+        logger.debug(
+            f"🚀 SCHEDULER: Planowanie statystyk dla {len(folders_to_process)} folderów"
+        )
+
         # 🚀 OPTYMALIZACJA: Użyj ThrottledWorkerScheduler zamiast QTimer
         for i, folder_path in enumerate(folders_to_process):
             task_id = f"stats_{os.path.basename(folder_path)}_{i}"
-            
+
             # Factory function dla worker'a
             def create_stats_worker(path=folder_path):
                 def worker_factory():
                     return self._create_stats_worker(path)
+
                 return worker_factory
-            
+
             # Dodaj do schedulera z prioryteten (główny folder ma wyższy priorytet)
             priority = 10 if folder_path == self._main_working_directory else 1
-            self._worker_scheduler.schedule_task(task_id, create_stats_worker(folder_path), priority)
+            self._worker_scheduler.schedule_task(
+                task_id, create_stats_worker(folder_path), priority
+            )
 
     def _get_visible_folders(self) -> List[str]:
         """
@@ -249,11 +259,17 @@ class DirectoryTreeManager:
 
         # Sprawdź cache
         import time
+
         current_time = time.time()
-        
-        if (self._visible_folders_cache is not None and 
-            current_time - self._visible_folders_cache_timestamp < self._visible_folders_cache_timeout):
-            logger.debug(f"📋 CACHE HIT: Używam cache'owanej listy {len(self._visible_folders_cache)} folderów")
+
+        if (
+            self._visible_folders_cache is not None
+            and current_time - self._visible_folders_cache_timestamp
+            < self._visible_folders_cache_timeout
+        ):
+            logger.debug(
+                f"📋 CACHE HIT: Używam cache'owanej listy {len(self._visible_folders_cache)} folderów"
+            )
             return self._visible_folders_cache.copy()
 
         # Cache miss - oblicz na nowo
@@ -294,7 +310,7 @@ class DirectoryTreeManager:
             # Zapisz do cache
             self._visible_folders_cache = folders.copy()
             self._visible_folders_cache_timestamp = current_time
-            
+
             logger.debug(f"📋 CACHE SAVE: Zapisano {len(folders)} folderów do cache")
 
         except Exception as e:
@@ -304,9 +320,12 @@ class DirectoryTreeManager:
 
     def _create_stats_worker(self, folder_path: str) -> FolderStatisticsWorker:
         """🚀 OPTYMALIZACJA: Factory method dla tworzenia stats worker'ów."""
+
         def on_finished(stats):
             # Zapisz do cache i odśwież widok
-            logger.debug(f"📊 Statystyki: {os.path.basename(folder_path)} -> {stats.pairs_count} par")
+            logger.debug(
+                f"📊 Statystyki: {os.path.basename(folder_path)} -> {stats.pairs_count} par"
+            )
             self.cache_folder_statistics(folder_path, stats)
             self._refresh_folder_display(folder_path)
 
@@ -317,9 +336,9 @@ class DirectoryTreeManager:
         worker = FolderStatisticsWorker(folder_path)
         worker.custom_signals.finished.connect(on_finished)
         worker.custom_signals.error.connect(on_error)
-        
+
         return worker
-    
+
     def _calculate_stats_async_silent(self, folder_path: str):
         """
         DEPRECATED: Użyj _worker_scheduler.schedule_task() zamiast tej metody.
@@ -742,18 +761,22 @@ class DirectoryTreeManager:
                 progress_dialog.show()
 
     # Handle methods dla operacji na folderach
-    def _handle_create_folder_finished(self, created_folder_path: str, progress_dialog: QProgressDialog):
+    def _handle_create_folder_finished(
+        self, created_folder_path: str, progress_dialog: QProgressDialog
+    ):
         """Obsługuje zakończenie tworzenia folderu."""
         progress_dialog.accept()
         folder_name = os.path.basename(created_folder_path)
         QMessageBox.information(
             self.parent_window,
             "Sukces",
-            f"Folder '{folder_name}' został utworzony pomyślnie."
+            f"Folder '{folder_name}' został utworzony pomyślnie.",
         )
         self.refresh_entire_tree()
 
-    def _handle_rename_folder_finished(self, old_path: str, new_path: str, progress_dialog: QProgressDialog):
+    def _handle_rename_folder_finished(
+        self, old_path: str, new_path: str, progress_dialog: QProgressDialog
+    ):
         """Obsługuje zakończenie zmiany nazwy folderu."""
         progress_dialog.accept()
         old_name = os.path.basename(old_path)
@@ -761,33 +784,41 @@ class DirectoryTreeManager:
         QMessageBox.information(
             self.parent_window,
             "Sukces",
-            f"Folder '{old_name}' został przemianowany na '{new_name}'."
+            f"Folder '{old_name}' został przemianowany na '{new_name}'.",
         )
         self.refresh_entire_tree()
 
-    def _handle_delete_folder_finished(self, deleted_folder_path: str, progress_dialog: QProgressDialog):
+    def _handle_delete_folder_finished(
+        self, deleted_folder_path: str, progress_dialog: QProgressDialog
+    ):
         """Obsługuje zakończenie usuwania folderu."""
         progress_dialog.accept()
         folder_name = os.path.basename(deleted_folder_path)
         QMessageBox.information(
             self.parent_window,
             "Sukces",
-            f"Folder '{folder_name}' został usunięty pomyślnie."
+            f"Folder '{folder_name}' został usunięty pomyślnie.",
         )
         self.refresh_entire_tree()
 
-    def _handle_operation_error(self, error_message: str, title: str, progress_dialog: QProgressDialog):
+    def _handle_operation_error(
+        self, error_message: str, title: str, progress_dialog: QProgressDialog
+    ):
         """Obsługuje błędy operacji na folderach."""
         progress_dialog.reject()
         QMessageBox.critical(self.parent_window, title, error_message)
 
-    def _handle_operation_progress(self, percent: int, message: str, progress_dialog: QProgressDialog):
+    def _handle_operation_progress(
+        self, percent: int, message: str, progress_dialog: QProgressDialog
+    ):
         """Obsługuje postęp operacji na folderach."""
         if progress_dialog.isVisible():
             progress_dialog.setValue(percent)
             progress_dialog.setLabelText(message)
 
-    def _handle_operation_interrupted(self, message: str, progress_dialog: QProgressDialog):
+    def _handle_operation_interrupted(
+        self, message: str, progress_dialog: QProgressDialog
+    ):
         """Obsługuje przerwanie operacji na folderach."""
         progress_dialog.reject()
         QMessageBox.information(self.parent_window, "Operacja przerwana", message)
@@ -797,7 +828,7 @@ class DirectoryTreeManager:
         try:
             # Wyczyść cache statystyk
             self._folder_stats_cache.clear()
-            
+
             # 🚀 OPTYMALIZACJA: Wyczyść także cache widocznych folderów
             self.invalidate_visible_folders_cache()
 
@@ -815,7 +846,7 @@ class DirectoryTreeManager:
         """Odświeża listę par plików po operacji na folderze."""
         try:
             # Sygnalizuj głównemu oknu że powinno odświeżyć pary plików
-            if hasattr(self.parent_window, 'refresh_file_pairs'):
+            if hasattr(self.parent_window, "refresh_file_pairs"):
                 self.parent_window.refresh_file_pairs()
         except Exception as e:
             logger.error(f"Błąd odświeżania par plików: {e}")
@@ -835,7 +866,7 @@ class DirectoryTreeManager:
             folder_path = self.model.filePath(source_index)
             if folder_path and os.path.isdir(folder_path):
                 # Sygnalizuj głównemu oknu zmianę katalogu
-                if hasattr(self.parent_window, 'change_directory'):
+                if hasattr(self.parent_window, "change_directory"):
                     self.parent_window.change_directory(folder_path)
         except Exception as e:
             logger.error(f"Błąd obsługi kliknięcia folderu: {e}")
@@ -880,8 +911,10 @@ class DirectoryTreeManager:
                     if source_index.isValid():
                         folder_path = self.model.filePath(source_index)
                         if os.path.isdir(folder_path):
-                            # NAPRAWKA DRAG&DROP PERFORMANCE: Tylko aktualizuj jeśli folder się zmienił
-                            current_target = getattr(self, '_highlighted_drop_target', None)
+
+                            current_target = getattr(
+                                self, "_highlighted_drop_target", None
+                            )
                             if current_target != folder_path:
                                 self._highlighted_drop_target = folder_path
                                 # Wymuś ponowne rysowanie tylko jeśli folder się zmienił
@@ -898,8 +931,8 @@ class DirectoryTreeManager:
         """Obsługuje opuszczenie obszaru podczas przeciągania."""
         try:
             # Usuń podświetlenie
-            if hasattr(self, '_highlighted_drop_target'):
-                delattr(self, '_highlighted_drop_target')
+            if hasattr(self, "_highlighted_drop_target"):
+                delattr(self, "_highlighted_drop_target")
                 self.folder_tree.viewport().update()
             event.accept()
         except Exception as e:
@@ -925,18 +958,26 @@ class DirectoryTreeManager:
 
                             if dropped_files:
                                 # Sygnalizuj głównemu oknu operację move/copy
-                                if hasattr(self.parent_window, 'handle_file_drop_on_folder'):
-                                    self.parent_window.handle_file_drop_on_folder(dropped_files, target_folder)
-                                    logger.info(f"DRAG&DROP: Wywołano handle_file_drop_on_folder z {len(dropped_files)} plikami")
+                                if hasattr(
+                                    self.parent_window, "handle_file_drop_on_folder"
+                                ):
+                                    self.parent_window.handle_file_drop_on_folder(
+                                        dropped_files, target_folder
+                                    )
+                                    logger.info(
+                                        f"DRAG&DROP: Wywołano handle_file_drop_on_folder z {len(dropped_files)} plikami"
+                                    )
                                 else:
-                                    logger.error("DRAG&DROP ERROR: Brak metody handle_file_drop_on_folder w parent_window")
+                                    logger.error(
+                                        "DRAG&DROP ERROR: Brak metody handle_file_drop_on_folder w parent_window"
+                                    )
                                 event.acceptProposedAction()
-                                
+
             # Usuń podświetlenie
-            if hasattr(self, '_highlighted_drop_target'):
-                delattr(self, '_highlighted_drop_target')
+            if hasattr(self, "_highlighted_drop_target"):
+                delattr(self, "_highlighted_drop_target")
                 self.folder_tree.viewport().update()
-            
+
         except Exception as e:
             logger.error(f"Błąd drop event: {e}")
             event.ignore()
@@ -947,14 +988,16 @@ class DirectoryTreeManager:
             return
 
         visible_folders = self._get_visible_folders()
-        
+
         for folder_path in visible_folders:
             # Usuń z cache aby wymusić przeliczenie
             self.invalidate_folder_cache(folder_path)
             # Rozpocznij przeliczanie
             self._calculate_stats_async_silent(folder_path)
 
-        logger.info(f"Rozpoczęto przeliczanie statystyk dla {len(visible_folders)} folderów")
+        logger.info(
+            f"Rozpoczęto przeliczanie statystyk dla {len(visible_folders)} folderów"
+        )
 
     def _force_recalculate_folder_stats(self, folder_path: str):
         """Wymuś przeliczenie statystyk dla konkretnego folderu."""
@@ -968,21 +1011,23 @@ class DirectoryTreeManager:
         """Inicjalizuje drzewo katalogów asynchronicznie."""
         try:
             self._main_working_directory = current_working_directory
-            
+
             def on_folders_scanned(folders_with_files):
                 # Ustaw główny folder roboczy jako root
                 self.model.setRootPath(current_working_directory)
                 root_index = self.model.index(current_working_directory)
                 proxy_root_index = self.proxy_model.mapFromSource(root_index)
                 self.folder_tree.setRootIndex(proxy_root_index)
-                
+
                 # Rozwiń foldery z plikami
                 self._expand_folders_with_files(folders_with_files)
-                
+
                 # Rozpocznij obliczanie statystyk w tle
                 self.start_background_stats_calculation()
-                
-                logger.info(f"Zainicjalizowano drzewo katalogów dla: {current_working_directory}")
+
+                logger.info(
+                    f"Zainicjalizowano drzewo katalogów dla: {current_working_directory}"
+                )
 
             def on_scan_error(error_msg):
                 logger.error(f"Błąd skanowania folderów: {error_msg}")
@@ -996,9 +1041,9 @@ class DirectoryTreeManager:
             worker = FolderScanWorker(current_working_directory)
             worker.custom_signals.finished.connect(on_folders_scanned)
             worker.custom_signals.error.connect(on_scan_error)
-            
+
             self._start_worker(worker)
-            
+
         except Exception as e:
             logger.error(f"Błąd inicjalizacji drzewa katalogów: {e}")
 
@@ -1006,24 +1051,28 @@ class DirectoryTreeManager:
         """Inicjalizuje drzewo katalogów synchronicznie."""
         try:
             self._main_working_directory = current_working_directory
-            
+
             # Ustaw root path
             self.model.setRootPath(current_working_directory)
             root_index = self.model.index(current_working_directory)
             proxy_root_index = self.proxy_model.mapFromSource(root_index)
             self.folder_tree.setRootIndex(proxy_root_index)
-            
+
             # Skanuj foldery z plikami
-            folders_with_files = self._scan_folders_with_files(current_working_directory)
-            
+            folders_with_files = self._scan_folders_with_files(
+                current_working_directory
+            )
+
             # Rozwiń foldery z plikami
             self._expand_folders_with_files(folders_with_files)
-            
+
             # Rozpocznij obliczanie statystyk w tle
             self.start_background_stats_calculation()
-            
-            logger.info(f"Zainicjalizowano drzewo katalogów (sync) dla: {current_working_directory}")
-            
+
+            logger.info(
+                f"Zainicjalizowano drzewo katalogów (sync) dla: {current_working_directory}"
+            )
+
         except Exception as e:
             logger.error(f"Błąd inicjalizacji drzewa katalogów: {e}")
 
@@ -1033,20 +1082,24 @@ class DirectoryTreeManager:
         try:
             for root, dirs, files in os.walk(root_folder):
                 # Pomiń ukryte foldery
-                dirs[:] = [d for d in dirs if not d.startswith('.') and self.should_show_folder(d)]
-                
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if not d.startswith(".") and self.should_show_folder(d)
+                ]
+
                 # Jeśli folder ma pliki, dodaj go do listy
                 if files:
                     folders_with_files.append(root)
-                    
+
                 # Ogranicz głębokość skanowania
-                depth = root[len(root_folder):].count(os.sep)
+                depth = root[len(root_folder) :].count(os.sep)
                 if depth >= 3:
                     dirs.clear()
-                    
+
         except Exception as e:
             logger.error(f"Błąd skanowania folderów: {e}")
-            
+
         return folders_with_files
 
     def _expand_folders_with_files(self, folders_with_files: List[str]):
@@ -1058,7 +1111,7 @@ class DirectoryTreeManager:
                     proxy_index = self.proxy_model.mapFromSource(source_index)
                     if proxy_index.isValid():
                         self.folder_tree.expand(proxy_index)
-                        
+
         except Exception as e:
             logger.error(f"Błąd rozwijania folderów: {e}")
 
@@ -1085,19 +1138,21 @@ class DirectoryTreeManager:
         """Inicjalizuje drzewo katalogów bez automatycznego skanowania i rozwijania folderów."""
         try:
             self._main_working_directory = current_working_directory
-            
+
             # Ustaw TYLKO root path - bez skanowania i rozwijania
             self.model.setRootPath(current_working_directory)
             root_index = self.model.index(current_working_directory)
             proxy_root_index = self.proxy_model.mapFromSource(root_index)
             self.folder_tree.setRootIndex(proxy_root_index)
-            
+
             # CELOWO POMIJAMY:
-            # - _scan_folders_with_files() 
+            # - _scan_folders_with_files()
             # - _expand_folders_with_files()
             # - start_background_stats_calculation()
-            
-            logger.info(f"Zainicjalizowano drzewo katalogów (bez rozwijania) dla: {current_working_directory}")
-            
+
+            logger.info(
+                f"Zainicjalizowano drzewo katalogów (bez rozwijania) dla: {current_working_directory}"
+            )
+
         except Exception as e:
-            logger.error(f"Błąd inicjalizacji drzewa katalogów (bez rozwijania): {e}") 
+            logger.error(f"Błąd inicjalizacji drzewa katalogów (bez rozwijania): {e}")

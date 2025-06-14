@@ -6,10 +6,13 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QEvent
+from PyQt6.QtCore import QEvent, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QFrame,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -18,18 +21,20 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QStyle,
     QVBoxLayout,
     QWidget,
-    QStyle,
-    QFrame,
-    QCheckBox,
-    QHBoxLayout,
 )
 
-# Dodaj import stylów z FileTileWidget
-from src.ui.widgets.tile_styles import TileStylesheet, TileColorScheme, TileSizeConstants
 # Dodaj import PreviewDialog
 from src.ui.widgets.preview_dialog import PreviewDialog
+
+# Dodaj import stylów z FileTileWidget
+from src.ui.widgets.tile_styles import (
+    TileColorScheme,
+    TileSizeConstants,
+    TileStylesheet,
+)
 
 if TYPE_CHECKING:
     from src.ui.main_window import MainWindow
@@ -40,15 +45,15 @@ class UnpairedPreviewTile(QWidget):
     Uproszczony kafelek podglądu bez gwiazdek i tagów kolorów.
     Używa tej samej struktury co FileTileWidget ale bez MetadataControlsWidget.
     """
-    
+
     # Dodaj sygnał jak w FileTileWidget
     preview_image_requested = pyqtSignal(str)  # ścieżka do pliku podglądu
-    
+
     def __init__(self, preview_path: str, parent: QWidget = None):
         super().__init__(parent)
         self.preview_path = preview_path
         self.thumbnail_size = TileSizeConstants.DEFAULT_THUMBNAIL_SIZE
-        
+
         # Referencje do widgetów
         self.thumbnail_frame = None
         self.thumbnail_label = None
@@ -56,18 +61,17 @@ class UnpairedPreviewTile(QWidget):
         self.controls_container = None
         self.checkbox = None
         self.delete_button = None
-        
-        # NAPRAWKA: Używaj "FileTileWidget" dla odpowiedniej stylizacji tła
+
         self.setObjectName("FileTileWidget")
         self.setStyleSheet(TileStylesheet.get_file_tile_stylesheet())
         self.setFixedSize(self.thumbnail_size[0], self.thumbnail_size[1])
-        
+
         # Włącz wsparcie dla stylowania tła widgetu
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        
+
         # Inicjalizacja UI
         self._init_ui()
-        
+
     def _init_ui(self):
         """Inicjalizuje elementy interfejsu - identyczne z FileTileWidget."""
         # Główny layout - pionowy, z optymalnimi marginesami
@@ -78,7 +82,9 @@ class UnpairedPreviewTile(QWidget):
 
         # --- Frame - kontener na miniaturę z kolorową obwódką ---
         self.thumbnail_frame = QFrame(self)
-        self.thumbnail_frame.setStyleSheet(TileStylesheet.get_thumbnail_frame_stylesheet())
+        self.thumbnail_frame.setStyleSheet(
+            TileStylesheet.get_thumbnail_frame_stylesheet()
+        )
 
         # Ustawienie layoutu dla thumbnail_frame - bez odstępów
         thumbnail_frame_layout = QVBoxLayout(self.thumbnail_frame)
@@ -102,17 +108,19 @@ class UnpairedPreviewTile(QWidget):
             - TileSizeConstants.FILENAME_MAX_HEIGHT
             - TileSizeConstants.METADATA_MAX_HEIGHT,
         )
-        
+
         # Zabezpieczenie przed ujemnymi wymiarami
         thumb_size = max(thumb_size, TileSizeConstants.MIN_THUMBNAIL_WIDTH)
-        
+
         self.thumbnail_label.setFixedSize(thumb_size, thumb_size)
         self.thumbnail_label.setScaledContents(True)
         self.thumbnail_label.setFrameShape(QFrame.Shape.NoFrame)
 
         # Zastosowanie centralnych stylów dla miniatury
-        self.thumbnail_label.setStyleSheet(TileStylesheet.get_thumbnail_label_stylesheet())
-        
+        self.thumbnail_label.setStyleSheet(
+            TileStylesheet.get_thumbnail_label_stylesheet()
+        )
+
         # Załaduj miniaturkę
         self._load_thumbnail()
 
@@ -130,8 +138,7 @@ class UnpairedPreviewTile(QWidget):
         # Etykieta na nazwę pliku
         file_name = os.path.basename(self.preview_path)
         self.filename_label = QLabel(
-            file_name if len(file_name) < 25 else file_name[:20] + "...",
-            self
+            file_name if len(file_name) < 25 else file_name[:20] + "...", self
         )
         self.filename_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.filename_label.setWordWrap(True)
@@ -166,18 +173,18 @@ class UnpairedPreviewTile(QWidget):
         controls_layout.addWidget(self.delete_button)
 
         self.layout.addWidget(self.controls_container)
-        
+
     def _load_thumbnail(self):
         """
         Ładuje miniaturkę do thumbnail_label.
         NAPRAWKA: Używa create_thumbnail_from_file() jak FileTileWidget dla identycznego formatowania!
         """
         from src.utils.image_utils import create_thumbnail_from_file
-        
+
         # Użyj tej samej funkcji co FileTileWidget!
         width = height = self.thumbnail_label.width()
         pixmap = create_thumbnail_from_file(self.preview_path, width, height)
-        
+
         if not pixmap.isNull():
             self.thumbnail_label.setPixmap(pixmap)
         else:
@@ -186,13 +193,15 @@ class UnpairedPreviewTile(QWidget):
     def _update_font_size(self):
         """Aktualizuje rozmiar czcionki w zależności od rozmiaru kafelka."""
         base_font_size = max(8, min(18, int(self.thumbnail_size[0] / 12)))
-        self.filename_label.setStyleSheet(TileStylesheet.get_filename_label_stylesheet(base_font_size))
+        self.filename_label.setStyleSheet(
+            TileStylesheet.get_filename_label_stylesheet(base_font_size)
+        )
 
     def set_thumbnail_size(self, new_size: tuple[int, int]):
         """Ustawia nowy rozmiar kafelka i dostosowuje jego zawartość."""
         if self.thumbnail_size != new_size:
             self.thumbnail_size = new_size
-            
+
             # Ustaw stały rozmiar całego widgetu kafelka
             self.setFixedSize(new_size[0], new_size[1])
 
@@ -206,7 +215,9 @@ class UnpairedPreviewTile(QWidget):
             )
 
             # Zabezpieczenie przed ujemnymi wymiarami
-            thumb_dimension = max(thumb_dimension, TileSizeConstants.MIN_THUMBNAIL_WIDTH)
+            thumb_dimension = max(
+                thumb_dimension, TileSizeConstants.MIN_THUMBNAIL_WIDTH
+            )
 
             # Ustaw rozmiar etykiety miniatury
             self.thumbnail_label.setFixedSize(thumb_dimension, thumb_dimension)
@@ -227,7 +238,9 @@ class UnpairedPreviewTile(QWidget):
         if event.type() == QEvent.Type.MouseButtonPress:
             if event.button() == Qt.MouseButton.LeftButton:
                 if obj == self.thumbnail_label:
-                    logging.debug(f"Kliknięcie w miniaturkę: {os.path.basename(self.preview_path)}")
+                    logging.debug(
+                        f"Kliknięcie w miniaturkę: {os.path.basename(self.preview_path)}"
+                    )
                     # NAPRAWKA: Emituj sygnał zamiast bezpośredniego wywołania
                     self.preview_image_requested.emit(self.preview_path)
                     return True
@@ -280,7 +293,7 @@ class UnpairedFilesTab:
             Widget zakładki niesparowanych plików
         """
         logging.debug("Creating unpaired files tab")
-        
+
         self.unpaired_files_tab = QWidget()
         self.unpaired_files_layout = QVBoxLayout(self.unpaired_files_tab)
         self.unpaired_files_layout.setContentsMargins(5, 5, 5, 5)
@@ -299,7 +312,7 @@ class UnpairedFilesTab:
         logging.debug("Creating previews list")
         self._create_unpaired_previews_list()
         logging.debug("Previews list created successfully")
-        
+
         self.unpaired_files_layout.addWidget(self.unpaired_splitter)
 
         # Panel przycisków
@@ -319,7 +332,9 @@ class UnpairedFilesTab:
         # Przycisk do przenoszenia plików bez pary
         self.move_unpaired_button = QPushButton("Przenieś Archiwa Bez Pary")
         self.move_unpaired_button.clicked.connect(self._handle_move_unpaired_archives)
-        self.move_unpaired_button.setToolTip("Przenosi wszystkie pliki archiwum bez pary do folderu '_bez_pary_'")
+        self.move_unpaired_button.setToolTip(
+            "Przenosi wszystkie pliki archiwum bez pary do folderu '_bez_pary_'"
+        )
         self.move_unpaired_button.setFixedSize(200, 30)
         buttons_layout.addWidget(self.move_unpaired_button)
 
@@ -450,9 +465,11 @@ class UnpairedFilesTab:
             return
 
         # Utwórz kafelek podglądu
-        preview_tile = UnpairedPreviewTile(preview_path, self.unpaired_previews_container)
+        preview_tile = UnpairedPreviewTile(
+            preview_path, self.unpaired_previews_container
+        )
         preview_tile.set_thumbnail_size(self.current_thumbnail_size)
-        
+
         # NAPRAWKA: Podłącz sygnał preview_image_requested do metody wyświetlającej PreviewDialog
         preview_tile.preview_image_requested.connect(self._show_preview_dialog)
         preview_tile.checkbox.stateChanged.connect(
@@ -460,12 +477,16 @@ class UnpairedFilesTab:
                 cb, path, state
             )
         )
-        preview_tile.delete_button.clicked.connect(lambda: self._delete_preview_file(preview_path))
-        
+        preview_tile.delete_button.clicked.connect(
+            lambda: self._delete_preview_file(preview_path)
+        )
+
         # Ustaw ikonę dla przycisku usuń
-        trash_icon = self.main_window.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        trash_icon = self.main_window.style().standardIcon(
+            QStyle.StandardPixmap.SP_TrashIcon
+        )
         preview_tile.delete_button.setIcon(trash_icon)
-        
+
         # Dodaj do listy checkboxów i kafelków
         self.preview_checkboxes.append(preview_tile.checkbox)
         self.preview_tile_widgets.append(preview_tile)
@@ -477,7 +498,7 @@ class UnpairedFilesTab:
     def _show_preview_dialog(self, preview_path: str):
         """
         NAPRAWKA: Wyświetla okno dialogowe z podglądem obrazu jak w galerii.
-        
+
         Args:
             preview_path: Ścieżka do pliku podglądu
         """
@@ -507,7 +528,7 @@ class UnpairedFilesTab:
         """
         Obsługuje kliknięcie w miniaturkę - otwiera podgląd obrazu.
         DEPRECATED: Zastąpione przez _show_preview_dialog
-        
+
         Args:
             preview_path: Ścieżka do pliku podglądu
         """
@@ -537,7 +558,10 @@ class UnpairedFilesTab:
         else:
             # Odznacz element na liście, jeśli to on był zaznaczony
             current_item = self.unpaired_previews_list_widget.currentItem()
-            if current_item and current_item.data(Qt.ItemDataRole.UserRole) == preview_path:
+            if (
+                current_item
+                and current_item.data(Qt.ItemDataRole.UserRole) == preview_path
+            ):
                 self.unpaired_previews_list_widget.setCurrentItem(None)
 
         # Odblokuj sygnały
@@ -617,40 +641,50 @@ class UnpairedFilesTab:
         Aktualizuje listy niesparowanych plików w interfejsie użytkownika.
         """
         logging.debug("Aktualizacja unpaired files")
-        
+
         # NAPRAWKA: Sprawdzamy tylko czy atrybut istnieje, nie jego wartość boolean
-        if not hasattr(self, 'unpaired_archives_list_widget'):
-            logging.error("CRITICAL ERROR: unpaired_archives_list_widget not found in manager!")
+        if not hasattr(self, "unpaired_archives_list_widget"):
+            logging.error(
+                "CRITICAL ERROR: unpaired_archives_list_widget not found in manager!"
+            )
             return
 
-        if not hasattr(self, 'unpaired_previews_list_widget'):
-            logging.error("CRITICAL ERROR: unpaired_previews_list_widget not found in manager!")
+        if not hasattr(self, "unpaired_previews_list_widget"):
+            logging.error(
+                "CRITICAL ERROR: unpaired_previews_list_widget not found in manager!"
+            )
             return
 
-        if not hasattr(self, 'unpaired_previews_layout'):
-            logging.error("CRITICAL ERROR: unpaired_previews_layout not found in manager!")
+        if not hasattr(self, "unpaired_previews_layout"):
+            logging.error(
+                "CRITICAL ERROR: unpaired_previews_layout not found in manager!"
+            )
             return
 
         # NAPRAWKA: Sprawdzamy czy widget jest None a nie czy jest "falsy"
         if self.unpaired_archives_list_widget is None:
             logging.error("unpaired_archives_list_widget is None!")
             return
-            
+
         if self.unpaired_previews_list_widget is None:
             logging.error("unpaired_previews_list_widget is None!")
             return
 
-        # DEBUG: Sprawdź stan w kontrolerze
         archives_count = len(self.main_window.controller.unpaired_archives)
         previews_count = len(self.main_window.controller.unpaired_previews)
-        logging.debug(f"Unpaired: {archives_count} archiwów, {previews_count} podglądów")
-        
-        # Logi szczegółów plików tylko w trybie DEBUG
+        logging.debug(
+            f"Unpaired: {archives_count} archiwów, {previews_count} podglądów"
+        )
+
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            for i, archive in enumerate(self.main_window.controller.unpaired_archives[:3]):  # Tylko pierwsze 3
+            for i, archive in enumerate(
+                self.main_window.controller.unpaired_archives[:3]
+            ):
                 logging.debug(f"Archive {i}: {os.path.basename(archive)}")
             if len(self.main_window.controller.unpaired_archives) > 3:
-                logging.debug(f"... i {len(self.main_window.controller.unpaired_archives) - 3} więcej archiwów")
+                logging.debug(
+                    f"... i {len(self.main_window.controller.unpaired_archives) - 3} więcej archiwów"
+                )
 
         # UŻYWAMY BEZPOŚREDNIO ATRYBUTÓW Z MANAGERA
         self.unpaired_archives_list_widget.clear()
@@ -678,10 +712,14 @@ class UnpairedFilesTab:
                                 child.widget().deleteLater()
 
         # NAPRAWKA: Sortuj alfabetycznie przed wyświetleniem (dodatkowe zabezpieczenie)
-        sorted_archives = sorted(self.main_window.controller.unpaired_archives, 
-                                key=lambda x: os.path.basename(x).lower())
-        sorted_previews = sorted(self.main_window.controller.unpaired_previews, 
-                                key=lambda x: os.path.basename(x).lower())
+        sorted_archives = sorted(
+            self.main_window.controller.unpaired_archives,
+            key=lambda x: os.path.basename(x).lower(),
+        )
+        sorted_previews = sorted(
+            self.main_window.controller.unpaired_previews,
+            key=lambda x: os.path.basename(x).lower(),
+        )
 
         # Aktualizuj listę archiwów - stan z Controller (posortowany)
         for archive_path in sorted_archives:
@@ -702,7 +740,9 @@ class UnpairedFilesTab:
             # Usunięto spam logów - progress raportowany przez progress bar
             self._add_preview_thumbnail(preview_path)
 
-        logging.debug(f"Zakończono aktualizację unpaired: {archives_count} archiwów, {previews_count} podglądów")
+        logging.debug(
+            f"Zakończono aktualizację unpaired: {archives_count} archiwów, {previews_count} podglądów"
+        )
         self._update_pair_button_state()
 
     def _update_pair_button_state(self):
@@ -746,7 +786,7 @@ class UnpairedFilesTab:
             QMessageBox.warning(
                 self.main_window,
                 "Brak folderu roboczego",
-                "Nie wybrano folderu roboczego."
+                "Nie wybrano folderu roboczego.",
             )
             return
 
@@ -756,7 +796,7 @@ class UnpairedFilesTab:
             QMessageBox.information(
                 self.main_window,
                 "Brak plików",
-                "Nie ma plików archiwum bez pary do przeniesienia."
+                "Nie ma plików archiwum bez pary do przeniesienia.",
             )
             return
 
@@ -768,7 +808,7 @@ class UnpairedFilesTab:
             f"do folderu '_bez_pary_'?\n\n"
             f"Ta operacja jest nieodwracalna.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.No,
         )
 
         if reply != QMessageBox.StandardButton.Yes:
@@ -782,7 +822,7 @@ class UnpairedFilesTab:
             QMessageBox.critical(
                 self.main_window,
                 "Błąd tworzenia folderu",
-                f"Nie udało się utworzyć folderu '_bez_pary_':\n{str(e)}"
+                f"Nie udało się utworzyć folderu '_bez_pary_':\n{str(e)}",
             )
             return
 
@@ -793,8 +833,9 @@ class UnpairedFilesTab:
         """
         Uruchamia worker do przenoszenia plików archiwum bez pary.
         """
-        from src.ui.delegates.workers.bulk_workers import MoveUnpairedArchivesWorker
         from PyQt6.QtCore import QThreadPool
+
+        from src.ui.delegates.workers.bulk_workers import MoveUnpairedArchivesWorker
 
         # Utwórz worker
         self.move_unpaired_worker = MoveUnpairedArchivesWorker(
@@ -802,22 +843,28 @@ class UnpairedFilesTab:
         )
 
         # Podłącz sygnały
-        self.move_unpaired_worker.signals.progress.connect(self.main_window._show_progress)
-        self.move_unpaired_worker.signals.finished.connect(self._on_move_unpaired_finished)
+        self.move_unpaired_worker.signals.progress.connect(
+            self.main_window._show_progress
+        )
+        self.move_unpaired_worker.signals.finished.connect(
+            self._on_move_unpaired_finished
+        )
         self.move_unpaired_worker.signals.error.connect(self._on_move_unpaired_error)
 
         # Uruchom worker
         QThreadPool.globalInstance().start(self.move_unpaired_worker)
-        logging.info(f"Rozpoczęto przenoszenie {len(unpaired_archives)} plików archiwum bez pary")
+        logging.info(
+            f"Rozpoczęto przenoszenie {len(unpaired_archives)} plików archiwum bez pary"
+        )
 
     def _on_move_unpaired_finished(self, result):
         """
         Obsługuje zakończenie przenoszenia plików bez pary.
         """
         try:
-            moved_files = result.get('moved_files', [])
-            detailed_errors = result.get('detailed_errors', [])
-            summary = result.get('summary', {})
+            moved_files = result.get("moved_files", [])
+            detailed_errors = result.get("detailed_errors", [])
+            summary = result.get("summary", {})
 
             # Ukryj pasek postępu
             self.main_window._hide_progress()
@@ -833,7 +880,7 @@ class UnpairedFilesTab:
             QMessageBox.critical(
                 self.main_window,
                 "Błąd",
-                f"Wystąpił błąd podczas obsługi wyników przenoszenia:\n{str(e)}"
+                f"Wystąpił błąd podczas obsługi wyników przenoszenia:\n{str(e)}",
             )
 
     def _on_move_unpaired_error(self, error_message: str):
@@ -844,23 +891,25 @@ class UnpairedFilesTab:
         QMessageBox.critical(
             self.main_window,
             "Błąd przenoszenia",
-            f"Wystąpił błąd podczas przenoszenia plików:\n{error_message}"
+            f"Wystąpił błąd podczas przenoszenia plików:\n{error_message}",
         )
 
-    def _show_move_unpaired_report(self, moved_files: list, detailed_errors: list, summary: dict):
+    def _show_move_unpaired_report(
+        self, moved_files: list, detailed_errors: list, summary: dict
+    ):
         """
         Wyświetla raport z przenoszenia plików bez pary.
         """
-        total_requested = summary.get('total_requested', 0)
-        successfully_moved = summary.get('successfully_moved', 0)
-        errors = summary.get('errors', 0)
+        total_requested = summary.get("total_requested", 0)
+        successfully_moved = summary.get("successfully_moved", 0)
+        errors = summary.get("errors", 0)
 
         # Podstawowy komunikat
         if errors == 0:
             QMessageBox.information(
                 self.main_window,
                 "Przenoszenie zakończone",
-                f"Pomyślnie przeniesiono {successfully_moved} z {total_requested} plików archiwum bez pary do folderu '_bez_pary_'."
+                f"Pomyślnie przeniesiono {successfully_moved} z {total_requested} plików archiwum bez pary do folderu '_bez_pary_'.",
             )
         else:
             # Szczegółowy raport z błędami
@@ -869,23 +918,25 @@ class UnpairedFilesTab:
                 f"• Pomyślnie przeniesiono: {successfully_moved}",
                 f"• Błędy: {errors}",
                 f"• Łącznie przetworzono: {total_requested}",
-                ""
+                "",
             ]
 
             if detailed_errors:
                 report_lines.append("Szczegóły błędów:")
                 for error in detailed_errors[:5]:  # Pokaż maksymalnie 5 błędów
-                    file_name = os.path.basename(error.get('file_path', 'Nieznany'))
-                    error_type = error.get('error_type', 'NIEZNANY')
+                    file_name = os.path.basename(error.get("file_path", "Nieznany"))
+                    error_type = error.get("error_type", "NIEZNANY")
                     report_lines.append(f"• {file_name}: {error_type}")
-                
+
                 if len(detailed_errors) > 5:
-                    report_lines.append(f"... i {len(detailed_errors) - 5} więcej błędów")
+                    report_lines.append(
+                        f"... i {len(detailed_errors) - 5} więcej błędów"
+                    )
 
             QMessageBox.warning(
                 self.main_window,
                 "Przenoszenie zakończone z błędami",
-                "\n".join(report_lines)
+                "\n".join(report_lines),
             )
 
     def _refresh_unpaired_files(self):
@@ -901,7 +952,9 @@ class UnpairedFilesTab:
                 self.main_window.refresh_all_views()
             else:
                 # Fallback - ale uniknij force_full_refresh!
-                logging.warning("Brak metody refresh_all_views - używam podstawowego odświeżenia bez resetu drzewa")
+                logging.warning(
+                    "Brak metody refresh_all_views - używam podstawowego odświeżenia bez resetu drzewa"
+                )
         else:
             logging.error(
                 "Nie można odświeżyć widoku - brak poprawnego folderu roboczego"
@@ -925,12 +978,12 @@ class UnpairedFilesTab:
     def update_thumbnail_size(self, new_size: tuple):
         """
         Aktualizuje rozmiar miniaturek w zakładce unpaired files.
-        
+
         Args:
             new_size: Nowa wielkość kafelka (width, height)
         """
         self.current_thumbnail_size = new_size
-        
+
         # Aktualizuj wszystkie istniejące kafelki
         for preview_tile in self.preview_tile_widgets:
             if isinstance(preview_tile, UnpairedPreviewTile):

@@ -7,7 +7,7 @@ ConfigDefaults - domyślne wartości konfiguracji.
 class ConfigDefaults:
     """
     Domyślne wartości konfiguracji aplikacji.
-    
+
     Centralizuje wszystkie domyślne ustawienia w jednym miejscu
     dla łatwiejszego zarządzania i modyfikacji.
     """
@@ -50,9 +50,9 @@ class ConfigDefaults:
         "thumbnail_cache_cleanup_threshold": 0.8,
         # Thumbnail format settings - NOWE
         "thumbnail_format": "WEBP",  # WEBP, JPEG, PNG
-        "thumbnail_quality": 80,     # 1-100 dla lossy formatów
+        "thumbnail_quality": 80,  # 1-100 dla lossy formatów
         "thumbnail_webp_method": 6,  # 0-6, wyższa wartość = lepsza kompresja
-        "thumbnail_preserve_transparency": True,  # Zachowaj przezroczystość w WebP/PNG
+        "thumbnail_preserve_transparency": True,  # Przezroczystość WebP/PNG
         # Parametry okna i timerów
         "window_min_width": 800,  # Minimalna szerokość okna
         "window_min_height": 600,  # Minimalna wysokość okna
@@ -60,6 +60,35 @@ class ConfigDefaults:
         "progress_hide_delay_ms": 3000,  # Czas wyświetlania postępu po zakończeniu (ms)
         "thread_wait_timeout_ms": 1000,  # Timeout oczekiwania na zakończenie wątku (ms)
         "preferences_status_display_ms": 3000,  # Czas wyświetlania statusu preferencji (ms)
+        # Domyślny folder roboczy
+        "default_working_directory": "",  # Pusty = folder domowy użytkownika
+        # Ulubione foldery
+        "favorite_folders": [
+            {
+                "name": "Folder 1",
+                "path": "",
+                "color": "#007ACC",
+                "description": "Pierwszy ulubiony folder",
+            },
+            {
+                "name": "Folder 2",
+                "path": "",
+                "color": "#43A047",
+                "description": "Drugi ulubiony folder",
+            },
+            {
+                "name": "Folder 3",
+                "path": "",
+                "color": "#E53935",
+                "description": "Trzeci ulubiony folder",
+            },
+            {
+                "name": "Folder 4",
+                "path": "",
+                "color": "#FDD835",
+                "description": "Czwarty ulubiony folder",
+            },
+        ],
         # Ochrona ustawień
     }
 
@@ -67,7 +96,7 @@ class ConfigDefaults:
     def get_default_config(cls) -> dict:
         """
         Pobiera kopię domyślnej konfiguracji.
-        
+
         Returns:
             Kopia słownika z domyślnymi wartościami
         """
@@ -77,11 +106,11 @@ class ConfigDefaults:
     def get_default_value(cls, key: str, fallback=None):
         """
         Pobiera domyślną wartość dla konkretnego klucza.
-        
+
         Args:
             key: Klucz konfiguracji
             fallback: Wartość fallback jeśli klucz nie istnieje
-            
+
         Returns:
             Domyślna wartość lub fallback
         """
@@ -91,10 +120,10 @@ class ConfigDefaults:
     def has_default(cls, key: str) -> bool:
         """
         Sprawdza czy istnieje domyślna wartość dla klucza.
-        
+
         Args:
             key: Klucz konfiguracji
-            
+
         Returns:
             True jeśli istnieje domyślna wartość
         """
@@ -104,8 +133,8 @@ class ConfigDefaults:
     def get_all_keys(cls) -> list:
         """
         Pobiera listę wszystkich kluczy domyślnej konfiguracji.
-        
+
         Returns:
             Lista kluczy konfiguracji
         """
-        return list(cls.DEFAULT_CONFIG.keys()) 
+        return list(cls.DEFAULT_CONFIG.keys())

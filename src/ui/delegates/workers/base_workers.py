@@ -191,10 +191,7 @@ class UnifiedBaseWorker(QRunnable):
         emit_error(), emit_finished()
         """
         self._start_time = time.time()
-        # Wszystkie workery na DEBUG - wyeliminowanie spamu logów
-        logger.debug(
-            f"{self._worker_name}: Start (priorytet: {self._priority})"
-        )
+        logger.debug(f"{self._worker_name}: Start (priorytet: {self._priority})")
 
         try:
             self._run_implementation()

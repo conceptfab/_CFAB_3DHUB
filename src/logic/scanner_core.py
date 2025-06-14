@@ -175,11 +175,12 @@ def collect_files_streaming(
                         full_file_path = normalize_path(os.path.join(current_dir, name))
                         file_map[map_key].append(full_file_path)
 
-            # NAPRAWKA: Rekurencyjnie skanuj podfoldery TYLKO jeśli folder ma pliki bezpośrednio
             should_scan_subfolders = files_processed_in_folder > 0
-            
-            logger.debug(f"Skanowanie: {current_dir} -> {files_processed_in_folder} plików")
-            
+
+            logger.debug(
+                f"Skanowanie: {current_dir} -> {files_processed_in_folder} plików"
+            )
+
             if should_scan_subfolders:
                 subfolders_processed = 0
                 for entry in entries:

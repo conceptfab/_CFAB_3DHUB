@@ -247,7 +247,7 @@ class ViewRefreshManager(QObject):
     def _refresh_gallery_view(self) -> bool:
         """Odświeża widok galerii."""
         try:
-            # NAPRAWKA: Użyj istniejącej metody zamiast nieistniejącej refresh_gallery()
+
             if hasattr(self.main_window, "_update_gallery_view"):
                 self.main_window._update_gallery_view()
                 return True

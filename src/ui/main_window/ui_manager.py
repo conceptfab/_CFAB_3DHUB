@@ -4,6 +4,7 @@ Część refaktoryzacji ETAP 1: MainWindow.
 """
 
 import logging
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
@@ -21,38 +22,41 @@ from PyQt6.QtWidgets import (
 class UIManager:
     """
     Zarządzanie elementami interfejsu użytkownika MainWindow.
-    
+
     Odpowiedzialności:
     - Tworzenie menu bar
     - Tworzenie paneli UI (top panel, bulk operations, size control)
     - Zarządzanie layoutami
     - Obsługa preferencji UI
     """
-    
+
     def __init__(self, main_window):
         """
         Inicjalizuje UIManager.
-        
+
         Args:
             main_window: Referencja do głównego okna MainWindow
         """
         self.main_window = main_window
         self.logger = logging.getLogger(__name__)
-        
+
     def setup_menu_bar(self):
         """Tworzy menu bar z pełną funkcjonalnością."""
         menubar = self.main_window.menuBar()
 
         # Menu Plik
         file_menu = menubar.addMenu("&Plik")
-        file_menu.addAction("&Otwórz folder...", self.main_window._select_working_directory)
+        file_menu.addAction(
+            "&Otwórz folder...", self.main_window._select_working_directory
+        )
         file_menu.addSeparator()
         file_menu.addAction("&Wyjście", self.main_window.close)
 
         # Menu Narzędzia
         tools_menu = menubar.addMenu("&Narzędzia")
         tools_menu.addAction(
-            "🗑️ Usuń wszystkie foldery .app_metadata", self.main_window.remove_all_metadata_folders
+            "🗑️ Usuń wszystkie foldery .app_metadata",
+            self.main_window.remove_all_metadata_folders,
         )
         tools_menu.addSeparator()
         tools_menu.addAction("⚙️ Preferencje...", self.show_preferences)
@@ -60,6 +64,12 @@ class UIManager:
         # Menu Widok
         view_menu = menubar.addMenu("&Widok")
         view_menu.addAction("🔄 Odśwież", self.main_window.refresh_all_views)
+
+        # Menu Ulubione
+        favorites_menu = menubar.addMenu("&Ulubione")
+        favorites_menu.addAction(
+            "⚙️ Konfiguruj ulubione...", self.show_favorite_folders_config
+        )
 
         # Menu Pomoc
         help_menu = menubar.addMenu("&Pomoc")
@@ -71,6 +81,7 @@ class UIManager:
             # Import tylko jeśli nie jest jeszcze zaimportowany
             if not hasattr(self.main_window, "_preferences_dialog_class"):
                 from src.ui.widgets.preferences_dialog import PreferencesDialog
+
                 self.main_window._preferences_dialog_class = PreferencesDialog
 
             dialog = self.main_window._preferences_dialog_class(self.main_window)
@@ -116,7 +127,9 @@ class UIManager:
 
             # Odśwież slider miniatur
             if hasattr(self.main_window, "size_slider"):
-                saved_position = self.main_window.app_config.get_thumbnail_slider_position()
+                saved_position = (
+                    self.main_window.app_config.get_thumbnail_slider_position()
+                )
                 if saved_position != self.main_window.size_slider.value():
                     self.main_window.size_slider.setValue(saved_position)
                     self.main_window._update_thumbnail_size()
@@ -135,6 +148,24 @@ class UIManager:
                 "Niektóre nowe ustawienia mogą wymagać ponownego uruchomienia aplikacji.",
             )
 
+    def show_favorite_folders_config(self):
+        """Wyświetla dialog konfiguracji ulubionych folderów."""
+        try:
+            from src.ui.widgets.favorite_folders_dialog import FavoriteFoldersDialog
+
+            dialog = FavoriteFoldersDialog(self.main_window)
+            dialog.configuration_saved.connect(self._on_favorite_folders_updated)
+            dialog.exec()
+        except Exception as e:
+            self.logger.error(f"Błąd otwierania dialogu ulubionych folderów: {e}")
+
+    def _on_favorite_folders_updated(self):
+        """Obsługuje aktualizację konfiguracji ulubionych folderów."""
+        # Odśwież pasek ulubionych folderów w galerii
+        if hasattr(self.main_window, "gallery_tab") and self.main_window.gallery_tab:
+            if hasattr(self.main_window.gallery_tab, "update_favorite_folders_bar"):
+                self.main_window.gallery_tab.update_favorite_folders_bar()
+
     def show_about(self):
         """Wyświetla informacje o programie."""
         QMessageBox.about(
@@ -152,7 +183,9 @@ class UIManager:
     def remove_all_metadata_folders(self):
         """Usuwa wszystkie foldery .app_metadata z folderu roboczego."""
         if not self.main_window.controller.current_directory:
-            QMessageBox.warning(self.main_window, "Uwaga", "Nie wybrano folderu roboczego.")
+            QMessageBox.warning(
+                self.main_window, "Uwaga", "Nie wybrano folderu roboczego."
+            )
             return
 
         reply = QMessageBox.question(
@@ -184,7 +217,9 @@ class UIManager:
 
             if not metadata_folders:
                 QMessageBox.information(
-                    self.main_window, "Informacja", "Nie znaleziono folderów .app_metadata."
+                    self.main_window,
+                    "Informacja",
+                    "Nie znaleziono folderów .app_metadata.",
                 )
                 self.main_window._hide_progress()
                 return
@@ -201,7 +236,9 @@ class UIManager:
                     shutil.rmtree(folder)
                     deleted_count += 1
                     progress = 10 + int((i + 1) / total_folders * 80)
-                    self.main_window._show_progress(progress, f"Usuwanie {i+1}/{total_folders}...")
+                    self.main_window._show_progress(
+                        progress, f"Usuwanie {i+1}/{total_folders}..."
+                    )
                 except Exception as e:
                     logging.error(f"Błąd podczas usuwania {folder}: {e}")
 
@@ -231,12 +268,16 @@ class UIManager:
 
         # Przycisk wyboru folderu
         self.main_window.select_folder_button = QPushButton("Wybierz Folder Roboczy")
-        self.main_window.select_folder_button.clicked.connect(self.main_window._select_working_directory)
+        self.main_window.select_folder_button.clicked.connect(
+            self.main_window._select_working_directory
+        )
         self.main_window.top_layout.addWidget(self.main_window.select_folder_button)
 
         # Przycisk czyszczenia cache
         self.main_window.clear_cache_button = QPushButton("Odśwież (Wyczyść Cache)")
-        self.main_window.clear_cache_button.clicked.connect(self.main_window._force_refresh)
+        self.main_window.clear_cache_button.clicked.connect(
+            self.main_window._force_refresh
+        )
         self.main_window.top_layout.addWidget(self.main_window.clear_cache_button)
 
         # Panel kontroli rozmiaru
@@ -253,7 +294,9 @@ class UIManager:
         self.main_window.size_control_panel.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
-        self.main_window.size_control_layout = QHBoxLayout(self.main_window.size_control_panel)
+        self.main_window.size_control_layout = QHBoxLayout(
+            self.main_window.size_control_panel
+        )
         self.main_window.size_control_layout.setContentsMargins(0, 0, 0, 0)
 
         # Label dla suwaka
@@ -269,7 +312,9 @@ class UIManager:
         # Ustawienie wartości początkowej suwaka na wymuszone 50%
         self.main_window.size_slider.setValue(self.main_window.initial_slider_position)
 
-        self.main_window.size_slider.sliderReleased.connect(self.main_window._update_thumbnail_size)
+        self.main_window.size_slider.sliderReleased.connect(
+            self.main_window._update_thumbnail_size
+        )
         self.main_window.size_control_layout.addWidget(self.main_window.size_slider)
 
         self.main_window.top_layout.addStretch(1)
@@ -327,12 +372,16 @@ class UIManager:
 
         # Select all button
         self.main_window.select_all_button = QPushButton("Zaznacz wszystkie")
-        self.main_window.select_all_button.clicked.connect(self.main_window._select_all_tiles)
+        self.main_window.select_all_button.clicked.connect(
+            self.main_window._select_all_tiles
+        )
         bulk_layout.addWidget(self.main_window.select_all_button)
 
         # Clear selection button
         self.main_window.clear_selection_button = QPushButton("Wyczyść zaznaczenie")
-        self.main_window.clear_selection_button.clicked.connect(self.main_window._clear_all_selections)
+        self.main_window.clear_selection_button.clicked.connect(
+            self.main_window._clear_all_selections
+        )
         bulk_layout.addWidget(self.main_window.clear_selection_button)
 
         # Separator
@@ -342,7 +391,9 @@ class UIManager:
 
         # Bulk move button
         self.main_window.bulk_move_button = QPushButton("Przenieś zaznaczone")
-        self.main_window.bulk_move_button.clicked.connect(self.main_window._perform_bulk_move)
+        self.main_window.bulk_move_button.clicked.connect(
+            self.main_window._perform_bulk_move
+        )
         bulk_layout.addWidget(self.main_window.bulk_move_button)
 
         # Bulk delete button
@@ -360,7 +411,9 @@ class UIManager:
             }
         """
         )
-        self.main_window.bulk_delete_button.clicked.connect(self.main_window._perform_bulk_delete)
+        self.main_window.bulk_delete_button.clicked.connect(
+            self.main_window._perform_bulk_delete
+        )
         bulk_layout.addWidget(self.main_window.bulk_delete_button)
 
         self.main_window.main_layout.addWidget(self.main_window.bulk_operations_panel)
@@ -379,4 +432,4 @@ class UIManager:
         # self.filter_panel będzie ustawiony przez GalleryTab
 
         # Bulk operations panel
-        self.create_bulk_operations_panel() 
+        self.create_bulk_operations_panel()

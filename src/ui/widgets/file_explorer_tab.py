@@ -46,8 +46,6 @@ class FileExplorerTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        # NAPRAWKA: Usunięto zbędny header panel - duplikował informacje
-
         # Główny splitter
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(self.splitter)
@@ -329,9 +327,17 @@ class FileExplorerTab(QWidget):
             for file in files:
                 icon = "📄"
                 file_info = ""
-                
+
                 # Określ ikonę i zbierz informacje o pliku
-                if file.suffix.lower() in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff"]:
+                if file.suffix.lower() in [
+                    ".jpg",
+                    ".jpeg",
+                    ".png",
+                    ".gif",
+                    ".bmp",
+                    ".webp",
+                    ".tiff",
+                ]:
                     icon = "🖼️"
                     # Pobierz rozdzielczość obrazu
                     resolution = self._get_image_resolution(str(file))
@@ -346,7 +352,7 @@ class FileExplorerTab(QWidget):
 
                 # Pobierz rozmiar pliku w MB
                 file_size_mb = self._get_file_size_mb(str(file))
-                
+
                 # Stwórz tekst elementu z rozmiarem i rozdzielczością
                 item_text = f"{icon} {file.name} ({file_size_mb} MB){file_info}"
 
@@ -372,8 +378,12 @@ class FileExplorerTab(QWidget):
                 )
             else:
                 # Oblicz łączny rozmiar wszystkich plików
-                total_size_mb = sum(self._get_file_size_mb(str(f), return_float=True) for f in files)
-                self.folder_info_label.setText(f"📄 {file_count} plików (łącznie: {total_size_mb:.1f} MB)")
+                total_size_mb = sum(
+                    self._get_file_size_mb(str(f), return_float=True) for f in files
+                )
+                self.folder_info_label.setText(
+                    f"📄 {file_count} plików (łącznie: {total_size_mb:.1f} MB)"
+                )
                 self.folder_info_label.setStyleSheet(
                     """
                     color: #FFFFFF; 
@@ -514,16 +524,16 @@ class FileExplorerTab(QWidget):
                 QMessageBox.warning(
                     self,
                     "Brak folderu",
-                    "Nie wybrano folderu roboczego.\nWybierz folder w głównej aplikacji."
+                    "Nie wybrano folderu roboczego.\nWybierz folder w głównej aplikacji.",
                 )
                 return
 
             # Import i uruchomienie konwertera WebP
             from src.ui.widgets.webp_converter_widget import WebPConverterDialog
-            
+
             dialog = WebPConverterDialog(self.current_path, self)
             dialog.exec()
-            
+
         except Exception as e:
             logging.error(f"Error launching WebP converter: {e}")
             QMessageBox.critical(
@@ -538,16 +548,16 @@ class FileExplorerTab(QWidget):
                 QMessageBox.warning(
                     self,
                     "Brak folderu",
-                    "Nie wybrano folderu roboczego.\nWybierz folder w głównej aplikacji."
+                    "Nie wybrano folderu roboczego.\nWybierz folder w głównej aplikacji.",
                 )
                 return
 
             # Import i uruchomienie narzędzia zmniejszania obrazów
             from src.ui.widgets.image_resizer_widget import ImageResizerDialog
-            
+
             dialog = ImageResizerDialog(self.current_path, self)
             dialog.exec()
-            
+
         except Exception as e:
             logging.error(f"Error launching image resizer: {e}")
             QMessageBox.critical(
@@ -559,17 +569,17 @@ class FileExplorerTab(QWidget):
         try:
             size_bytes = os.path.getsize(file_path)
             size_mb = size_bytes / (1024 * 1024)
-            
+
             if return_float:
                 return size_mb
-            
+
             if size_mb < 0.1:
                 return "< 0.1"
             elif size_mb < 1:
                 return f"{size_mb:.1f}"
             else:
                 return f"{size_mb:.1f}"
-                
+
         except Exception as e:
             logging.error(f"Error getting file size for {file_path}: {e}")
             return "?" if not return_float else 0.0
@@ -578,6 +588,7 @@ class FileExplorerTab(QWidget):
         """Pobiera rozdzielczość obrazu."""
         try:
             from PIL import Image
+
             with Image.open(file_path) as img:
                 width, height = img.size
                 return f"{width}×{height}"

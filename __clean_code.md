@@ -1,7 +1,7 @@
 # Prompt do czyszczenia kodu z nieaktualnych komentarzy
 
 ## Zadanie
-Przeskanuj podany kod i usuń wszystkie nieaktualne komentarze oraz zakomentowane fragmenty kodu, zachowując tylko aktualne i funkcjonalne komentarze dokumentacyjne.
+Przeskanuj podany kod cale go projektu i usuń wszystkie nieaktualne komentarze oraz zakomentowane fragmenty kodu, zachowując tylko aktualne i funkcjonalne komentarze dokumentacyjne. Zweryfikuj czy sa pliki nie używane - jeśli takie są, zmień ich rozszerzenie na py_del
 
 ## Instrukcje szczegółowe
 

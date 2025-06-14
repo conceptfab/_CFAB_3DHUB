@@ -30,7 +30,6 @@ class ProgressManager:
         self.main_window = main_window
         self.logger = logging.getLogger(__name__)
 
-        # NAPRAWKA PROGRESS BAR: Uproszczone liczniki
         self._total_tiles_to_create = 0
         self._tiles_created = 0
         self._thumbnails_loaded = 0

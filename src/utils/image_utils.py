@@ -62,7 +62,7 @@ def create_placeholder_pixmap(width, height, color="#E0E0E0", text="Brak podglą
 def pillow_image_to_qpixmap(pil_image):
     """
     Konwertuje obiekt obrazu Pillow (PIL.Image) na QPixmap (PyQt6).
-    
+
     NAPRAWKA: Używa konfigurowalnego formatu miniaturek z AppConfig.
     Domyślnie WebP dla lepszej kompresji i jakości (25-34% mniejsze pliki).
 
@@ -74,14 +74,15 @@ def pillow_image_to_qpixmap(pil_image):
     """
     try:
         from src.app_config import AppConfig
+
         config = AppConfig.get_instance()
-        
+
         # Pobierz ustawienia formatu z konfiguracji
         thumbnail_format = config.get_thumbnail_format()
         thumbnail_quality = config.get_thumbnail_quality()
         webp_method = config.get_thumbnail_webp_method()
         preserve_transparency = config.get_thumbnail_preserve_transparency()
-        
+
         # Przygotuj obraz w zależności od formatu i ustawień przezroczystości
         if thumbnail_format == "WEBP" and preserve_transparency:
             # WebP obsługuje przezroczystość - zachowaj RGBA
@@ -102,25 +103,28 @@ def pillow_image_to_qpixmap(pil_image):
             if pil_image.mode == "RGBA":
                 background = Image.new("RGB", pil_image.size, (255, 255, 255))
                 pil_image = Image.alpha_composite(
-                    Image.new("RGBA", pil_image.size, (255, 255, 255, 255)), 
-                    pil_image
+                    Image.new("RGBA", pil_image.size, (255, 255, 255, 255)), pil_image
                 ).convert("RGB")
             elif pil_image.mode != "RGB":
                 pil_image = pil_image.convert("RGB")
 
         # Zapis do bufora w pamięci używając wybranego formatu
         buffer = BytesIO()
-        
+
         if thumbnail_format == "WEBP":
             # WebP z konfigurowalnymi ustawieniami
-            pil_image.save(buffer, format="WEBP", quality=thumbnail_quality, method=webp_method)
+            pil_image.save(
+                buffer, format="WEBP", quality=thumbnail_quality, method=webp_method
+            )
         elif thumbnail_format == "PNG":
             # PNG lossless - jakość nie ma znaczenia
             pil_image.save(buffer, format="PNG", optimize=True)
         else:  # JPEG
             # JPEG z konfigurowalnymi ustawieniami
-            pil_image.save(buffer, format="JPEG", quality=thumbnail_quality, optimize=True)
-            
+            pil_image.save(
+                buffer, format="JPEG", quality=thumbnail_quality, optimize=True
+            )
+
         buffer.seek(0)
 
         # Konwersja do QImage i dalej do QPixmap
@@ -131,15 +135,16 @@ def pillow_image_to_qpixmap(pil_image):
         return q_pixmap
 
     except Exception as e:
-        logging.error(f"Błąd konwersji obrazu Pillow do QPixmap ({thumbnail_format}): {e}")
+        logging.error(
+            f"Błąd konwersji obrazu Pillow do QPixmap ({thumbnail_format}): {e}"
+        )
         # Fallback na JPEG jeśli wybrany format nie działa
         try:
             logging.warning("Próba fallback na JPEG...")
             if pil_image.mode == "RGBA":
                 background = Image.new("RGB", pil_image.size, (255, 255, 255))
                 pil_image = Image.alpha_composite(
-                    Image.new("RGBA", pil_image.size, (255, 255, 255, 255)), 
-                    pil_image
+                    Image.new("RGBA", pil_image.size, (255, 255, 255, 255)), pil_image
                 ).convert("RGB")
             elif pil_image.mode != "RGB":
                 pil_image = pil_image.convert("RGB")
@@ -181,7 +186,6 @@ def crop_to_square(pil_image, size):
         # Oblicz rozmiar kwadratu do wycięcia (minimum z szerokości i wysokości)
         crop_size = min(width, height)
 
-        # NAPRAWKA: Przycinanie OD KRAWĘDZI jak wymagane!
         if width > height:
             # Obraz SZEROKI - przycinaj OD LEWEJ KRAWĘDZI
             left = 0  # Zaczynaj od lewej krawędzi
@@ -190,7 +194,7 @@ def crop_to_square(pil_image, size):
             bottom = height  # Cała wysokość
 
         elif height > width:
-            # Obraz WYSOKI - przycinaj OD GÓRY  
+            # Obraz WYSOKI - przycinaj OD GÓRY
             left = 0  # Zachowaj całą szerokość
             top = 0  # Zaczynaj od górnej krawędzi
             right = width  # Cała szerokość
@@ -220,15 +224,15 @@ def crop_to_square(pil_image, size):
 def create_thumbnail_from_file(file_path, width, height):
     """
     Tworzy miniaturkę (QPixmap) na podstawie pliku graficznego.
-    
+
     Wykorzystuje proper context management dla obrazów PIL i optymalizuje
     generowanie miniatur.
-    
+
     Args:
         file_path: Ścieżka do pliku graficznego
         width: Szerokość miniaturki w pikselach
         height: Wysokość miniaturki w pikselach
-        
+
     Returns:
         QPixmap: Utworzona miniaturka lub pusty QPixmap w przypadku błędu
     """
@@ -237,7 +241,7 @@ def create_thumbnail_from_file(file_path, width, height):
         if not os.path.exists(file_path):
             logging.warning(f"Plik nie istnieje: {file_path}")
             return create_placeholder_pixmap(width, height, text="Brak pliku")
-        
+
         # Utworzenie miniaturki z proper context management
         with Image.open(file_path) as img:
             # Jeśli miniaturka ma być kwadratowa, przytnij obraz
@@ -247,16 +251,16 @@ def create_thumbnail_from_file(file_path, width, height):
                 # W przeciwnym razie zachowaj proporcje
                 img_resized = img.copy()
                 img_resized.thumbnail((width, height), Image.LANCZOS)
-            
+
             # Konwersja na QPixmap
             pixmap = pillow_image_to_qpixmap(img_resized)
-            
+
             if pixmap and not pixmap.isNull():
                 return pixmap
             else:
                 # W przypadku nieudanej konwersji
                 return create_placeholder_pixmap(width, height, text="Błąd konwersji")
-                
+
     except Exception as e:
         logging.error(f"Błąd podczas tworzenia miniatury dla {file_path}: {e}")
         # Zwróć placeholder w przypadku błędu

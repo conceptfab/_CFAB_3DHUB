@@ -142,8 +142,6 @@ class GalleryManager:
             )
             cols = max(1, math.floor(container_width / tile_width_with_spacing))
 
-            # KLUCZOWA POPRAWKA: Całkowicie czyścimy layout przed dodaniem widgetów
-
             # 1. Całkowicie czyścimy layout
             while self.tiles_layout.count() > 0:
                 item = self.tiles_layout.takeAt(0)

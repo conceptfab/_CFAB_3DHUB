@@ -4,12 +4,11 @@ Główny komponent MetadataManager CFAB_3DHUB.
 """
 
 import logging
-import threading
-import time
-from typing import Any, Dict, List, Optional
 
 # Import threading dla worker thread compatibility
 import threading
+import time
+from typing import Any, Dict, List, Optional
 
 # Import normalizacji ścieżek
 from src.utils.path_utils import normalize_path
@@ -27,13 +26,13 @@ class MetadataManager:
     """
     Unified metadata manager - single source of truth.
     Thread-safe metadata management with caching and proper error handling.
-    
+
     Używa komponentów:
     - MetadataCache: cache z TTL
     - MetadataIO: operacje I/O z atomic write
     - MetadataOperations: operacje biznesowe
     - MetadataValidator: walidacja struktury
-    
+
     NAPRAWKA CRASH: Dziedziczy po QObject dla thread-safe Qt timers
     """
 
@@ -49,20 +48,19 @@ class MetadataManager:
         """
         # Nie dziedziczymy po QObject - używamy threading.Timer dla worker thread compatibility
         self.working_directory = normalize_path(working_directory)
-        
+
         # Inicjalizacja komponentów
         self.cache = MetadataCache(cache_timeout=30.0)
         self.io = MetadataIO(working_directory)
         self.operations = MetadataOperations(working_directory)
         self.validator = MetadataValidator()
-        
+
         # Thread-safe buffer dla zmian
         self._changes_buffer = {}
         self._buffer_lock = threading.RLock()
         self._last_save_time = 0
         self._save_delay = 2000  # Opóźnienie zapisu w milisekundach (2s)
-        
-        # NAPRAWKA THREAD SAFETY: Użyj threading.Timer dla worker thread compatibility
+
         self._save_timer = None
 
     @classmethod
@@ -118,7 +116,9 @@ class MetadataManager:
     def _should_save(self) -> bool:
         """Sprawdza czy należy zapisać zmiany."""
         current_time = time.time()
-        return (current_time - self._last_save_time) >= (self._save_delay / 1000.0)  # Konwersja ms na s
+        return (current_time - self._last_save_time) >= (
+            self._save_delay / 1000.0
+        )  # Konwersja ms na s
 
     def _flush_changes(self):
         """Thread-safe flush of buffered changes."""
@@ -151,10 +151,14 @@ class MetadataManager:
         with self._buffer_lock:
             try:
                 # Przygotuj metadane do zapisu używając operations
-                file_pairs_metadata = self.operations.prepare_file_pairs_metadata(file_pairs_list)
-                
-                unpaired_archives_rel, unpaired_previews_rel = self.operations.prepare_unpaired_files_metadata(
-                    unpaired_archives, unpaired_previews
+                file_pairs_metadata = self.operations.prepare_file_pairs_metadata(
+                    file_pairs_list
+                )
+
+                unpaired_archives_rel, unpaired_previews_rel = (
+                    self.operations.prepare_unpaired_files_metadata(
+                        unpaired_archives, unpaired_previews
+                    )
                 )
 
                 # Dodaj zmiany do bufora
@@ -174,7 +178,7 @@ class MetadataManager:
                 # Zaplanuj zapis z opóźnieniem używając threading.Timer
                 self._save_timer = threading.Timer(
                     self._save_delay / 1000.0,  # Konwersja ms na sekundy
-                    self._flush_changes
+                    self._flush_changes,
                 )
                 self._save_timer.start()
 
@@ -314,4 +318,4 @@ class MetadataManager:
 
     def backup_metadata(self, backup_suffix: str = ".backup") -> bool:
         """Tworzy kopię zapasową pliku metadanych."""
-        return self.io.backup_metadata_file(backup_suffix) 
+        return self.io.backup_metadata_file(backup_suffix)

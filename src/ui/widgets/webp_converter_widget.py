@@ -48,7 +48,7 @@ class WebPConverterWorker(QThread):
         try:
             # Znajdź wszystkie pliki obrazów do konwersji
             image_files = self._find_image_files()
-            
+
             if not image_files:
                 self.finished.emit(0, 0, "Nie znaleziono plików obrazów do konwersji.")
                 return
@@ -70,11 +70,11 @@ class WebPConverterWorker(QThread):
 
                     # Konwertuj plik na WebP
                     webp_path = self._convert_to_webp(file_path)
-                    
+
                     if webp_path:
                         self.converted_files.append((file_path, webp_path))
                         converted_count += 1
-                        
+
                         # KLUCZOWE: Usuń oryginalny plik po udanej konwersji
                         try:
                             os.remove(file_path)
@@ -97,7 +97,7 @@ class WebPConverterWorker(QThread):
 
     def _find_image_files(self) -> List[str]:
         """Znajduje wszystkie pliki obrazów w folderze (bez WebP)."""
-        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff']
+        image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"]
         image_files = []
 
         try:
@@ -106,7 +106,7 @@ class WebPConverterWorker(QThread):
                     ext = file_path.suffix.lower()
                     if ext in image_extensions:
                         # Sprawdź czy nie ma już wersji WebP
-                        webp_path = file_path.with_suffix('.webp')
+                        webp_path = file_path.with_suffix(".webp")
                         if not webp_path.exists():
                             image_files.append(str(file_path))
 
@@ -121,17 +121,17 @@ class WebPConverterWorker(QThread):
             # Otwórz obraz
             with Image.open(file_path) as img:
                 # Przygotuj ścieżkę WebP
-                webp_path = str(Path(file_path).with_suffix('.webp'))
-                
+                webp_path = str(Path(file_path).with_suffix(".webp"))
+
                 # Konwertuj na RGB jeśli potrzeba (WebP obsługuje RGBA ale lepiej RGB dla kompatybilności)
-                if img.mode in ('RGBA', 'LA'):
+                if img.mode in ("RGBA", "LA"):
                     # Zachowaj przezroczystość dla WebP
-                    img.save(webp_path, 'WEBP', quality=85, method=6)
+                    img.save(webp_path, "WEBP", quality=85, method=6)
                 else:
                     # Konwertuj na RGB dla lepszej kompatybilności
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    img.save(webp_path, 'WEBP', quality=85, method=6)
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    img.save(webp_path, "WEBP", quality=85, method=6)
 
                 logging.info(f"Skonwertowano: {file_path} → {webp_path}")
                 return webp_path
@@ -150,11 +150,11 @@ class WebPConverterDialog(QDialog):
         self.worker = None
         self.converted_count = 0
         self.deleted_count = 0
-        
+
         self.setWindowTitle("Konwerter WebP")
         self.setModal(True)
         self.resize(600, 400)
-        
+
         self._setup_ui()
         self._start_conversion()
 
@@ -193,10 +193,11 @@ class WebPConverterDialog(QDialog):
 
         # Przyciski
         button_layout = QHBoxLayout()
-        
+
         self.cancel_button = QPushButton("Anuluj")
         self.cancel_button.clicked.connect(self._cancel_conversion)
-        self.cancel_button.setStyleSheet("""
+        self.cancel_button.setStyleSheet(
+            """
             QPushButton {
                 background-color: #dc2626;
                 color: white;
@@ -210,12 +211,14 @@ class WebPConverterDialog(QDialog):
             QPushButton:hover {
                 background-color: #b91c1c;
             }
-        """)
-        
+        """
+        )
+
         self.close_button = QPushButton("Zamknij")
         self.close_button.clicked.connect(self.accept)
         self.close_button.setEnabled(False)
-        self.close_button.setStyleSheet("""
+        self.close_button.setStyleSheet(
+            """
             QPushButton {
                 background-color: #16a34a;
                 color: white;
@@ -232,8 +235,9 @@ class WebPConverterDialog(QDialog):
             QPushButton:disabled {
                 background-color: #6b7280;
             }
-        """)
-        
+        """
+        )
+
         button_layout.addStretch()
         button_layout.addWidget(self.cancel_button)
         button_layout.addWidget(self.close_button)
@@ -245,7 +249,7 @@ class WebPConverterDialog(QDialog):
         self.worker.progress_updated.connect(self._on_progress_updated)
         self.worker.finished.connect(self._on_conversion_finished)
         self.worker.error_occurred.connect(self._on_error_occurred)
-        
+
         self.worker.start()
         self._log("Rozpoczęto konwersję plików na WebP...")
 
@@ -259,22 +263,22 @@ class WebPConverterDialog(QDialog):
         """Obsługuje zakończenie konwersji."""
         self.converted_count = converted_count
         self.deleted_count = deleted_count
-        
+
         self.progress_bar.setValue(100)
         self.status_label.setText("Konwersja zakończona!")
         self._log(f"✅ {summary}")
-        
+
         # Przełącz przyciski
         self.cancel_button.setEnabled(False)
         self.close_button.setEnabled(True)
-        
+
         # Pokaż podsumowanie
         QMessageBox.information(
             self,
             "Konwersja zakończona",
-            f"{summary}\n\nPodglądy w aplikacji zostaną automatycznie odświeżone."
+            f"{summary}\n\nPodglądy w aplikacji zostaną automatycznie odświeżone.",
         )
-        
+
         # KLUCZOWE: Wyślij sygnał do głównej aplikacji o konieczności odświeżenia
         self._refresh_application_views()
 
@@ -282,10 +286,10 @@ class WebPConverterDialog(QDialog):
         """Obsługuje błędy konwersji."""
         self.status_label.setText("Błąd konwersji!")
         self._log(f"❌ {error_message}")
-        
+
         self.cancel_button.setEnabled(False)
         self.close_button.setEnabled(True)
-        
+
         QMessageBox.critical(self, "Błąd", error_message)
 
     def _cancel_conversion(self):
@@ -293,7 +297,7 @@ class WebPConverterDialog(QDialog):
         if self.worker and self.worker.isRunning():
             self.worker.stop()
             self.worker.wait(3000)  # Czekaj max 3 sekundy
-            
+
         self.reject()
 
     def _log(self, message):
@@ -308,30 +312,37 @@ class WebPConverterDialog(QDialog):
         try:
             # Znajdź główne okno aplikacji
             from PyQt6.QtWidgets import QApplication
+
             app = QApplication.instance()
-            
+
             if app:
                 for widget in app.topLevelWidgets():
-                    if hasattr(widget, 'refresh_all_views'):
-                        # NAPRAWKA CRASH: Thread-safe odświeżenie z większym opóźnieniem
+                    if hasattr(widget, "refresh_all_views"):
+
                         # i proper error handling żeby uniknąć zawieszania po konwersji
                         def safe_refresh():
                             try:
                                 # Sprawdź czy widget nadal istnieje
-                                if widget and hasattr(widget, 'refresh_all_views'):
+                                if widget and hasattr(widget, "refresh_all_views"):
                                     widget.refresh_all_views()
-                                    self._log("✅ Widoki aplikacji odświeżone pomyślnie")
+                                    self._log(
+                                        "✅ Widoki aplikacji odświeżone pomyślnie"
+                                    )
                                 else:
-                                    self._log("⚠️ Widget już nie istnieje - pomijam odświeżenie")
+                                    self._log(
+                                        "⚠️ Widget już nie istnieje - pomijam odświeżenie"
+                                    )
                             except Exception as refresh_error:
                                 self._log(f"❌ Błąd odświeżania: {refresh_error}")
-                                logging.error(f"Błąd podczas odświeżania po konwersji: {refresh_error}")
-                        
+                                logging.error(
+                                    f"Błąd podczas odświeżania po konwersji: {refresh_error}"
+                                )
+
                         # Większe opóźnienie dla stabilności i thread-safe execution
                         QTimer.singleShot(2000, safe_refresh)
                         self._log("🔄 Zaplanowano odświeżanie widoków aplikacji...")
                         break
-                        
+
         except Exception as e:
             logging.error(f"Błąd odświeżania widoków aplikacji: {e}")
             self._log(f"❌ Błąd planowania odświeżenia: {e}")
@@ -341,4 +352,4 @@ class WebPConverterDialog(QDialog):
         if self.worker and self.worker.isRunning():
             self.worker.stop()
             self.worker.wait(3000)
-        event.accept() 
+        event.accept()

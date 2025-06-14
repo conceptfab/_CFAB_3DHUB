@@ -43,8 +43,6 @@ from src.ui.gallery_manager import GalleryManager
 from src.ui.main_window.event_handler import EventHandler
 from src.ui.main_window.file_operations_coordinator import FileOperationsCoordinator
 from src.ui.main_window.progress_manager import ProgressManager
-
-# 🚀 ETAP 1: Refaktoryzacja - nowe komponenty MainWindow
 from src.ui.main_window.ui_manager import UIManager
 from src.ui.main_window.worker_manager import WorkerManager
 from src.ui.main_window_components.event_bus import get_event_bus
@@ -52,8 +50,6 @@ from src.ui.main_window_components.view_refresh_manager import ViewRefreshManage
 from src.ui.widgets.gallery_tab import GalleryTab
 from src.ui.widgets.preview_dialog import PreviewDialog
 from src.ui.widgets.unpaired_files_tab import UnpairedFilesTab
-
-# 🚀 ETAP 2: Nowe zoptymalizowane komponenty
 from src.utils.logging_config import get_main_window_logger
 from src.utils.path_utils import normalize_path
 
@@ -73,13 +69,7 @@ class MainWindow(QMainWindow):
         self._init_ui()
         self._init_managers()
 
-        # WYŁĄCZONO automatyczne ładowanie - użytkownik musi wybrać folder z drzewa
-        # self._auto_load_last_folder()  # NIEPRAWIDŁOWE ZACHOWANIE - skanuje cały główny folder
-
-        # Pokaż preferencje wczytane
         self._show_preferences_loaded_confirmation()
-
-        # Zainicjalizuj drzewo katalogów z domyślnym folderem ale BEZ skanowania i rozwijania
         default_folder = self.app_config.get("default_working_directory", "")
         if (
             default_folder
@@ -95,37 +85,16 @@ class MainWindow(QMainWindow):
 
     def _init_data(self):
         """Inicjalizuje dane aplikacji."""
-        # 🚀 ETAP 2: Zoptymalizowany logger bez emoji
         self.logger = get_main_window_logger()
-
-        # KRYTYCZNE: AppConfig musi być pierwsze - inne komponenty go używają!
         self.app_config = app_config.AppConfig()
-
-        # 🚀 ETAP 2: Event Bus - eliminuje tight coupling
         self.event_bus = get_event_bus()
-
-        # 🚀 ETAP 2: View Refresh Manager - inteligentne odświeżanie
         self.view_refresh_manager = ViewRefreshManager(self)
-
-        # ETAP 2 FINAL: MVC Controller - centralna logika biznesowa
         self.controller = MainWindowController(self)
-
-        # 🚀 ETAP 1: UI Manager - zarządzanie interfejsem użytkownika
         self.ui_manager = UIManager(self)
-
-        # 🚀 ETAP 1: Progress Manager - zarządzanie postępem
         self.progress_manager = ProgressManager(self)
-
-        # 🚀 ETAP 1: Worker Manager - zarządzanie wątkami
         self.worker_manager = WorkerManager(self)
-
-        # 🚀 ETAP 1: Event Handler - obsługa zdarzeń
         self.event_handler = EventHandler(self)
-
-        # 🚀 ETAP 1: File Operations Coordinator - operacje na plikach
         self.file_operations_coordinator = FileOperationsCoordinator(self)
-
-        # 🚀 REFAKTORYZACJA: Nowe wyspecjalizowane managery
         from src.ui.main_window.bulk_operations_manager import BulkOperationsManager
         from src.ui.main_window.data_manager import DataManager
         from src.ui.main_window.metadata_manager import MetadataManager
@@ -142,24 +111,16 @@ class MainWindow(QMainWindow):
 
     def _init_window(self):
         """Inicjalizuje okno aplikacji."""
-        # Timer do opóźnienia odświeżania galerii
         self.resize_timer = QTimer(self)
         self.resize_timer.setSingleShot(True)
         self.resize_timer.timeout.connect(self._update_gallery_view)
 
-        # Konfiguracja rozmiaru miniatur
-        # (AppConfig już zainicjalizowane w _init_data)
         self.min_thumbnail_size = self.app_config.min_thumbnail_size
         self.max_thumbnail_size = self.app_config.max_thumbnail_size
-
-        # Wymuś początkową pozycję suwaka na 50% (środek)
         self.initial_slider_position = 50
 
-        # Oblicz current_thumbnail_size na podstawie wymuszonej pozycji suwaka
         size_range = self.max_thumbnail_size - self.min_thumbnail_size
-        if (
-            size_range <= 0
-        ):  # Zabezpieczenie przed ujemnym zakresem lub dzieleniem przez zero
+        if size_range <= 0:
             self.current_thumbnail_size = self.min_thumbnail_size
         else:
             self.current_thumbnail_size = self.min_thumbnail_size + int(
@@ -171,84 +132,63 @@ class MainWindow(QMainWindow):
             f"thumbnail size: {self.current_thumbnail_size}px"
         )
 
-        # Konfiguracja okna
         self.setWindowTitle("CFAB_3DHUB")
         self.setMinimumSize(
             self.app_config.window_min_width, self.app_config.window_min_height
         )
 
-        # Inicjalizacja paska statusu
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
 
-        # Inicjalizacja globalnego paska postępu
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(15)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(False)  # Początkowy stan - ukryty
+        self.progress_bar.setVisible(False)
 
-        # Etykieta postępu
         self.progress_label = QLabel("Gotowy")
         self.progress_label.setStyleSheet("color: gray; font-style: italic;")
 
-        # Dodanie etykiety i paska postępu do paska statusu
         self.status_bar.addWidget(self.progress_label, 1)
         self.status_bar.addPermanentWidget(self.progress_bar, 2)
 
-        # Inicjalizacja globalnego thread poola dla workerów QRunnable
         self.thread_pool = QThreadPool.globalInstance()
         logging.debug(f"Maksymalna liczba wątków: {self.thread_pool.maxThreadCount()}")
 
-        # Centralny widget
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
 
-        # Główny layout - NAPRAWKA: Minimalne marginesy dla profesjonalnego wyglądu
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(2, 2, 2, 2)
         self.main_layout.setSpacing(3)
 
     def _init_ui(self):
-        """
-        Inicjalizuje elementy interfejsu użytkownika.
-        """
-        # 🚀 ETAP 1: Delegacja do UI Manager
+        """Inicjalizuje elementy interfejsu użytkownika."""
         self.ui_manager.init_ui()
 
-        # TabWidget jako główny kontener widoków
         self.tab_widget = QTabWidget()
         self.main_layout.addWidget(self.tab_widget)
 
-        # Inicjalizacja managerów zakładek
         self.gallery_tab_manager = GalleryTab(self)
         self.unpaired_files_tab_manager = UnpairedFilesTab(self)
 
-        # 🚨 ETAP 2 - POPRAWKA 5: Nowa zakładka z eksploratorem plików
         from src.ui.widgets.file_explorer_tab import FileExplorerTab
 
         self.file_explorer_tab = FileExplorerTab(self)
 
-        # Zakładka galerii
         gallery_widget = self.gallery_tab_manager.create_gallery_tab()
         self.tab_widget.addTab(gallery_widget, "Galeria")
 
-        # Zakładka niesparowanych plików
         unpaired_widget = self.unpaired_files_tab_manager.create_unpaired_files_tab()
         self.tab_widget.addTab(unpaired_widget, "Parowanie Plików")
 
-        # 🚨 NOWA ZAKŁADKA: Eksplorator plików
         self.tab_widget.addTab(self.file_explorer_tab, "Eksplorator plików")
 
-        # 🚨 ETAP 2: Połączenie sygnałów eksploratora
         self.file_explorer_tab.folder_changed.connect(self.on_explorer_folder_changed)
         self.file_explorer_tab.file_selected.connect(self.on_explorer_file_selected)
-
-        # Pobierz referencje do widgetów dla kompatybilności
         gallery_widgets = self.gallery_tab_manager.get_widgets_for_main_window()
         unpaired_widgets = self.unpaired_files_tab_manager.get_widgets_for_main_window()
 
-        # Przypisz widgety galerii
         self.folder_tree = gallery_widgets["folder_tree"]
         self.folder_tree_container = gallery_widgets["folder_tree_container"]
         self.file_system_model = gallery_widgets["file_system_model"]
@@ -256,8 +196,6 @@ class MainWindow(QMainWindow):
         self.tiles_layout = gallery_widgets["tiles_layout"]
         self.scroll_area = gallery_widgets["scroll_area"]
         self.splitter = gallery_widgets["splitter"]
-
-        # Przypisz widgety unpaired files
         self.unpaired_files_tab = unpaired_widgets["unpaired_files_tab"]
         self.unpaired_archives_list_widget = unpaired_widgets[
             "unpaired_archives_list_widget"
@@ -268,7 +206,6 @@ class MainWindow(QMainWindow):
         self.unpaired_previews_layout = unpaired_widgets["unpaired_previews_layout"]
         self.pair_manually_button = unpaired_widgets["pair_manually_button"]
 
-    # 🚀 ETAP 1: Metody UI przeniesione do UIManager - delegacje
     def show_preferences(self):
         """Delegacja do UIManager."""
         return self.ui_manager.show_preferences()
@@ -284,10 +221,6 @@ class MainWindow(QMainWindow):
     def show_about(self):
         """Delegacja do UIManager."""
         return self.ui_manager.show_about()
-
-    # 🚀 ETAP 1: Metody UI przeniesione do UIManager
-    # _create_top_panel(), _create_size_control_panel(), _create_bulk_operations_panel()
-    # są teraz w UIManager
 
     def _init_managers(self):
         """
@@ -384,7 +317,6 @@ class MainWindow(QMainWindow):
         """
         Obsługuje zamykanie aplikacji - kończy wszystkie wątki.
         """
-        # 🚀 ETAP 1: Delegacja do EventHandler
         self.event_handler.handle_close_event(event)
 
     def _select_working_directory(self, directory_path=None):
@@ -654,18 +586,12 @@ class MainWindow(QMainWindow):
                 self.controller.current_file_pairs.remove(file_pair)
             self.controller.selected_tiles.discard(file_pair)
 
-        # 🔧 NAPRAWKA: Odśwież folder źródłowy po operacji drag&drop
-        # Po przeniesieniu plików musimy ponownie przeskanować folder źródłowy,
-        # żeby usunąć z widoku pliki które już nie istnieją na dysku
         if self.controller.current_directory:
             logging.info(
                 f"Odświeżanie folderu źródłowego po drag&drop: {self.controller.current_directory}"
             )
             self._refresh_source_folder_after_move()
-            # NAPRAWKA: NIE wywołuj _apply_filters_and_update_view() tutaj!
-            # change_directory() w _refresh_source_folder_after_move() już odświeża widok
         else:
-            # Fallback - tylko jeśli nie ma current_directory
             self._apply_filters_and_update_view()
 
         self._save_metadata()
@@ -708,30 +634,20 @@ class MainWindow(QMainWindow):
                 f"Rozpoczynanie ponownego skanowania folderu: {self.controller.current_directory}"
             )
 
-            # NAPRAWKA DRAG&DROP: NIE wyczyścićmy cache miniaturek!
-            # Scanner cache może zostać wyczyszczony ale thumbnail cache NIE!
-            # Miniaturki nie zmieniają się przy przeniesieniu plików do innego folderu
             from src.logic.scanner import clear_cache
 
-            clear_cache()  # Tylko scanner cache dla aktualnych wyników
-
-            # Uruchom ponowne skanowanie BEZ RESETOWANIA DRZEWA
-            # Używamy change_directory() zamiast controller.handle_folder_selection()
-            # aby zachować drzewo katalogów
+            clear_cache()
             if hasattr(self, "controller") and self.controller:
                 try:
-                    # Użyj metody która zachowuje drzewo katalogów
                     self.change_directory(self.controller.current_directory)
                     logging.info(
                         "Pomyślnie odświeżono folder źródłowy po operacji bez resetowania drzewa"
                     )
                 except Exception as e:
                     logging.warning(f"Błąd podczas odświeżania folderu bez resetu: {e}")
-                    # Fallback - ale tylko odśwież widok, nie resetuj drzewa
                     self.refresh_all_views()
             else:
                 logging.warning("Kontroler nie jest dostępny - używam fallback")
-                # Fallback - tylko odśwież widok
                 self.refresh_all_views()
 
         except Exception as e:
