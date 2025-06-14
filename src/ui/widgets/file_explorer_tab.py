@@ -114,13 +114,13 @@ class FileExplorerTab(QWidget):
         # Przycisk do konwertera WebP
         self.webp_converter_button = QPushButton("🔄 Konwerter WebP")
         self.webp_converter_button.setToolTip(
-            "Konwertuj wszystkie obrazy w folderze na format WebP"
+            "Konwertuje wszystkie obrazy na format WebP i usuwa oryginały"
         )
         self.webp_converter_button.clicked.connect(self._launch_webp_converter)
         self.webp_converter_button.setStyleSheet(
             """
             QPushButton {
-                background-color: #27ae60;
+                background-color: #16a34a;
                 color: white;
                 border: none;
                 padding: 8px 12px;
@@ -130,14 +130,50 @@ class FileExplorerTab(QWidget):
                 margin: 2px;
             }
             QPushButton:hover {
-                background-color: #229954;
+                background-color: #15803d;
             }
             QPushButton:pressed {
-                background-color: #1e8449;
+                background-color: #166534;
             }
-        """
+            QPushButton:disabled {
+                background-color: #6b7280;
+                color: #9ca3af;
+            }
+            """
         )
         tools_layout.addWidget(self.webp_converter_button)
+
+        # Przycisk do zmniejszania obrazów
+        self.image_resizer_button = QPushButton("📐 Zmniejsz Obrazy")
+        self.image_resizer_button.setToolTip(
+            "Zmniejsza obrazy: kwadratowe do 1024×1024px, prostokątne do 2048px max"
+        )
+        self.image_resizer_button.clicked.connect(self._launch_image_resizer)
+        self.image_resizer_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #7c3aed;
+                color: white;
+                border: none;
+                padding: 8px 12px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 12px;
+                margin: 2px;
+            }
+            QPushButton:hover {
+                background-color: #6d28d9;
+            }
+            QPushButton:pressed {
+                background-color: #5b21b6;
+            }
+            QPushButton:disabled {
+                background-color: #6b7280;
+                color: #9ca3af;
+            }
+            """
+        )
+        tools_layout.addWidget(self.image_resizer_button)
 
         # Przycisk odświeżania listy plików
         self.refresh_files_button = QPushButton("🔄 Odśwież listę plików")
@@ -289,11 +325,18 @@ class FileExplorerTab(QWidget):
             # Posortuj alfabetycznie
             files.sort(key=lambda x: x.name.lower())
 
-            # Dodaj tylko pliki
+            # Dodaj tylko pliki z dodatkowymi informacjami
             for file in files:
                 icon = "📄"
-                if file.suffix.lower() in [".jpg", ".jpeg", ".png", ".gif", ".bmp"]:
+                file_info = ""
+                
+                # Określ ikonę i zbierz informacje o pliku
+                if file.suffix.lower() in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff"]:
                     icon = "🖼️"
+                    # Pobierz rozdzielczość obrazu
+                    resolution = self._get_image_resolution(str(file))
+                    if resolution:
+                        file_info = f" [{resolution}]"
                 elif file.suffix.lower() in [".zip", ".rar", ".7z", ".tar", ".gz"]:
                     icon = "📦"
                 elif file.suffix.lower() in [".exe", ".msi"]:
@@ -301,7 +344,13 @@ class FileExplorerTab(QWidget):
                 elif file.suffix.lower() in [".txt", ".md", ".log"]:
                     icon = "📝"
 
-                item = QListWidgetItem(f"{icon} {file.name}")
+                # Pobierz rozmiar pliku w MB
+                file_size_mb = self._get_file_size_mb(str(file))
+                
+                # Stwórz tekst elementu z rozmiarem i rozdzielczością
+                item_text = f"{icon} {file.name} ({file_size_mb} MB){file_info}"
+
+                item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, str(file))
                 self.files_list.addItem(item)
 
@@ -322,7 +371,9 @@ class FileExplorerTab(QWidget):
                 """
                 )
             else:
-                self.folder_info_label.setText(f"📄 Znaleziono {file_count} plików")
+                # Oblicz łączny rozmiar wszystkich plików
+                total_size_mb = sum(self._get_file_size_mb(str(f), return_float=True) for f in files)
+                self.folder_info_label.setText(f"📄 {file_count} plików (łącznie: {total_size_mb:.1f} MB)")
                 self.folder_info_label.setStyleSheet(
                     """
                     color: #FFFFFF; 
@@ -478,3 +529,58 @@ class FileExplorerTab(QWidget):
             QMessageBox.critical(
                 self, "Błąd", f"Błąd podczas uruchamiania konwertera WebP:\n{e}"
             )
+
+    def _launch_image_resizer(self):
+        """Uruchamia zintegrowane narzędzie zmniejszania obrazów."""
+        try:
+            # Sprawdź czy folder jest wybrany
+            if not self.current_path or not os.path.exists(self.current_path):
+                QMessageBox.warning(
+                    self,
+                    "Brak folderu",
+                    "Nie wybrano folderu roboczego.\nWybierz folder w głównej aplikacji."
+                )
+                return
+
+            # Import i uruchomienie narzędzia zmniejszania obrazów
+            from src.ui.widgets.image_resizer_widget import ImageResizerDialog
+            
+            dialog = ImageResizerDialog(self.current_path, self)
+            dialog.exec()
+            
+        except Exception as e:
+            logging.error(f"Error launching image resizer: {e}")
+            QMessageBox.critical(
+                self, "Błąd", f"Błąd podczas uruchamiania narzędzia zmniejszania:\n{e}"
+            )
+
+    def _get_file_size_mb(self, file_path: str, return_float: bool = False):
+        """Pobiera rozmiar pliku w MB."""
+        try:
+            size_bytes = os.path.getsize(file_path)
+            size_mb = size_bytes / (1024 * 1024)
+            
+            if return_float:
+                return size_mb
+            
+            if size_mb < 0.1:
+                return "< 0.1"
+            elif size_mb < 1:
+                return f"{size_mb:.1f}"
+            else:
+                return f"{size_mb:.1f}"
+                
+        except Exception as e:
+            logging.error(f"Error getting file size for {file_path}: {e}")
+            return "?" if not return_float else 0.0
+
+    def _get_image_resolution(self, file_path: str) -> str:
+        """Pobiera rozdzielczość obrazu."""
+        try:
+            from PIL import Image
+            with Image.open(file_path) as img:
+                width, height = img.size
+                return f"{width}×{height}"
+        except Exception as e:
+            logging.debug(f"Could not get resolution for {file_path}: {e}")
+            return ""
