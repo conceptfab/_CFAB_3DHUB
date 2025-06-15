@@ -454,6 +454,8 @@ class DataProcessingWorker(QObject):
         try:
             import threading
 
+            from PyQt6.QtCore import QTimer
+
             def load_metadata_delayed():
                 try:
                     from src.logic.metadata_manager import MetadataManager
@@ -461,12 +463,45 @@ class DataProcessingWorker(QObject):
                     metadata_manager = MetadataManager.get_instance(
                         self.working_directory
                     )
+
+                    # DEBUG: Sprawdź ile plików ma metadane przed załadowaniem
+                    files_with_stars_before = sum(
+                        1 for fp in self.file_pairs if fp.get_stars() > 0
+                    )
+                    files_with_colors_before = sum(
+                        1 for fp in self.file_pairs if fp.get_color_tag()
+                    )
+                    logger.info(
+                        f"📥 DEBUG LOAD BEFORE: {files_with_stars_before} plików z gwiazdkami, "
+                        f"{files_with_colors_before} z kolorami"
+                    )
+
                     metadata_applied = metadata_manager.apply_metadata_to_file_pairs(
                         self.file_pairs
                     )
-                    logger.debug(
-                        f"Metadane załadowane asynchronicznie: {metadata_applied}"
+
+                    # DEBUG: Sprawdź ile plików ma metadane po załadowaniu
+                    files_with_stars_after = sum(
+                        1 for fp in self.file_pairs if fp.get_stars() > 0
                     )
+                    files_with_colors_after = sum(
+                        1 for fp in self.file_pairs if fp.get_color_tag()
+                    )
+                    logger.info(
+                        f"📥 DEBUG LOAD AFTER: {files_with_stars_after} plików z gwiazdkami, "
+                        f"{files_with_colors_after} z kolorami. Applied: {metadata_applied}"
+                    )
+
+                    # NAPRAWKA TAGÓW: Emituj sygnał żeby UI odświeżyło kafelki po załadowaniu metadanych!
+                    if metadata_applied:
+                        # Użyj QTimer.singleShot żeby wywołać sygnał w main thread
+                        QTimer.singleShot(
+                            0, lambda: self.tiles_batch_ready.emit(self.file_pairs)
+                        )
+                        logger.info(
+                            "📡 DEBUG: Wysłano sygnał odświeżenia kafelków po załadowaniu metadanych"
+                        )
+
                 except Exception as e:
                     logger.error(f"Błąd ładowania metadanych w tle: {e}")
 
@@ -527,6 +562,19 @@ class SaveMetadataWorker(AsyncUnifiedBaseWorker):
                 from src.logic.metadata_manager import MetadataManager
 
                 metadata_manager = MetadataManager.get_instance(self.working_directory)
+
+                # DEBUG: Sprawdź co jest zapisywane
+                logger = logging.getLogger(__name__)
+
+                for i, file_pair in enumerate(
+                    self.file_pairs[:3]
+                ):  # Tylko pierwsze 3 dla debug
+                    stars = file_pair.get_stars()
+                    color = file_pair.get_color_tag()
+                    logger.info(
+                        f"💾 DEBUG SAVE [{i}]: {file_pair.get_base_name()} - "
+                        f"Stars: {stars}, Color: '{color}'"
+                    )
 
                 # KROK 1: Dodaj do bufora
                 metadata_manager.save_metadata(

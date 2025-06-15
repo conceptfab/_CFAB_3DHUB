@@ -116,9 +116,13 @@ class MetadataManager:
         Obsługuje zmianę liczby gwiazdek dla pary plików.
         """
         if file_pair:
-            file_pair.star_rating = new_star_count
-            logging.debug(
-                f"Zmieniono gwiazdki dla {file_pair.get_base_name()}: {new_star_count}"
+            # NAPRAWKA: Używaj set_stars() zamiast bezpośredniego ustawienia
+            file_pair.set_stars(new_star_count)
+            # DEBUG: Sprawdź czy wartość została ustawiona
+            actual_stars = file_pair.get_stars()
+            logging.info(
+                f"🌟 DEBUG STARS: {file_pair.get_base_name()} - "
+                f"Ustawiono: {new_star_count}, Aktualnie: {actual_stars}"
             )
             # Natychmiastowy zapis w tle - NIE BLOKUJE UI!
             self.force_immediate_metadata_save()
@@ -128,9 +132,13 @@ class MetadataManager:
         Obsługuje zmianę tagu kolorów dla pary plików.
         """
         if file_pair:
-            file_pair.color_tag = new_color_tag
-            logging.debug(
-                f"Zmieniono tag koloru dla {file_pair.get_base_name()}: {new_color_tag}"
+            # NAPRAWKA: Używaj set_color_tag() zamiast bezpośredniego ustawienia
+            file_pair.set_color_tag(new_color_tag)
+            # DEBUG: Sprawdź czy wartość została ustawiona
+            actual_color = file_pair.get_color_tag()
+            logging.info(
+                f"🎨 DEBUG COLOR: {file_pair.get_base_name()} - "
+                f"Ustawiono: '{new_color_tag}', Aktualnie: '{actual_color}'"
             )
             # Natychmiastowy zapis w tle - NIE BLOKUJE UI!
             self.force_immediate_metadata_save()
