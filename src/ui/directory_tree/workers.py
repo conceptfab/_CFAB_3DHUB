@@ -7,7 +7,9 @@ import os
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from src import app_config
 from src.logic.scanner import scan_folder_for_pairs
+from src.logic.scanner_core import should_ignore_folder
 from src.ui.delegates.workers import UnifiedBaseWorker
 from src.utils.path_utils import normalize_path
 
@@ -66,12 +68,15 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
             preview_files = []
 
             # Rozszerzenia archiwów i podglądów (zgodne z logiką aplikacji)
-            archive_extensions = {".rar", ".zip", ".7z", ".max", ".3ds", ".fbx", ".obj"}
-            preview_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
+            archive_extensions = set(app_config.SUPPORTED_ARCHIVE_EXTENSIONS)
+            preview_extensions = set(app_config.SUPPORTED_PREVIEW_EXTENSIONS)
 
             for root, dirs, files in os.walk(self.folder_path):
                 if self.check_interruption():
                     return
+
+                # Filtruj ignorowane foldery z listy dirs (modyfikacja in-place)
+                dirs[:] = [d for d in dirs if not should_ignore_folder(d)]
 
                 is_main_folder = root == self.folder_path
                 folder_size = 0
@@ -202,6 +207,9 @@ class FolderScanWorker(UnifiedBaseWorker):
             for root, dirs, files in os.walk(self.root_folder):
                 if self.check_interruption():
                     return
+
+                # Filtruj ignorowane foldery z listy dirs (modyfikacja in-place)
+                dirs[:] = [d for d in dirs if not should_ignore_folder(d)]
 
                 # Sprawdź czy folder zawiera pliki
                 if files:

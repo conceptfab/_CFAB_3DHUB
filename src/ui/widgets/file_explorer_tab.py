@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from src import app_config
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -172,6 +173,38 @@ class FileExplorerTab(QWidget):
             """
         )
         tools_layout.addWidget(self.image_resizer_button)
+
+        # Przycisk do ekstraktora SBSAR
+        self.sbsar_extractor_button = QPushButton("📦 Ekstraktor SBSAR")
+        self.sbsar_extractor_button.setToolTip(
+            "Ekstraktuje podglądy WebP z plików .sbsar w folderze .alg_meta"
+        )
+        self.sbsar_extractor_button.clicked.connect(self._launch_sbsar_extractor)
+        self.sbsar_extractor_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #f59e0b;
+                color: white;
+                border: none;
+                padding: 8px 12px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 12px;
+                margin: 2px;
+            }
+            QPushButton:hover {
+                background-color: #d97706;
+            }
+            QPushButton:pressed {
+                background-color: #b45309;
+            }
+            QPushButton:disabled {
+                background-color: #6b7280;
+                color: #9ca3af;
+            }
+            """
+        )
+        tools_layout.addWidget(self.sbsar_extractor_button)
 
         # Przycisk odświeżania listy plików
         self.refresh_files_button = QPushButton("🔄 Odśwież listę plików")
@@ -343,7 +376,7 @@ class FileExplorerTab(QWidget):
                     resolution = self._get_image_resolution(str(file))
                     if resolution:
                         file_info = f" [{resolution}]"
-                elif file.suffix.lower() in [".zip", ".rar", ".7z", ".tar", ".gz"]:
+                elif file.suffix.lower() in [ext.lower() for ext in app_config.SUPPORTED_ARCHIVE_EXTENSIONS]:
                     icon = "📦"
                 elif file.suffix.lower() in [".exe", ".msi"]:
                     icon = "⚙️"
@@ -562,6 +595,30 @@ class FileExplorerTab(QWidget):
             logging.error(f"Error launching image resizer: {e}")
             QMessageBox.critical(
                 self, "Błąd", f"Błąd podczas uruchamiania narzędzia zmniejszania:\n{e}"
+            )
+
+    def _launch_sbsar_extractor(self):
+        """Uruchamia zintegrowane narzędzie ekstraktora SBSAR."""
+        try:
+            # Sprawdź czy folder jest wybrany
+            if not self.current_path or not os.path.exists(self.current_path):
+                QMessageBox.warning(
+                    self,
+                    "Brak folderu",
+                    "Nie wybrano folderu roboczego.\nWybierz folder w głównej aplikacji.",
+                )
+                return
+
+            # Import i uruchomienie ekstraktora SBSAR
+            from src.ui.widgets.sbsar_extractor_widget import SBSARExtractorDialog
+
+            dialog = SBSARExtractorDialog(self.current_path, self)
+            dialog.exec()
+
+        except Exception as e:
+            logging.error(f"Error launching SBSAR extractor: {e}")
+            QMessageBox.critical(
+                self, "Błąd", f"Błąd podczas uruchamiania ekstraktora SBSAR:\n{e}"
             )
 
     def _get_file_size_mb(self, file_path: str, return_float: bool = False):

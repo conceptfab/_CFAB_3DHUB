@@ -10,7 +10,8 @@ from unittest.mock import Mock, patch
 import jsonschema
 import pytest
 
-from src.app_config import AppConfig, ConfigValidator
+from src.app_config import AppConfig
+from src.config.config_validator import ConfigValidator
 
 
 class TestConfigValidator:

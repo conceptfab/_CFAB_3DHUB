@@ -13,7 +13,8 @@ from threading import RLock
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 
 from src.logic.scanner import scan_folder_for_pairs
-from src.ui.delegates.workers import UnifiedBaseWorker, BaseWorkerSignals
+from src.logic.scanner_core import should_ignore_folder
+from src.ui.delegates.workers import UnifiedBaseWorker, UnifiedWorkerSignals
 from src.utils.path_utils import normalize_path
 from src.app_config import AppConfig
 
@@ -42,7 +43,7 @@ class FolderStatistics:
         return self.pairs_count + self.subfolders_pairs
 
 
-class FolderStatisticsSignals(BaseWorkerSignals):
+class FolderStatisticsSignals(UnifiedWorkerSignals):
     """Sygnały dla workera statystyk folderów - rozszerza BaseWorkerSignals."""
     
     statistics_calculated = pyqtSignal(object)  # FolderStatistics
@@ -81,6 +82,9 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
             for root, dirs, files in os.walk(self.folder_path):
                 if self.check_interruption():
                     return
+
+                # Filtruj ignorowane foldery z listy dirs (modyfikacja in-place)
+                dirs[:] = [d for d in dirs if not should_ignore_folder(d)]
 
                 for file in files:
                     file_path = os.path.join(root, file)

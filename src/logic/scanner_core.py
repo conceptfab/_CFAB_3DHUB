@@ -30,6 +30,30 @@ logger = logging.getLogger(__name__)
 MAX_CACHE_ENTRIES = app_config.SCANNER_MAX_CACHE_ENTRIES
 MAX_CACHE_AGE_SECONDS = app_config.SCANNER_MAX_CACHE_AGE_SECONDS
 
+# Foldery ignorowane podczas skanowania
+IGNORED_FOLDERS = {
+    ".app_metadata",
+    "__pycache__",
+    ".git",
+    ".svn",
+    ".hg",
+    "node_modules",
+    ".alg_meta",
+}
+
+
+def should_ignore_folder(folder_name: str) -> bool:
+    """
+    Sprawdza czy folder powinien być ignorowany podczas skanowania.
+    
+    Args:
+        folder_name: Nazwa folderu do sprawdzenia
+        
+    Returns:
+        True jeśli folder powinien być ignorowany
+    """
+    return folder_name in IGNORED_FOLDERS or folder_name.startswith(".")
+
 
 class ScanningInterrupted(Exception):
     """Wyjątek rzucany, gdy skanowanie zostało przerwane przez użytkownika."""
@@ -185,6 +209,11 @@ def collect_files_streaming(
                 subfolders_processed = 0
                 for entry in entries:
                     if entry.is_dir():
+                        # Ignoruj ukryte foldery i foldery systemowe
+                        if should_ignore_folder(entry.name):
+                            logger.debug(f"Pomijam ignorowany folder: {entry.name}")
+                            continue
+                            
                         subfolders_processed += 1
 
                         # Sprawdzenie co 5 podfolderów

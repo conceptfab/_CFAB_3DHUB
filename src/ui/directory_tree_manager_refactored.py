@@ -182,8 +182,19 @@ class DirectoryTreeManager:
         if folder_name.startswith('.'):
             return False
         
-        # Ukryj niektóre systemowe foldery Windows
-        hidden_folders = {'System Volume Information', '$RECYCLE.BIN', 'Windows'}
+        # Ukryj niektóre systemowe foldery Windows i foldery aplikacji
+        hidden_folders = {
+            'System Volume Information', 
+            '$RECYCLE.BIN', 
+            'Windows',
+            '.app_metadata',
+            '__pycache__',
+            '.git',
+            '.svn',
+            '.hg',
+            'node_modules',
+            '.alg_meta',
+        }
         return folder_name not in hidden_folders
 
     def _setup_context_menu(self):

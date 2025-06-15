@@ -19,7 +19,7 @@ class ConfigDefaults:
         "min_thumbnail_size": 100,
         "max_thumbnail_size": 600,  # Zwiększono z 400
         # Obsługiwane rozszerzenia
-        "supported_archive_extensions": [".rar", ".zip", ".7z", ".tar", ".gz", ".bz2"],
+        "supported_archive_extensions": [".rar", ".zip", ".7z", ".tar", ".gz", ".bz2", ".sbsar"],
         "supported_preview_extensions": [
             ".jpg",
             ".jpeg",

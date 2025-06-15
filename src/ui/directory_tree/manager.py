@@ -196,6 +196,7 @@ class DirectoryTreeManager:
             ".svn",
             ".hg",
             "node_modules",
+            ".alg_meta",
         }
         return folder_name not in hidden_folders
 
