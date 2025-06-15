@@ -1,5 +1,6 @@
 1. Poprawki UI - porogress bary indetyczne
 
+2. Priorytet podgladu webp!
 
 1. Zawartość (Tekst i/lub Ikona)
 To najbardziej podstawowy element. Przycisk musi być co najmniej tak duży, aby zmieścić swój tekst i/lub ikonę, uwzględniając czcionkę i jej rozmiar. Właściwość minimumSizeHint() przycisku oblicza ten "rozsądny" minimalny rozmiar na podstawie zawartości.

@@ -55,13 +55,13 @@ class MetadataManager:
         self.operations = MetadataOperations(working_directory)
         self.validator = MetadataValidator()
 
-        # Thread-safe buffer dla zmian
+        # Konfiguracja
+        self._save_delay = 500  # NAPRAWKA PROGRESYWNOŚĆ: Skrócono z 2000ms na 500ms
+        self._last_save_time = 0
         self._changes_buffer = {}
         self._buffer_lock = threading.RLock()
-        self._last_save_time = 0
-        self._save_delay = 2000  # Opóźnienie zapisu w milisekundach (2s)
-
         self._save_timer = None
+        self._max_buffer_age = 5000  # NOWE: Maksymalny wiek bufora (5s) - wymusza zapis
 
     @classmethod
     def get_instance(cls, working_directory: str) -> "MetadataManager":
@@ -147,9 +147,11 @@ class MetadataManager:
         unpaired_archives: List[str],
         unpaired_previews: List[str],
     ) -> bool:
-        """Thread-safe metadata saving with buffering."""
+        """Thread-safe metadata saving with PROGRESSIVE buffering."""
         with self._buffer_lock:
             try:
+                current_time = time.time()
+                
                 # Przygotuj metadane do zapisu używając operations
                 file_pairs_metadata = self.operations.prepare_file_pairs_metadata(
                     file_pairs_list
@@ -167,20 +169,31 @@ class MetadataManager:
                         "file_pairs": file_pairs_metadata,
                         "unpaired_archives": unpaired_archives_rel,
                         "unpaired_previews": unpaired_previews_rel,
-                        "timestamp": time.time(),
+                        "timestamp": current_time,
                     }
                 )
 
-                # NAPRAWKA THREAD SAFETY: Anuluj poprzedni timer jeśli jest aktywny
-                if self._save_timer:
-                    self._save_timer.cancel()
+                # NAPRAWKA PROGRESYWNOŚĆ: Sprawdź czy bufor jest za stary
+                buffer_age_ms = (current_time - self._changes_buffer.get("timestamp", current_time)) * 1000
+                force_immediate_save = buffer_age_ms > self._max_buffer_age
 
-                # Zaplanuj zapis z opóźnieniem używając threading.Timer
-                self._save_timer = threading.Timer(
-                    self._save_delay / 1000.0,  # Konwersja ms na sekundy
-                    self._flush_changes,
-                )
-                self._save_timer.start()
+                # NAPRAWKA PROGRESYWNOŚĆ: NIE resetuj timer jeśli nie jest za stary
+                # To pozwala na progresywny zapis bez blokowania częstych zmian
+                if force_immediate_save:
+                    # Bufor za stary - wymuś natychmiastowy zapis
+                    if self._save_timer:
+                        self._save_timer.cancel()
+                    self._flush_changes()
+                    logger.debug("Wymuszono natychmiastowy zapis - bufor za stary")
+                elif not self._save_timer or not self._save_timer.is_alive():
+                    # Brak aktywnego timera - zaplanuj nowy zapis
+                    self._save_timer = threading.Timer(
+                        self._save_delay / 1000.0,  # Konwersja ms na sekundy
+                        self._flush_changes,
+                    )
+                    self._save_timer.start()
+                    logger.debug(f"Zaplanowano zapis metadanych za {self._save_delay}ms")
+                # ELSE: Timer już działa - pozwól mu dokończyć (progresywność!)
 
                 return True
 

@@ -118,10 +118,36 @@ class ManuallyPairFilesWorker(UnifiedBaseWorker):
             file_pair = FilePair(archive_path, self.updated_preview_path, working_dir)
 
             # Zapisz metadane
-            self.emit_progress(60, "Zapisywanie metadanych pary plików...")
+            self.emit_progress(60, "Przygotowywanie metadanych pary plików...")
             try:
                 metadata_manager = MetadataManager.get_instance(working_dir)
-                metadata_manager.save_file_pair_metadata(file_pair, working_dir)
+                
+                # NAPRAWKA PROGRESYWNOŚĆ: Sprawdź czy to pierwszy plik metadanych
+                metadata_path = metadata_manager.get_metadata_path()
+                is_first_metadata = not os.path.exists(metadata_path)
+                
+                if is_first_metadata:
+                    self.emit_progress(70, "Tworzenie nowego pliku metadanych...")
+                    # Utwórz katalog .app_metadata jeśli nie istnieje
+                    metadata_dir = os.path.dirname(metadata_path)
+                    os.makedirs(metadata_dir, exist_ok=True)
+                    self.emit_progress(80, "Zapisywanie pierwszej pary do metadanych...")
+                else:
+                    self.emit_progress(80, "Aktualizacja istniejących metadanych...")
+                
+                # Zapisz metadane pary
+                success = metadata_manager.save_file_pair_metadata(file_pair, working_dir)
+                
+                if not success:
+                    self.emit_error("Nie udało się zapisać metadanych pary plików")
+                    self._rollback_rename_if_needed(current_preview_path, was_renamed)
+                    return
+                    
+                if is_first_metadata:
+                    self.emit_progress(90, "Plik metadanych utworzony pomyślnie!")
+                else:
+                    self.emit_progress(90, "Metadane zaktualizowane pomyślnie!")
+                    
             except Exception as e:
                 self.emit_error(f"Błąd podczas zapisywania metadanych: {str(e)}")
                 # Jeżeli zmieniono nazwę pliku podglądu, przywróć oryginalną nazwę

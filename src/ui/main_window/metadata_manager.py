@@ -61,8 +61,8 @@ class MetadataManager:
 
         # Zatrzymaj poprzedni timer jeśli istnieje
         self._metadata_save_timer.stop()
-        # Uruchom nowy timer
-        self._metadata_save_timer.start(2000)  # 2 sekundy opóźnienia
+        # NAPRAWKA PROGRESYWNOŚĆ: Skrócono z 2000ms na 500ms
+        self._metadata_save_timer.start(500)  # 500ms opóźnienia
 
     def force_immediate_metadata_save(self):
         """
