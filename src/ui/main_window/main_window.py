@@ -373,6 +373,10 @@ class MainWindow(QMainWindow):
         """Delegacja do TileManager."""
         return self.tile_manager.create_tile_widgets_batch(file_pairs_batch)
 
+    def _refresh_existing_tiles(self, file_pairs_list: list):
+        """Odświeża istniejące kafelki po wczytaniu metadanych."""
+        return self.tile_manager.refresh_existing_tiles(file_pairs_list)
+
     def _on_tile_loading_finished(self):
         """Delegacja do TileManager."""
         return self.tile_manager.on_tile_loading_finished()

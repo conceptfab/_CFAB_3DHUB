@@ -261,6 +261,7 @@ class DataProcessingWorker(QObject):
     # Bezpośrednie sygnały
     tile_data_ready = pyqtSignal(FilePair)
     tiles_batch_ready = pyqtSignal(list)  # NOWY: sygnał dla batch'y kafelków
+    tiles_refresh_needed = pyqtSignal(list)  # NOWY: sygnał do odświeżenia istniejących kafelków
     finished = pyqtSignal(list)
     error = pyqtSignal(str)
     progress = pyqtSignal(int, str)
@@ -441,13 +442,56 @@ class DataProcessingWorker(QObject):
                 90,
                 f"Przygotowano {len(processed_pairs)} par plików. Tworzenie kafelków...",
             )
+            # NAPRAWKA METADANYCH: Wczytaj metadane PRZED emit_finished żeby UI miało aktualne dane
+            self._load_metadata_sync()
+            
             self.emit_finished(processed_pairs)
-
-            # NAPRAWKA PERFORMANCE: Załaduj metadane asynchronicznie w tle po załadowaniu galerii
-            self._load_metadata_async()
 
         except Exception as e:
             self.emit_error(f"Błąd podczas przetwarzania danych: {str(e)}", e)
+
+    def _load_metadata_sync(self):
+        """Wczytuje metadane synchronicznie PRZED tworzeniem UI."""
+        try:
+            from src.logic.metadata.metadata_core import MetadataManager
+
+            metadata_manager = MetadataManager.get_instance(self.working_directory)
+
+            # DEBUG: Sprawdź ile plików ma metadane przed załadowaniem
+            files_with_stars_before = sum(
+                1 for fp in self.file_pairs if fp.get_stars() > 0
+            )
+            files_with_colors_before = sum(
+                1 for fp in self.file_pairs if fp.get_color_tag()
+            )
+            logger.info(
+                f"📥 SYNC LOAD BEFORE: {files_with_stars_before} plików z gwiazdkami, "
+                f"{files_with_colors_before} z kolorami"
+            )
+
+            metadata_applied = metadata_manager.apply_metadata_to_file_pairs(
+                self.file_pairs
+            )
+
+            # DEBUG: Sprawdź ile plików ma metadane po załadowaniu
+            files_with_stars_after = sum(
+                1 for fp in self.file_pairs if fp.get_stars() > 0
+            )
+            files_with_colors_after = sum(
+                1 for fp in self.file_pairs if fp.get_color_tag()
+            )
+            logger.info(
+                f"📥 SYNC LOAD AFTER: {files_with_stars_after} plików z gwiazdkami, "
+                f"{files_with_colors_after} z kolorami. Applied: {metadata_applied}"
+            )
+
+            # NAPRAWKA: Emituj sygnał odświeżenia kafelków jeśli metadane zostały załadowane
+            if metadata_applied and (files_with_stars_after > 0 or files_with_colors_after > 0):
+                self.tiles_refresh_needed.emit(self.file_pairs)
+                logger.info("📡 SYNC: Wysłano sygnał odświeżenia kafelków po załadowaniu metadanych")
+
+        except Exception as e:
+            logger.error(f"Błąd synchronicznego ładowania metadanych: {e}")
 
     def _load_metadata_async(self):
         """Ładuje metadane asynchronicznie w tle po załadowaniu galerii."""
@@ -458,7 +502,7 @@ class DataProcessingWorker(QObject):
 
             def load_metadata_delayed():
                 try:
-                    from src.logic.metadata_manager import MetadataManager
+                    from src.logic.metadata.metadata_core import MetadataManager
 
                     metadata_manager = MetadataManager.get_instance(
                         self.working_directory
@@ -559,7 +603,7 @@ class SaveMetadataWorker(AsyncUnifiedBaseWorker):
 
             # Zapisz metadane z resource protection + FORCE SAVE
             def save_metadata():
-                from src.logic.metadata_manager import MetadataManager
+                from src.logic.metadata.metadata_core import MetadataManager
 
                 metadata_manager = MetadataManager.get_instance(self.working_directory)
 

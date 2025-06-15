@@ -116,6 +116,10 @@ class WorkerManager:
         self.data_processing_worker.tiles_batch_ready.connect(
             self.main_window._create_tile_widgets_batch
         )
+        # NOWY: obsługa odświeżania istniejących kafelków po wczytaniu metadanych
+        self.data_processing_worker.tiles_refresh_needed.connect(
+            self.main_window._refresh_existing_tiles
+        )
         self.data_processing_worker.finished.connect(self.main_window._on_tile_loading_finished)
         # NAPRAWKA: Podłącz sygnały postępu do pasków postępu
         self.data_processing_worker.progress.connect(self.main_window._show_progress)
@@ -177,6 +181,10 @@ class WorkerManager:
         # NOWY: obsługa batch processing kafelków
         self.data_processing_worker.tiles_batch_ready.connect(
             self.main_window._create_tile_widgets_batch
+        )
+        # NOWY: obsługa odświeżania istniejących kafelków po wczytaniu metadanych
+        self.data_processing_worker.tiles_refresh_needed.connect(
+            self.main_window._refresh_existing_tiles
         )
         # RÓŻNICA: Podłącz do metody BEZ resetowania drzewa (wrapper ignoruje listę)
         self.data_processing_worker.finished.connect(

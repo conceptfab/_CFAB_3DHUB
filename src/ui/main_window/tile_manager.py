@@ -117,6 +117,37 @@ class TileManager:
             self.main_window.gallery_manager.tiles_container.setUpdatesEnabled(True)
             self.main_window.gallery_manager.tiles_container.update()
 
+    def refresh_existing_tiles(self, file_pairs_list: list):
+        """
+        Odświeża istniejące kafelki po wczytaniu metadanych.
+        Nie tworzy nowych kafelków, tylko aktualizuje dane w istniejących.
+        
+        Args:
+            file_pairs_list: Lista par plików z zaktualizowanymi metadanymi
+        """
+        self.logger.info(f"Odświeżanie {len(file_pairs_list)} istniejących kafelków po wczytaniu metadanych")
+        
+        # Pobierz wszystkie istniejące kafelki z galerii
+        existing_tiles = self.main_window.gallery_manager.get_all_tile_widgets()
+        
+        refreshed_count = 0
+        for tile in existing_tiles:
+            if hasattr(tile, 'file_pair') and tile.file_pair:
+                # Znajdź odpowiadającą parę plików w zaktualizowanej liście
+                for updated_file_pair in file_pairs_list:
+                    if (hasattr(updated_file_pair, 'archive_path') and 
+                        tile.file_pair.archive_path == updated_file_pair.archive_path):
+                        # Aktualizuj dane kafelka
+                        tile.update_data(updated_file_pair)
+                        refreshed_count += 1
+                        break
+        
+        self.logger.info(f"Odświeżono {refreshed_count} kafelków z metadanymi")
+        
+        # Wymuś odświeżenie UI
+        if hasattr(self.main_window.gallery_manager, 'tiles_container'):
+            self.main_window.gallery_manager.tiles_container.update()
+
     def on_tile_loading_finished(self):
         """
         Wywoływane po zakończeniu tworzenia wszystkich kafelków.
