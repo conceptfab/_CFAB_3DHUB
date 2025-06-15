@@ -598,24 +598,31 @@ class MainWindow(QMainWindow):
         else:
             self._apply_filters_and_update_view()
 
-        self._save_metadata()
+        # NAPRAWKA DEADLOCK: Użyj asynchronicznego zapisu metadanych
+        # zamiast synchronicznego który może blokować UI
+        self._schedule_metadata_save()
 
         destination = (
             os.path.dirname(moved_pairs[0].archive_path) if moved_pairs else "nieznany"
         )
         self._show_progress(100, f"Przeniesiono {len(moved_pairs)} par plików")
 
-        # Pokaż szczegółowy raport błędów jeśli wystąpiły
-        if isinstance(result, dict) and (detailed_errors or skipped_files):
-            self._show_detailed_move_report(
-                moved_pairs, detailed_errors, skipped_files, summary
-            )
-        else:
-            QMessageBox.information(
-                self,
-                "Przenoszenie zakończone",
-                f"Przeniesiono {len(moved_pairs)} z {original_selected_count} zaznaczonych par plików do:\n{destination}",
-            )
+        # NAPRAWKA DEADLOCK: Opóźnij MessageBox żeby nie blokować UI podczas odświeżania
+        def show_completion_message():
+            # Pokaż szczegółowy raport błędów jeśli wystąpiły
+            if isinstance(result, dict) and (detailed_errors or skipped_files):
+                self._show_detailed_move_report(
+                    moved_pairs, detailed_errors, skipped_files, summary
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Przenoszenie zakończone",
+                    f"Przeniesiono {len(moved_pairs)} z {original_selected_count} zaznaczonych par plików do:\n{destination}",
+                )
+        
+        # Opóźnij pokazanie MessageBox o 500ms żeby odświeżanie się zakończyło
+        QTimer.singleShot(500, show_completion_message)
 
     def _refresh_source_folder_after_move(self):
         """
@@ -652,8 +659,9 @@ class MainWindow(QMainWindow):
 
                 if scan_result.error_message:
                     logging.error(f"Błąd skanowania po bulk move: {scan_result.error_message}")
-                    # Fallback - użyj refresh_all_views()
-                    self.refresh_all_views()
+                    # NAPRAWKA DEADLOCK: Nie używaj refresh_all_views() jako fallback
+                    # może powodować nieskończoną pętlę lub deadlock
+                    logging.warning("Pomijam odświeżanie z powodu błędu skanowania")
                     return
 
                 # Zaktualizuj dane kontrolera
@@ -674,13 +682,15 @@ class MainWindow(QMainWindow):
                 
             except Exception as e:
                 logging.warning(f"Błąd podczas prostego skanowania: {e}")
-                # Ostatnia deska ratunku
-                self.refresh_all_views()
+                # NAPRAWKA DEADLOCK: Nie używaj refresh_all_views() jako fallback
+                # może powodować nieskończoną pętlę lub deadlock
+                logging.warning("Pomijam odświeżanie z powodu błędu")
 
         except Exception as e:
             logging.error(f"Błąd podczas odświeżania folderu źródłowego: {e}")
-            # Ostatnia deska ratunku
-            self.refresh_all_views()
+            # NAPRAWKA DEADLOCK: Nie używaj refresh_all_views() jako fallback
+            # może powodować nieskończoną pętlę lub deadlock
+            logging.warning("Pomijam odświeżanie z powodu błędu")
 
     def _handle_stars_changed(self, file_pair: FilePair, new_star_count: int):
         """Delegacja do MetadataManager."""

@@ -172,8 +172,9 @@ class DataManager:
                 
             except Exception as e:
                 logging.error(f"Błąd podczas force_refresh: {e}")
-                # Fallback - użyj refresh_all_views jako ostatnia deska ratunku
-                self.refresh_all_views()
+                # NAPRAWKA DEADLOCK: Nie używaj refresh_all_views() jako fallback
+                # może powodować nieskończoną pętlę lub deadlock
+                logging.warning("Pomijam odświeżanie z powodu błędu w force_refresh")
 
     def update_unpaired_lists(self, archives: List[str], previews: List[str]):
         """Aktualizuje listy niesparowanych plików."""

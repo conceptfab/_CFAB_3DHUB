@@ -140,7 +140,7 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
     """
 
     def __init__(
-        self, files_to_move: list[FilePair], destination_dir: str, batch_size: int = 15
+        self, files_to_move: list[FilePair], destination_dir: str, batch_size: int = 50
     ):
         """
         Inicjalizuje worker do masowego przenoszenia plików.
@@ -197,12 +197,33 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
     ):
         """Przetwarza batch operacji przenoszenia."""
         dest_dir = normalize_path(self.destination_dir)
+        
+        # OPTYMALIZACJA: Sprawdź uprawnienia do katalogu TYLKO RAZ na batch
+        dest_dir_writable = os.access(dest_dir, os.W_OK)
+        if not dest_dir_writable:
+            # Jeśli katalog nie ma uprawnień, oznacz wszystkie pliki jako błędne
+            for file_type, file_path, file_pair in batch_data:
+                error_msg = f"Brak uprawnień do zapisu w katalogu docelowym: {dest_dir}"
+                self.detailed_errors.append(
+                    {
+                        "file_path": file_path,
+                        "file_type": file_type,
+                        "file_pair": (
+                            file_pair.get_base_name() if file_pair else "Nieznany"
+                        ),
+                        "error": error_msg,
+                        "error_type": "BRAK_UPRAWNIEŃ_ZAPISU",
+                    }
+                )
+                self.error_count += 1
+            return
 
         for file_type, file_path, file_pair in batch_data:
             if self.check_interruption():
                 return
 
             try:
+                # OPTYMALIZACJA: Tylko podstawowe sprawdzenia - bez otwierania plików!
                 if not os.path.exists(file_path):
                     error_msg = f"Plik źródłowy nie istnieje: {file_path}"
                     self.detailed_errors.append(
@@ -243,74 +264,7 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
                     self.skipped_count += 1
                     continue
 
-                # Sprawdź uprawnienia do zapisu w katalogu docelowym
-                if not os.access(dest_dir, os.W_OK):
-                    error_msg = (
-                        f"Brak uprawnień do zapisu w katalogu docelowym: {dest_dir}"
-                    )
-                    self.detailed_errors.append(
-                        {
-                            "file_path": file_path,
-                            "file_type": file_type,
-                            "file_pair": (
-                                file_pair.get_base_name() if file_pair else "Nieznany"
-                            ),
-                            "error": error_msg,
-                            "error_type": "BRAK_UPRAWNIEŃ_ZAPISU",
-                        }
-                    )
-                    self.error_count += 1
-                    logger.error(error_msg)
-                    continue
-
-                # Sprawdź czy plik źródłowy nie jest zablokowany
-                try:
-                    # Test czy można otworzyć plik do odczytu
-                    with open(file_path, "rb") as test_file:
-                        pass
-                except PermissionError:
-                    error_msg = f"Plik jest zablokowany lub brak uprawnień: {file_path}"
-                    self.detailed_errors.append(
-                        {
-                            "file_path": file_path,
-                            "file_type": file_type,
-                            "file_pair": (
-                                file_pair.get_base_name() if file_pair else "Nieznany"
-                            ),
-                            "error": error_msg,
-                            "error_type": "PLIK_ZABLOKOWANY",
-                        }
-                    )
-                    self.error_count += 1
-                    logger.error(error_msg)
-                    continue
-
-                # Sprawdź dostępne miejsce na dysku
-                try:
-                    file_size = os.path.getsize(file_path)
-                    free_space = shutil.disk_usage(dest_dir).free
-                    if file_size > free_space:
-                        error_msg = f"Brak miejsca na dysku docelowym. Potrzeba: {file_size} bajtów, dostępne: {free_space} bajtów"
-                        self.detailed_errors.append(
-                            {
-                                "file_path": file_path,
-                                "file_type": file_type,
-                                "file_pair": (
-                                    file_pair.get_base_name()
-                                    if file_pair
-                                    else "Nieznany"
-                                ),
-                                "error": error_msg,
-                                "error_type": "BRAK_MIEJSCA_NA_DYSKU",
-                            }
-                        )
-                        self.error_count += 1
-                        logger.error(error_msg)
-                        continue
-                except OSError as e:
-                    logger.warning(f"Nie można sprawdzić miejsca na dysku: {e}")
-
-                # Wykonaj przeniesienie
+                # Wykonaj przeniesienie - shutil.move() obsłuży wszystkie błędy
                 shutil.move(file_path, target_path)
                 self.moved_files.append((file_type, file_path, target_path))
                 self.success_count += 1
@@ -435,11 +389,8 @@ class BulkMoveWorker(UnifiedBaseWorker, BatchOperationMixin):
                     self.add_to_batch(file_info)
                     processed_files += 1
 
-                    # Emituj progress co 5% lub co 10 plików
-                    if (
-                        processed_files % max(1, total_files // 20) == 0
-                        or processed_files % 10 == 0
-                    ):
+                    # OPTYMALIZACJA: Emituj progress rzadziej (co 2% lub co 25 plików)
+                    if processed_files % 25 == 0 or processed_files % max(1, total_files // 50) == 0:
                         percent = int((processed_files / total_files) * 100)
                         self.emit_progress(
                             percent,
@@ -486,7 +437,7 @@ class BulkMoveFilesWorker(UnifiedBaseWorker, BatchOperationMixin):
     """
 
     def __init__(
-        self, file_paths: List[str], destination_dir: str, batch_size: int = 15
+        self, file_paths: List[str], destination_dir: str, batch_size: int = 50
     ):
         """
         Inicjalizuje worker do masowego przenoszenia pojedynczych plików.
@@ -521,12 +472,29 @@ class BulkMoveFilesWorker(UnifiedBaseWorker, BatchOperationMixin):
     def _process_batch_implementation(self, batch_data: List[str]):
         """Przetwarza batch operacji przenoszenia plików."""
         dest_dir = normalize_path(self.destination_dir)
+        
+        # OPTYMALIZACJA: Sprawdź uprawnienia do katalogu TYLKO RAZ na batch
+        dest_dir_writable = os.access(dest_dir, os.W_OK)
+        if not dest_dir_writable:
+            # Jeśli katalog nie ma uprawnień, oznacz wszystkie pliki jako błędne
+            for file_path in batch_data:
+                error_msg = f"Brak uprawnień do zapisu w katalogu docelowym: {dest_dir}"
+                self.detailed_errors.append(
+                    {
+                        "file_path": file_path,
+                        "error": error_msg,
+                        "error_type": "BRAK_UPRAWNIEŃ_ZAPISU",
+                    }
+                )
+                self.error_count += 1
+            return
 
         for file_path in batch_data:
             if self.check_interruption():
                 return
 
             try:
+                # OPTYMALIZACJA: Tylko podstawowe sprawdzenia - bez wolnych operacji I/O!
                 if not os.path.exists(file_path):
                     error_msg = f"Plik źródłowy nie istnieje: {file_path}"
                     self.detailed_errors.append(
@@ -559,42 +527,7 @@ class BulkMoveFilesWorker(UnifiedBaseWorker, BatchOperationMixin):
                     self.skipped_count += 1
                     continue
 
-                # Sprawdź uprawnienia do zapisu w katalogu docelowym
-                if not os.access(dest_dir, os.W_OK):
-                    error_msg = (
-                        f"Brak uprawnień do zapisu w katalogu docelowym: {dest_dir}"
-                    )
-                    self.detailed_errors.append(
-                        {
-                            "file_path": file_path,
-                            "error": error_msg,
-                            "error_type": "BRAK_UPRAWNIEŃ_ZAPISU",
-                        }
-                    )
-                    self.error_count += 1
-                    logger.error(error_msg)
-                    continue
-
-                # Sprawdź dostępne miejsce na dysku
-                try:
-                    file_size = os.path.getsize(file_path)
-                    free_space = shutil.disk_usage(dest_dir).free
-                    if file_size > free_space:
-                        error_msg = f"Brak miejsca na dysku docelowym. Potrzeba: {file_size} bajtów, dostępne: {free_space} bajtów"
-                        self.detailed_errors.append(
-                            {
-                                "file_path": file_path,
-                                "error": error_msg,
-                                "error_type": "BRAK_MIEJSCA_NA_DYSKU",
-                            }
-                        )
-                        self.error_count += 1
-                        logger.error(error_msg)
-                        continue
-                except OSError as e:
-                    logger.warning(f"Nie można sprawdzić miejsca na dysku: {e}")
-
-                # Wykonaj przeniesienie
+                # Wykonaj przeniesienie - shutil.move() obsłuży wszystkie błędy
                 shutil.move(file_path, target_path)
                 self.moved_files.append((file_path, target_path))
                 self.success_count += 1
@@ -657,11 +590,13 @@ class BulkMoveFilesWorker(UnifiedBaseWorker, BatchOperationMixin):
                 self.add_to_batch(file_path)
                 processed_files += 1
 
-                percent = int((processed_files / total_files) * 100)
-                self.emit_progress(
-                    percent,
-                    f"Przenoszenie: {processed_files}/{total_files} plików...",
-                )
+                # OPTYMALIZACJA: Emituj progress rzadziej (co 25 plików lub co 2%)
+                if processed_files % 25 == 0 or processed_files % max(1, total_files // 50) == 0:
+                    percent = int((processed_files / total_files) * 100)
+                    self.emit_progress(
+                        percent,
+                        f"Przenoszenie: {processed_files}/{total_files} plików...",
+                    )
 
             # Przetworz pozostałe pliki w batch'u
             self.finalize_batches()
