@@ -143,9 +143,37 @@ class DataManager:
 
             clear_cache()
             logging.info("Cache wyczyszczony - wymuszono ponowne skanowanie")
-            self.main_window.change_directory(
-                self.main_window.controller.current_directory
-            )
+            
+            # NAPRAWKA DEADLOCK: Zamiast change_directory() użyj bezpieczniejszego podejścia
+            # change_directory() może powodować deadlock jeśli jest wywoływane z workera
+            try:
+                # Skanuj tylko bezpośrednie pliki w folderze (max_depth=0)
+                scan_result = self.main_window.controller.scan_service.scan_directory(
+                    self.main_window.controller.current_directory, max_depth=0
+                )
+
+                if scan_result.error_message:
+                    logging.error(f"Błąd force_refresh: {scan_result.error_message}")
+                    return
+
+                # Zaktualizuj dane kontrolera
+                self.main_window.controller.current_file_pairs = scan_result.file_pairs
+                self.main_window.controller.unpaired_archives = scan_result.unpaired_archives
+                self.main_window.controller.unpaired_previews = scan_result.unpaired_previews
+
+                # Odśwież widoki BEZ uruchamiania nowych workerów
+                self.main_window._apply_filters_and_update_view()
+                
+                # Aktualizuj niesparowane pliki
+                if hasattr(self.main_window, "unpaired_files_tab_manager"):
+                    self.main_window.unpaired_files_tab_manager.update_unpaired_files_lists()
+                
+                logging.info("Force refresh zakończony pomyślnie bez deadlock")
+                
+            except Exception as e:
+                logging.error(f"Błąd podczas force_refresh: {e}")
+                # Fallback - użyj refresh_all_views jako ostatnia deska ratunku
+                self.refresh_all_views()
 
     def update_unpaired_lists(self, archives: List[str], previews: List[str]):
         """Aktualizuje listy niesparowanych plików."""

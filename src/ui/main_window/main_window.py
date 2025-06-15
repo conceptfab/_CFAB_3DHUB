@@ -641,21 +641,46 @@ class MainWindow(QMainWindow):
             from src.logic.scanner import clear_cache
 
             clear_cache()
-            if hasattr(self, "controller") and self.controller:
-                try:
-                    self.change_directory(self.controller.current_directory)
-                    logging.info(
-                        "Pomyślnie odświeżono folder źródłowy po operacji bez resetowania drzewa"
-                    )
-                except Exception as e:
-                    logging.warning(f"Błąd podczas odświeżania folderu bez resetu: {e}")
+            
+            # NAPRAWKA DEADLOCK: Zamiast change_directory() użyj prostego skanowania
+            # change_directory() uruchamia nowe workery co może powodować deadlock
+            try:
+                # Skanuj tylko bezpośrednie pliki w folderze (max_depth=0)
+                scan_result = self.controller.scan_service.scan_directory(
+                    self.controller.current_directory, max_depth=0
+                )
+
+                if scan_result.error_message:
+                    logging.error(f"Błąd skanowania po bulk move: {scan_result.error_message}")
+                    # Fallback - użyj refresh_all_views()
                     self.refresh_all_views()
-            else:
-                logging.warning("Kontroler nie jest dostępny - używam fallback")
+                    return
+
+                # Zaktualizuj dane kontrolera
+                self.controller.current_file_pairs = scan_result.file_pairs
+                self.controller.unpaired_archives = scan_result.unpaired_archives
+                self.controller.unpaired_previews = scan_result.unpaired_previews
+
+                # Odśwież widoki BEZ uruchamiania nowych workerów
+                self._apply_filters_and_update_view()
+                
+                # Aktualizuj niesparowane pliki
+                if hasattr(self, "unpaired_files_tab_manager"):
+                    self.unpaired_files_tab_manager.update_unpaired_files_lists()
+                
+                logging.info(
+                    "Pomyślnie odświeżono folder źródłowy po operacji bez uruchamiania nowych workerów"
+                )
+                
+            except Exception as e:
+                logging.warning(f"Błąd podczas prostego skanowania: {e}")
+                # Ostatnia deska ratunku
                 self.refresh_all_views()
 
         except Exception as e:
             logging.error(f"Błąd podczas odświeżania folderu źródłowego: {e}")
+            # Ostatnia deska ratunku
+            self.refresh_all_views()
 
     def _handle_stars_changed(self, file_pair: FilePair, new_star_count: int):
         """Delegacja do MetadataManager."""
