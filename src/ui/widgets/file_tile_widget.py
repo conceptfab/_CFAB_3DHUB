@@ -113,6 +113,10 @@ class FileTileWidget(QWidget):
         # Włącz wsparcie dla stylowania tła widgetu
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
+        # NAPRAWKA DRAG&DROP: Włącz drag and drop dla kafelka
+        self.setAcceptDrops(False)  # Kafelek nie przyjmuje drop
+        # Drag jest obsługiwany przez custom mouseMoveEvent implementation
+
         # Inicjalizacja UI
         self._init_ui()
 
@@ -562,6 +566,7 @@ class FileTileWidget(QWidget):
             self.press_pos = event.pos()
             self.maybe_drag = True
             self.drag_active = False
+
         else:
             super().mousePressEvent(event)
 
@@ -571,24 +576,20 @@ class FileTileWidget(QWidget):
         if not self.maybe_drag or not (event.buttons() & Qt.MouseButton.LeftButton):
             super().mouseMoveEvent(event)
             return
-
+        
         # Jeśli przeciąganie jest już aktywne, przekaż zdarzenie
         if self.drag_active:
             super().mouseMoveEvent(event)
             return
 
         # Sprawdź, czy ruch przekroczył próg rozpoczęcia przeciągania
-        if (
-            event.pos() - self.press_pos
-        ).manhattanLength() >= QApplication.instance().startDragDistance():
-            # Sprawdź, co było pod kursorem w momencie naciśnięcia
-            target_widget_at_press = self.childAt(self.press_pos)
-
-            # Rozpocznij przeciąganie, jeśli nie kliknięto bezpośrednio na miniaturę lub nazwę
-            if target_widget_at_press not in [
-                self.thumbnail_label,
-                self.filename_label,
-            ]:
+        distance = (event.pos() - self.press_pos).manhattanLength()
+        threshold = QApplication.instance().startDragDistance()
+        
+        if distance >= threshold:
+            # NAPRAWKA DRAG&DROP: Rozpocznij przeciąganie z dowolnego miejsca na kafelku
+            # Usuń ograniczenie - drag and drop powinien działać wszędzie na kafelku
+            if True:  # Zawsze rozpocznij drag and drop po przekroczeniu progu
                 self.drag_active = True
 
                 # Sprawdź czy file_pair jest prawidłowy przed rozpoczęciem przeciągania
@@ -650,11 +651,6 @@ class FileTileWidget(QWidget):
                 self.maybe_drag = False
                 self.drag_active = False
                 self.press_pos = None
-                return
-            else:
-                # Jeśli kliknięto na miniaturę/nazwę, ale ruch był wystarczający do drag,
-                # traktujemy to jako anulowanie "kliknięcia"
-                self.maybe_drag = False
                 return
 
         # Jeśli self.maybe_drag jest True, ale dystans jest wciąż za mały

@@ -1,5 +1,23 @@
 ## 🔄 ETAP 1: WSTĘPNA ANALIZA I MAPOWANIE PROJEKTU
 
+### ⚠️ **AKTUALIZACJA STATUSU (2025-01-15):**
+
+- **Status corrections.md:** ETAPY 1-4 UKOŃCZONE ✅ (według pamięci z poprzednich rozmów)
+- **Aktualny stan:** Projekt w trakcie refaktoryzacji
+
+### 📊 **AKTUALNE ROZMIARY PLIKÓW (2025-01-15):**
+
+- `src/ui/directory_tree/manager.py`: **977 linii** (było 1159) - NADAL GIGANTYCZNY
+- `src/ui/file_operations_ui.py`: **886 linii** (było 1023) - NADAL GIGANTYCZNY
+- `src/ui/main_window/main_window.py`: **874 linie** (było 1070) - NADAL GIGANTYCZNY
+- `src/logic/metadata_manager_old.py`: **849 linii** (było 1012) - NADAL DO USUNIĘCIA
+- `src/ui/widgets/unpaired_files_tab.py`: **835 linii** (było 991) - NADAL GIGANTYCZNY
+- `src/ui/delegates/workers/bulk_workers.py`: **748 linii** (było 861) - NADAL GIGANTYCZNY
+
+### 🎯 **AKTUALNY PRIORYTET:**
+
+**REFAKTORYZACJA GIGANTYCZNYCH PLIKÓW** - Mimo zmniejszenia rozmiarów, pliki nadal wymagają podziału na mniejsze, logiczne komponenty dla lepszej czytelności i utrzymania kodu.
+
 ### Cel pierwszego etapu:
 
 Utworzenie kompletnej mapy projektu z wstępną analizą każdego pliku kodu i przygotowanie planu dla szczegółowej analizy. Mapa ma uwzględnia pliki z kodem funkcyjnym i ustawieniami (JSON). Pomiń pliki testów oraz pliki cache, md, txt i log.
@@ -50,8 +68,6 @@ Na podstawie mapy przygotuj:
 ### Cel drugiego etapu:
 
 Szczegółowa analiza każdego pliku zgodnie z **mapą kodu (`code_map.md`)** i planem z etapu 1, z progressywnym zapisywaniem wyników. W tej aplikacji kluczowa jest wydajność - ma pracować z tysiącami plików oraz stabilność. Przeanalizuj kod szczególnie pod tym kątem i zaproponuj adekwatne poprawki. Zweryfikuje czy istnieje zduplikowany lub nadmiarowy kod, nieuzywany kod i nieaktualne komentarze. Zaproponuj podział duzych plików na logiczne części - pamiętając o strukturze projektu. Przygotuj kod do przyszłych modernizacji. Podziel plan poprawek na etapy, każdy powinien objemować jedną poprawkę i ma być zakończony testem i weryfikacja poprawności. Kolejna poprawka może być zrealizowana po bezbłednym wprowadzeniu poprzedniej - to jest istotne i trzeba to zapisać w planie. Wpisy aktualizacyjne w dokumentacji moga być zrealizowane po faktycznym potwierdzeniu przez użytkownika poprawności wprowadzenia poprawki. Proponowany kod do poprawek zapisz w czytelny sposób w pliku patch_code.md i odwołuj się do niego w dokumencie corrections.md
-
-
 
 ### Wymagania etapu 2:
 

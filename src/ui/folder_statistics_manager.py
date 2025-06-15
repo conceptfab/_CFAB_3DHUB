@@ -13,7 +13,7 @@ from threading import RLock
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 
 from src.logic.scanner import scan_folder_for_pairs
-from src.ui.delegates.workers import UnifiedBaseWorker, UnifiedWorkerSignals
+from src.ui.delegates.workers import UnifiedBaseWorker, BaseWorkerSignals
 from src.utils.path_utils import normalize_path
 from src.app_config import AppConfig
 
@@ -42,8 +42,8 @@ class FolderStatistics:
         return self.pairs_count + self.subfolders_pairs
 
 
-class FolderStatisticsSignals(UnifiedWorkerSignals):
-    """Sygnały dla workera statystyk folderów - rozszerza UnifiedWorkerSignals."""
+class FolderStatisticsSignals(BaseWorkerSignals):
+    """Sygnały dla workera statystyk folderów - rozszerza BaseWorkerSignals."""
     
     statistics_calculated = pyqtSignal(object)  # FolderStatistics
 
@@ -100,7 +100,7 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
 
             try:
                 found_pairs, _, _ = scan_folder_for_pairs(
-                    self.folder_path, max_depth=-1, pair_strategy="first_match"
+                    self.folder_path, max_depth=0, pair_strategy="first_match"
                 )
                 stats.pairs_count = len(found_pairs)
             except Exception as e:
@@ -191,7 +191,7 @@ class FolderStatisticsManager:
     
     def __init__(self):
         self.cache = LRUCache(
-            max_size=app_config.get('cache_max_entries', 500),
+            max_size=app_config.get('cache_max_entries', 100),
             ttl_seconds=app_config.get('cache_ttl_seconds', 300)
         )
         self._active_workers = {}  # Słownik aktywnych workerów

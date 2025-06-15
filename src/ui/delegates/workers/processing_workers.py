@@ -10,7 +10,7 @@ from typing import List, Tuple
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QPixmap
 
-from src.logic import metadata_manager
+from src.logic.metadata.metadata_core import MetadataManager
 from src.models.file_pair import FilePair
 from src.utils.image_utils import create_thumbnail_from_file
 
@@ -464,8 +464,8 @@ class DataProcessingWorker(QObject):
             files_with_colors_before = sum(
                 1 for fp in self.file_pairs if fp.get_color_tag()
             )
-            logger.info(
-                f"📥 SYNC LOAD BEFORE: {files_with_stars_before} plików z gwiazdkami, "
+            logger.debug(
+                f"SYNC LOAD BEFORE: {files_with_stars_before} plików z gwiazdkami, "
                 f"{files_with_colors_before} z kolorami"
             )
 
@@ -480,15 +480,15 @@ class DataProcessingWorker(QObject):
             files_with_colors_after = sum(
                 1 for fp in self.file_pairs if fp.get_color_tag()
             )
-            logger.info(
-                f"📥 SYNC LOAD AFTER: {files_with_stars_after} plików z gwiazdkami, "
+            logger.debug(
+                f"SYNC LOAD AFTER: {files_with_stars_after} plików z gwiazdkami, "
                 f"{files_with_colors_after} z kolorami. Applied: {metadata_applied}"
             )
 
             # NAPRAWKA: Emituj sygnał odświeżenia kafelków jeśli metadane zostały załadowane
             if metadata_applied and (files_with_stars_after > 0 or files_with_colors_after > 0):
                 self.tiles_refresh_needed.emit(self.file_pairs)
-                logger.info("📡 SYNC: Wysłano sygnał odświeżenia kafelków po załadowaniu metadanych")
+                logger.debug("SYNC: Wysłano sygnał odświeżenia kafelków po załadowaniu metadanych")
 
         except Exception as e:
             logger.error(f"Błąd synchronicznego ładowania metadanych: {e}")
@@ -515,8 +515,8 @@ class DataProcessingWorker(QObject):
                     files_with_colors_before = sum(
                         1 for fp in self.file_pairs if fp.get_color_tag()
                     )
-                    logger.info(
-                        f"📥 DEBUG LOAD BEFORE: {files_with_stars_before} plików z gwiazdkami, "
+                    logger.debug(
+                        f"DEBUG LOAD BEFORE: {files_with_stars_before} plików z gwiazdkami, "
                         f"{files_with_colors_before} z kolorami"
                     )
 
@@ -531,8 +531,8 @@ class DataProcessingWorker(QObject):
                     files_with_colors_after = sum(
                         1 for fp in self.file_pairs if fp.get_color_tag()
                     )
-                    logger.info(
-                        f"📥 DEBUG LOAD AFTER: {files_with_stars_after} plików z gwiazdkami, "
+                    logger.debug(
+                        f"DEBUG LOAD AFTER: {files_with_stars_after} plików z gwiazdkami, "
                         f"{files_with_colors_after} z kolorami. Applied: {metadata_applied}"
                     )
 
@@ -542,8 +542,8 @@ class DataProcessingWorker(QObject):
                         QTimer.singleShot(
                             0, lambda: self.tiles_batch_ready.emit(self.file_pairs)
                         )
-                        logger.info(
-                            "📡 DEBUG: Wysłano sygnał odświeżenia kafelków po załadowaniu metadanych"
+                        logger.debug(
+                            "DEBUG: Wysłano sygnał odświeżenia kafelków po załadowaniu metadanych"
                         )
 
                 except Exception as e:
@@ -615,8 +615,8 @@ class SaveMetadataWorker(AsyncUnifiedBaseWorker):
                 ):  # Tylko pierwsze 3 dla debug
                     stars = file_pair.get_stars()
                     color = file_pair.get_color_tag()
-                    logger.info(
-                        f"💾 DEBUG SAVE [{i}]: {file_pair.get_base_name()} - "
+                    logger.debug(
+                        f"DEBUG SAVE [{i}]: {file_pair.get_base_name()} - "
                         f"Stars: {stars}, Color: '{color}'"
                     )
 

@@ -104,6 +104,7 @@ class DirectoryTreeManager:
         self.folder_tree.setDragEnabled(False)  # Drzewo samo nie inicjuje przeciągania
         self.folder_tree.setAcceptDrops(True)
         self.folder_tree.setDropIndicatorShown(True)  # Standardowy wskaźnik linii
+        self.folder_tree.setDragDropMode(QTreeView.DragDropMode.DropOnly)
 
         # Inicjalizacja dla podświetlania celu upuszczania
         self.highlighted_drop_index = QModelIndex()
@@ -886,16 +887,26 @@ class DirectoryTreeManager:
         self.folder_tree.dragMoveEvent = self._drag_move_event
         self.folder_tree.dragLeaveEvent = self._drag_leave_event
         self.folder_tree.dropEvent = self._drop_event
+        logger.info("Drag and drop handlers skonfigurowane")
 
     def _drag_enter_event(self, event: QDragEnterEvent):
         """Obsługuje rozpoczęcie przeciągania nad drzewem folderów."""
         try:
+            print(f"🔥 DRAG ENTER EVENT CALLED! hasUrls={event.mimeData().hasUrls()}")
+            logger.info(f"DRAG ENTER: hasUrls={event.mimeData().hasUrls()}")
             if event.mimeData().hasUrls():
+                urls = event.mimeData().urls()
+                print(f"🔥 DRAG ENTER: {len(urls)} plików: {[url.toLocalFile() for url in urls[:3]]}")
+                logger.info(f"DRAG ENTER: {len(urls)} plików: {[url.toLocalFile() for url in urls[:3]]}")
                 event.acceptProposedAction()
-                logger.debug("Drag enter: akceptowano przeciąganie plików")
+                print("🔥 DRAG ENTER: Akceptowano przeciąganie plików")
+                logger.info("DRAG ENTER: Akceptowano przeciąganie plików")
             else:
+                print("🔥 DRAG ENTER: Brak URLs - ignoruję")
+                logger.info("DRAG ENTER: Brak URLs - ignoruję")
                 event.ignore()
         except Exception as e:
+            print(f"🔥 BŁĄD DRAG ENTER: {e}")
             logger.error(f"Błąd drag enter: {e}")
             event.ignore()
 
@@ -905,18 +916,20 @@ class DirectoryTreeManager:
             if event.mimeData().hasUrls():
                 # Znajdź folder pod kursorem
                 index = self.folder_tree.indexAt(event.position().toPoint())
+                logger.info(f"DRAG MOVE: index valid={index.isValid()}")
                 if index.isValid():
                     # Podświetl folder jako cel
                     source_index = self.get_source_index_from_proxy(index)
                     if source_index.isValid():
                         folder_path = self.model.filePath(source_index)
+                        logger.info(f"DRAG MOVE: folder_path={folder_path}")
                         if os.path.isdir(folder_path):
-
                             current_target = getattr(
                                 self, "_highlighted_drop_target", None
                             )
                             if current_target != folder_path:
                                 self._highlighted_drop_target = folder_path
+                                logger.info(f"DRAG MOVE: Podświetlam folder: {folder_path}")
                                 # Wymuś ponowne rysowanie tylko jeśli folder się zmienił
                                 self.folder_tree.viewport().update()
                             event.acceptProposedAction()

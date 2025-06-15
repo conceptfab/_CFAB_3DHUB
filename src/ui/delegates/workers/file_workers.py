@@ -6,7 +6,7 @@ import logging
 import os
 import shutil
 
-from src.logic import metadata_manager
+from src.logic.metadata.metadata_core import MetadataManager
 from src.models.file_pair import FilePair
 from src.utils.path_utils import normalize_path
 
@@ -120,6 +120,7 @@ class ManuallyPairFilesWorker(UnifiedBaseWorker):
             # Zapisz metadane
             self.emit_progress(60, "Zapisywanie metadanych pary plików...")
             try:
+                metadata_manager = MetadataManager.get_instance(working_dir)
                 metadata_manager.save_file_pair_metadata(file_pair, working_dir)
             except Exception as e:
                 self.emit_error(f"Błąd podczas zapisywania metadanych: {str(e)}")
@@ -279,6 +280,7 @@ class RenameFilePairWorker(TransactionalWorker):
             # Zapisanie zaktualizowanych metadanych
             self.emit_progress(80, "Aktualizacja metadanych pary plików...")
             try:
+                metadata_manager = MetadataManager.get_instance(working_dir)
                 metadata_manager.save_file_pair_metadata(updated_file_pair, working_dir)
             except Exception as e:
                 self.emit_error(f"Błąd podczas zapisywania metadanych: {str(e)}", e)

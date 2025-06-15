@@ -145,11 +145,19 @@ class GalleryTab:
         """
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
+        
+        # NAPRAWKA DRAG&DROP: Włącz drag and drop w scroll area
+        self.scroll_area.setAcceptDrops(False)  # Scroll area nie przyjmuje drop
+        # Drag będzie obsługiwany przez FileTileWidget
 
         self.tiles_container = QWidget()
         self.tiles_layout = QGridLayout(self.tiles_container)
         self.tiles_layout.setContentsMargins(10, 10, 10, 10)
         self.tiles_layout.setSpacing(15)
+        
+        # NAPRAWKA DRAG&DROP: Włącz drag and drop w tiles_container
+        self.tiles_container.setAcceptDrops(False)  # Container nie przyjmuje drop
+        # Drag będzie obsługiwany przez FileTileWidget
 
         self.scroll_area.setWidget(self.tiles_container)
         self.splitter.addWidget(self.scroll_area)
