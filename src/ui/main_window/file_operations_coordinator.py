@@ -69,11 +69,11 @@ class FileOperationsCoordinator:
         """
         Wykonuje operację bulk move na zaznaczonych plikach.
         """
-        if not self.main_window.selected_file_pairs:
+        if not self.main_window.controller.selected_tiles:
             self.logger.warning("Brak zaznaczonych plików do przeniesienia")
             return
 
-        selected_count = len(self.main_window.selected_file_pairs)
+        selected_count = len(self.main_window.controller.selected_tiles)
         self.logger.info(f"Rozpoczęcie bulk move dla {selected_count} par plików")
 
         # Wybierz folder docelowy
@@ -100,7 +100,7 @@ class FileOperationsCoordinator:
         self.main_window.progress_manager.show_progress(0, f"Przenoszenie {selected_count} par plików...")
         
         # Uruchom worker do przenoszenia plików
-        worker = BulkMoveWorker(self.main_window.selected_file_pairs, target_folder)
+        worker = BulkMoveWorker(list(self.main_window.controller.selected_tiles), target_folder)
         self.main_window.worker_manager.setup_worker_connections(worker)
         
         # Podłącz callback po zakończeniu
@@ -159,10 +159,9 @@ class FileOperationsCoordinator:
         
         # Usuń usunięte pary z listy
         for pair in deleted_pairs:
-            if pair in self.main_window.file_pairs:
-                self.main_window.file_pairs.remove(pair)
-            if pair in self.main_window.selected_file_pairs:
-                self.main_window.selected_file_pairs.remove(pair)
+            if pair in self.main_window.controller.current_file_pairs:
+                self.main_window.controller.current_file_pairs.remove(pair)
+            self.main_window.controller.selected_tiles.discard(pair)
 
         # Odśwież widoki
         self.main_window.refresh_all_views()
@@ -194,10 +193,9 @@ class FileOperationsCoordinator:
         
         # Usuń przeniesione pary z listy
         for pair in moved_pairs:
-            if pair in self.main_window.file_pairs:
-                self.main_window.file_pairs.remove(pair)
-            if pair in self.main_window.selected_file_pairs:
-                self.main_window.selected_file_pairs.remove(pair)
+            if pair in self.main_window.controller.current_file_pairs:
+                self.main_window.controller.current_file_pairs.remove(pair)
+            self.main_window.controller.selected_tiles.discard(pair)
 
         # Odśwież widoki
         self.main_window.refresh_all_views()

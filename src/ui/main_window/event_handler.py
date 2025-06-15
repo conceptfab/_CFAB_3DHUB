@@ -73,10 +73,10 @@ class EventHandler:
         """
         self.logger.info(f"Skanowanie zakończone: {len(found_pairs)} par znalezionych")
         
-        # Aktualizuj dane w głównym oknie
-        self.main_window.file_pairs = found_pairs
-        self.main_window.unpaired_archives = unpaired_archives
-        self.main_window.unpaired_previews = unpaired_previews
+        # Aktualizuj dane w kontrolerze
+        self.main_window.controller.current_file_pairs = found_pairs
+        self.main_window.controller.unpaired_archives = unpaired_archives
+        self.main_window.controller.unpaired_previews = unpaired_previews
         
         # Aktualizuj listy nieparowanych plików
         self.main_window.unpaired_files_tab.update_lists(unpaired_archives, unpaired_previews)
@@ -120,16 +120,14 @@ class EventHandler:
             is_selected: Czy kafelek jest zaznaczony
         """
         if is_selected:
-            if file_pair not in self.main_window.selected_file_pairs:
-                self.main_window.selected_file_pairs.append(file_pair)
+            self.main_window.controller.selected_tiles.add(file_pair)
         else:
-            if file_pair in self.main_window.selected_file_pairs:
-                self.main_window.selected_file_pairs.remove(file_pair)
+            self.main_window.controller.selected_tiles.discard(file_pair)
         
         # Aktualizuj widoczność operacji bulk
         self.main_window._update_bulk_operations_visibility()
         
-        self.logger.debug(f"Selekcja zmieniona: {len(self.main_window.selected_file_pairs)} zaznaczonych")
+        self.logger.debug(f"Selekcja zmieniona: {len(self.main_window.controller.selected_tiles)} zaznaczonych")
 
     def handle_stars_changed(self, file_pair: FilePair, new_star_count: int):
         """
