@@ -5,6 +5,32 @@
 - **Status corrections.md:** ETAPY 1-4 UKOŃCZONE ✅ (według pamięci z poprzednich rozmów)
 - **Aktualny stan:** Projekt w trakcie refaktoryzacji
 
+### 🚨 **KRYTYCZNE NAPRAWKI (2025-01-15 - NAJNOWSZE):**
+
+#### ✅ **DEADLOCK W MASOWYM PRZENOSZENIU NAPRAWIONY:**
+
+- **Problem:** Aplikacja zawieszała się po masowym przenoszeniu plików (bulk move)
+- **Przyczyny:**
+  1. Cykliczne wywołania `refresh_all_views()` w fallback'ach
+  2. Synchroniczny zapis metadanych blokujący UI
+  3. Blokujący MessageBox podczas odświeżania
+- **Naprawki:**
+  1. Usunięto niebezpieczne fallback `refresh_all_views()` z `_refresh_source_folder_after_move()` i `force_refresh()`
+  2. Zastąpiono `_save_metadata()` asynchronicznym `_schedule_metadata_save()`
+  3. Opóźniono MessageBox o 500ms przez `QTimer.singleShot()`
+- **Pliki zmodyfikowane:** `src/ui/main_window/main_window.py`, `src/ui/main_window/data_manager.py`
+
+#### ⚡ **OPTYMALIZACJA WYDAJNOŚCI MASOWEGO PRZENOSZENIA:**
+
+- **Problem:** Masowe przenoszenie było ekstremalnie wolne
+- **Bottlenecki:** Niepotrzebne sprawdzenia I/O dla każdego pliku (otwieranie plików, sprawdzanie rozmiaru, uprawnień)
+- **Optymalizacje:**
+  1. Usunięto niepotrzebne sprawdzenia - `shutil.move()` obsłuży błędy
+  2. Sprawdzanie uprawnień TYLKO RAZ na batch
+  3. Zwiększono batch_size z 15 na 50
+  4. Progress reporting co 25 plików zamiast co 10
+- **Plik zmodyfikowany:** `src/ui/delegates/workers/bulk_workers.py`
+
 ### 📊 **AKTUALNE ROZMIARY PLIKÓW (2025-01-15):**
 
 - `src/ui/directory_tree/manager.py`: **977 linii** (było 1159) - NADAL GIGANTYCZNY
@@ -12,11 +38,18 @@
 - `src/ui/main_window/main_window.py`: **874 linie** (było 1070) - NADAL GIGANTYCZNY
 - `src/logic/metadata_manager_old.py`: **849 linii** (było 1012) - NADAL DO USUNIĘCIA
 - `src/ui/widgets/unpaired_files_tab.py`: **835 linii** (było 991) - NADAL GIGANTYCZNY
-- `src/ui/delegates/workers/bulk_workers.py`: **748 linii** (było 861) - NADAL GIGANTYCZNY
+- `src/ui/delegates/workers/bulk_workers.py`: **688 linii** (było 748) - ZOPTYMALIZOWANY ✅
+- `src/ui/main_window/data_manager.py`: **225 linii** (było ~250) - ZOPTYMALIZOWANY ✅
 
 ### 🎯 **AKTUALNY PRIORYTET:**
 
 **REFAKTORYZACJA GIGANTYCZNYCH PLIKÓW** - Mimo zmniejszenia rozmiarów, pliki nadal wymagają podziału na mniejsze, logiczne komponenty dla lepszej czytelności i utrzymania kodu.
+
+**NOWE PRIORYTETY PO NAPRAWKACH:**
+
+1. 🔴 **KRYTYCZNE:** Testowanie stabilności masowego przenoszenia po naprawkach
+2. 🟡 **WAŻNE:** Refaktoryzacja pozostałych gigantycznych plików
+3. 🟢 **DŁUGOTERMINOWE:** Usunięcie `metadata_manager_old.py`
 
 ### Cel pierwszego etapu:
 

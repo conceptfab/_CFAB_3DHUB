@@ -4,6 +4,38 @@
 
 ---
 
+## ⚠️ **KRYTYCZNE OSTRZEŻENIE - PROBLEMY Z WYDAJNOŚCIĄ**
+
+### 🚨 **UWAGA: ZAWIESZANIE APLIKACJI PO OPERACJACH Z DUŻĄ ILOŚCIĄ PLIKÓW**
+
+**PROBLEM ZIDENTYFIKOWANY (2025-01-15):**
+
+- **Symptom:** Aplikacja zawiesza się po masowym przenoszeniu plików (bulk move operations)
+- **Przyczyna:** Deadlock w systemie odświeżania widoków i cykliczne wywołania
+- **Wpływ:** Krytyczny - aplikacja staje się niereagująca i wymaga force quit
+
+**NAPRAWIONE PROBLEMY:**
+
+1. ✅ **Deadlock w `_refresh_source_folder_after_move()`** - usunięto cykliczne wywołania `refresh_all_views()`
+2. ✅ **Synchroniczny zapis metadanych** - zastąpiono asynchronicznym `_schedule_metadata_save()`
+3. ✅ **Blokujący MessageBox** - opóźniono o 500ms przez `QTimer.singleShot()`
+4. ✅ **Bottlenecki wydajnościowe** - usunięto niepotrzebne sprawdzenia I/O dla każdego pliku
+
+**PLIKI ZMODYFIKOWANE:**
+
+- `src/ui/main_window/main_window.py` - naprawiono deadlock w callback'ach
+- `src/ui/main_window/data_manager.py` - usunięto niebezpieczne fallback'i
+- `src/ui/delegates/workers/bulk_workers.py` - zoptymalizowano wydajność
+
+**ZALECENIA DLA PRZYSZŁYCH POPRAWEK:**
+
+- ⚠️ **NIGDY nie używaj `refresh_all_views()` jako fallback** - może powodować nieskończone pętle
+- ⚠️ **Unikaj synchronicznych operacji I/O** w callback'ach workerów
+- ⚠️ **Testuj zawsze z dużą ilością plików** (500+ par) przed wdrożeniem
+- ⚠️ **Monitoruj thread safety** - Qt sygnały muszą być emitowane z właściwych wątków
+
+---
+
 ## ETAP 2.1: metadata_manager_old.py
 
 ### 📋 Identyfikacja
