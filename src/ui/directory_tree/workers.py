@@ -123,26 +123,26 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
                 return
 
             try:
-                # Szybka metoda - pary bazowane na nazwach bazowych
+                # 🔥 NAPRAWKA: Prawidłowy algorytm liczenia par
+                # Zamiast liczyć wszystkie podglądy, liczymy rzeczywiste pary
                 pairs_count = 0
 
-                # Utwórz mapę nazw bazowych archiwów
-                archive_basenames = {}
-                for archive_path in archive_files:
-                    basename = os.path.splitext(os.path.basename(archive_path))[
-                        0
-                    ].lower()
-                    if basename not in archive_basenames:
-                        archive_basenames[basename] = []
-                    archive_basenames[basename].append(archive_path)
-
-                # Znajdź dopasowania w podglądach
+                # Utwórz mapę nazw bazowych podglądów (dla szybkiego wyszukiwania)
+                preview_basenames = set()
                 for preview_path in preview_files:
                     basename = os.path.splitext(os.path.basename(preview_path))[
                         0
                     ].lower()
-                    if basename in archive_basenames:
-                        pairs_count += 1
+                    preview_basenames.add(basename)
+
+                # Dla każdego archiwum sprawdź czy ma pasujący podgląd
+                # JEDEN archiwum = JEDNA para (nie wszystkie podglądy!)
+                for archive_path in archive_files:
+                    basename = os.path.splitext(os.path.basename(archive_path))[
+                        0
+                    ].lower()
+                    if basename in preview_basenames:
+                        pairs_count += 1  # ✅ POPRAWNE - liczymy pary, nie podglądy
 
                 stats.pairs_count = pairs_count
                 # NAPRAWKA: total_pairs to readonly property - usuń przypisanie
@@ -150,8 +150,9 @@ class FolderStatisticsWorker(UnifiedBaseWorker):
                 stats.subfolders_pairs = 0  # Można rozszerzyć w przyszłości
 
                 logger.debug(
-                    f"📊 OPTYMALIZOWANE statystyki {os.path.basename(self.folder_path)}: "
-                    f"{pairs_count} par, {total_files} plików, {stats.total_size_gb:.2f}GB"
+                    f"📊 NAPRAWIONE statystyki {os.path.basename(self.folder_path)}: "
+                    f"{pairs_count} par (z {len(archive_files)} archiwów i {len(preview_files)} podglądów), "
+                    f"{total_files} plików, {stats.total_size_gb:.2f}GB"
                 )
 
             except Exception as e:
