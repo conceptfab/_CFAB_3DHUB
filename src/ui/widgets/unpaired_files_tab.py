@@ -141,7 +141,10 @@ class UnpairedFilesTab:
         """
         Aktualizuje listy niesparowanych plików na podstawie danych z kontrolera.
         """
-        logging.debug("Aktualizacja list niesparowanych plików")
+        # NAPRAWKA: Sprawdź czy UI manager jest zainicjalizowany
+        if not hasattr(self, "ui_manager") or self.ui_manager is None:
+            logging.warning("UI manager not initialized yet - skipping update")
+            return
 
         # Sprawdź czy kontroler istnieje
         if not hasattr(self.main_window, "controller"):
@@ -171,11 +174,6 @@ class UnpairedFilesTab:
 
         # Aktualizuj stan przycisków
         self._update_pair_button_state()
-
-        logging.debug(
-            f"Zaktualizowano listy: {len(controller.unpaired_archives)} archiwów, "
-            f"{len(controller.unpaired_previews)} podglądów"
-        )
 
     def _update_pair_button_state(self):
         """
@@ -469,6 +467,7 @@ class UnpairedFilesTab:
             "pair_manually_button": self.pair_manually_button,
             "unpaired_archives_list_widget": self.unpaired_archives_list_widget,
             "unpaired_previews_list_widget": self.unpaired_previews_list_widget,
+            "unpaired_previews_layout": self.ui_manager.unpaired_previews_layout,
         }
 
     def update_thumbnail_size(self, new_size):

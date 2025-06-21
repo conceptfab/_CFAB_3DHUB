@@ -1,0 +1,12 @@
+2025-06-21 22:41:26,685 - root - INFO - Tryb debugowania w³¹czony - szczegó³owe logi skanowania
+2025-06-21 22:41:26,686 - __main__ - INFO - Root projektu: C:\_cloud\_CFAB_3DHUB
+2025-06-21 22:41:26,686 - __main__ - INFO - Wczytywanie stylów z: C:\_cloud\_CFAB_3DHUB\src\resources\styles.qss
+22:41:27 - MainWindow - INFO - Rozpoczynam inicjalizacjê aplikacji przez Orchestrator
+2025-06-21 22:41:27,417 - MainWindow - INFO - Rozpoczynam inicjalizacjê aplikacji przez Orchestrator
+22:41:30 - MainWindow - ERROR - B³¹d konfiguracji unpaired widgets: 'unpaired_previews_layout'
+2025-06-21 22:41:30,180 - MainWindow - ERROR - B³¹d konfiguracji unpaired widgets: 'unpaired_previews_layout'
+2025-06-21 22:41:30,277 - src.ui.directory_tree.manager - INFO - Ustawiono drzewo katalogów bez rozwijania: C:\_cloud\___TEST_FOLDER
+22:41:30 - MainWindow - INFO - Inicjalizacja aplikacji ukoñczona pomyœlnie
+2025-06-21 22:41:30,278 - MainWindow - INFO - Inicjalizacja aplikacji ukoñczona pomyœlnie
+22:41:30 - MainWindow - INFO - G³ówne okno aplikacji zosta³o zainicjalizowane
+2025-06-21 22:41:30,279 - MainWindow - INFO - G³ówne okno aplikacji zosta³o zainicjalizowane

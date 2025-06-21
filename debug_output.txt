@@ -1,0 +1,41 @@
+2025-06-21 22:38:52,481 - root - INFO - Tryb debugowania w³¹czony - szczegó³owe logi skanowania
+2025-06-21 22:38:52,482 - __main__ - INFO - Root projektu: C:\_cloud\_CFAB_3DHUB
+2025-06-21 22:38:52,482 - __main__ - INFO - Wczytywanie stylów z: C:\_cloud\_CFAB_3DHUB\src\resources\styles.qss
+22:38:53 - MainWindow - INFO - Rozpoczynam inicjalizacjê aplikacji przez Orchestrator
+2025-06-21 22:38:53,041 - MainWindow - INFO - Rozpoczynam inicjalizacjê aplikacji przez Orchestrator
+22:38:53 - MainWindow - ERROR - B³¹d konfiguracji unpaired widgets: 'unpaired_previews_layout'
+2025-06-21 22:38:53,940 - MainWindow - ERROR - B³¹d konfiguracji unpaired widgets: 'unpaired_previews_layout'
+2025-06-21 22:38:53,971 - src.ui.directory_tree.manager - INFO - Ustawiono drzewo katalogów bez rozwijania: C:\_cloud\___TEST_FOLDER
+22:38:53 - MainWindow - INFO - Inicjalizacja aplikacji ukoñczona pomyœlnie
+2025-06-21 22:38:53,971 - MainWindow - INFO - Inicjalizacja aplikacji ukoñczona pomyœlnie
+22:38:53 - MainWindow - INFO - G³ówne okno aplikacji zosta³o zainicjalizowane
+2025-06-21 22:38:53,971 - MainWindow - INFO - G³ówne okno aplikacji zosta³o zainicjalizowane
+2025-06-21 22:38:57,109 - src.ui.main_window.scan_results_handler - INFO - Zmiana katalogu na: C:/_cloud/___TEST_FOLDER/Nowy folder (bez resetu drzewa)
+2025-06-21 22:38:57,111 - src.services.scanning_service - INFO - Rozpoczynam skanowanie: C:/_cloud/___TEST_FOLDER/Nowy folder
+2025-06-21 22:38:57,111 - src.logic.scanner - DEBUG - Rozpoczêto pe³ne skanowanie z parowaniem: scan_folder_for_pairs
+2025-06-21 22:38:57,112 - src.logic.scanner_core - INFO - Rozpoczêto streaming zbieranie plików z katalogu: C:/_cloud/___TEST_FOLDER/Nowy folder
+2025-06-21 22:38:57,112 - src.logic.scanner_core - INFO - Zakoñczono streaming zbieranie plików w 0.00s. Znaleziono 9 plików w 1 folderach.
+2025-06-21 22:38:57,113 - src.logic.scanner_core - INFO - Skanowanie zakoñczone dla C:/_cloud/___TEST_FOLDER/Nowy folder. Znaleziono 1 par.
+2025-06-21 22:38:57,113 - src.logic.scanner - DEBUG - Zakoñczono pe³ne skanowanie z parowaniem: scan_folder_for_pairs
+2025-06-21 22:38:57,113 - src.services.scanning_service - INFO - Skanowanie zakoñczone: 1 par, 1 niesparowanych archiwów, 6 niesparowanych podgl¹dów, 0 specjalnych folderów
+2025-06-21 22:38:57,113 - src.ui.main_window.scan_results_handler - CRITICAL - DIAGNOSTYKA CHANGE_DIRECTORY: Otrzymano 0 folderów specjalnych ze skanera: []
+2025-06-21 22:38:57,133 - root - INFO - FileExplorer: Root path set to: C:/_cloud/___TEST_FOLDER/Nowy folder
+2025-06-21 22:38:57,136 - src.ui.main_window.worker_manager - INFO - Uruchomiono nowy worker do przetwarzania 1 par plików (bez resetowania drzewa)
+2025-06-21 22:38:57,136 - src.ui.main_window.scan_results_handler - INFO - Zmiana katalogu na: C:/_cloud/___TEST_FOLDER/Nowy folder (bez resetu drzewa)
+2025-06-21 22:38:57,136 - src.services.scanning_service - INFO - Rozpoczynam skanowanie: C:/_cloud/___TEST_FOLDER/Nowy folder
+2025-06-21 22:38:57,137 - src.logic.scanner - DEBUG - Rozpoczêto pe³ne skanowanie z parowaniem: scan_folder_for_pairs
+2025-06-21 22:38:57,137 - src.logic.scanner - DEBUG - Zakoñczono pe³ne skanowanie z parowaniem: scan_folder_for_pairs
+2025-06-21 22:38:57,137 - src.services.scanning_service - INFO - Skanowanie zakoñczone: 1 par, 1 niesparowanych archiwów, 6 niesparowanych podgl¹dów, 0 specjalnych folderów
+2025-06-21 22:38:57,137 - src.ui.main_window.scan_results_handler - CRITICAL - DIAGNOSTYKA CHANGE_DIRECTORY: Otrzymano 0 folderów specjalnych ze skanera: []
+2025-06-21 22:38:57,140 - root - INFO - FileExplorer: Root path set to: C:/_cloud/___TEST_FOLDER/Nowy folder
+2025-06-21 22:38:57,141 - src.ui.main_window.worker_manager - WARNING - Poprzedni worker przetwarzania nadal dzia³a - przerywam go i uruchamiam nowy (bez resetowania drzewa)
+2025-06-21 22:38:57,143 - src.ui.main_window.worker_manager - INFO - Uruchomiono nowy worker do przetwarzania 1 par plików (bez resetowania drzewa)
+2025-06-21 22:38:57,145 - src.ui.widgets.tile_resource_manager - INFO - TileResourceManager initialized with limits: ResourceLimits(max_tiles=1000, max_memory_mb=500, max_memory_per_tile_mb=5, max_concurrent_workers=10, cleanup_interval_seconds=300, memory_check_interval_seconds=60, cache_cleanup_threshold_ratio=0.8)
+2025-06-21 22:38:57,150 - src.ui.widgets.tile_performance_monitor - INFO - TilePerformanceMonitor initialized (monitoring: True)
+2025-06-21 22:38:57,151 - src.ui.widgets.tile_cache_optimizer - INFO - TileCacheOptimizer initialized (max_size: 150.0MB, max_entries: 1000, strategy: ADAPTIVE)
+2025-06-21 22:38:57,152 - src.ui.widgets.tile_async_ui_manager - INFO - TileAsyncUIManager initialized (concurrent_tasks: 10, batching: True)
+2025-06-21 22:38:57,152 - src.ui.widgets.tile_resource_manager - INFO - Performance optimization components initialized successfully
+2025-06-21 22:38:57,179 - root - WARNING - \U0001f50d DEBUG: unpaired_archives_list_widget is None!
+22:39:07 - MainWindow - INFO - Rozpoczynam cleanup managerów...
+2025-06-21 22:39:07,946 - MainWindow - INFO - Rozpoczynam cleanup managerów...
+QThread: Destroyed while thread '' is still running

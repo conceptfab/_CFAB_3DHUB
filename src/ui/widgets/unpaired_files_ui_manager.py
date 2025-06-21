@@ -220,8 +220,23 @@ class UnpairedFilesUIManager:
         Args:
             archives_list: Lista ścieżek do archiwów
         """
-        if not self.unpaired_archives_list_widget:
+        # NAPRAWKA: Sprawdź czy UI manager jest w pełni zainicjalizowany
+        if (
+            not hasattr(self, "unpaired_archives_list")
+            or self.unpaired_archives_list is None
+        ):
+            logging.warning("UI manager not initialized yet - skipping archives update")
             return
+
+        if not self.unpaired_archives_list_widget:
+            # Spróbuj ponownie uzyskać referencję
+            if hasattr(self.unpaired_archives_list, "list_widget"):
+                self.unpaired_archives_list_widget = (
+                    self.unpaired_archives_list.list_widget
+                )
+            else:
+                logging.error("Cannot recover unpaired_archives_list_widget")
+                return
 
         self.unpaired_archives_list_widget.clear()
 
@@ -311,6 +326,7 @@ class UnpairedFilesUIManager:
             "pair_manually_button": self.pair_manually_button,
             "unpaired_archives_list_widget": self.unpaired_archives_list_widget,
             "unpaired_previews_list_widget": self.unpaired_previews_list_widget,
+            "unpaired_previews_layout": self.unpaired_previews_layout,
         }
 
     def connect_button_signals(self, callbacks: dict):
