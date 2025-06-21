@@ -35,6 +35,7 @@ class MetadataBufferManager:
         self._buffer_lock = threading.RLock()
         self._save_timer = None
         self._flush_callback: Optional[Callable] = None
+        self._is_shutdown = False
 
     def set_flush_callback(self, callback: Callable[[Dict], bool]):
         """Ustawia callback do wykonania flush operacji."""
@@ -42,6 +43,10 @@ class MetadataBufferManager:
 
     def add_changes(self, changes: Dict[str, Any]):
         """Dodaje zmiany do bufora thread-safe."""
+        if self._is_shutdown:
+            logger.warning("Buffer manager jest zamknięty - pomijam zmiany")
+            return
+
         with self._buffer_lock:
             self._changes_buffer.update(changes)
             self._schedule_save()
@@ -53,9 +58,11 @@ class MetadataBufferManager:
 
         # Wymuszaj zapis jeśli bufor jest za stary
         if buffer_age >= self._max_buffer_age:
-            logger.debug(
-                "Buffer jest za stary (%dms), wymuszam natychmiastowy zapis", buffer_age
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "Buffer jest za stary (%dms), wymuszam natychmiastowy zapis",
+                    buffer_age,
+                )
             self._flush_now()
             return
 
@@ -63,16 +70,18 @@ class MetadataBufferManager:
         if self._save_timer and buffer_age < self._max_buffer_age:
             self._save_timer.cancel()
 
-        # Zaplanuj nowy zapis
+        # Zaplanuj nowy zapis - POPRAWKA: Thread-safe timer
         delay_seconds = self._save_delay / 1000.0
         self._save_timer = threading.Timer(delay_seconds, self._flush_now)
+        self._save_timer.daemon = True  # POPRAWKA: Daemon thread dla bezpieczeństwa
         self._save_timer.start()
 
     def _flush_now(self):
         """Wykonuje natychmiastowy flush bufora."""
         with self._buffer_lock:
-            if not self._changes_buffer:
-                logger.debug("Buffer pusty - pomijam flush")
+            if not self._changes_buffer or self._is_shutdown:
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("Buffer pusty lub manager zamknięty - pomijam flush")
                 return
 
             if self._flush_callback:
@@ -81,9 +90,22 @@ class MetadataBufferManager:
                     if success:
                         self._changes_buffer.clear()
                         self._last_save_time = time.time()
-                        logger.debug("Buffer został pomyślnie opróżniony")
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug("Buffer został pomyślnie opróżniony")
+                    else:
+                        logger.warning(
+                            "Flush callback zwrócił False - zachowuję dane w buforze"
+                        )
+                except (OSError, IOError) as e:
+                    logger.error(f"Błąd I/O podczas flush bufora: {e}", exc_info=True)
+                except (ValueError, TypeError) as e:
+                    logger.error(
+                        f"Błąd walidacji podczas flush bufora: {e}", exc_info=True
+                    )
                 except Exception as e:
-                    logger.error(f"Błąd podczas flush bufora: {e}", exc_info=True)
+                    logger.error(
+                        f"Nieoczekiwany błąd podczas flush bufora: {e}", exc_info=True
+                    )
 
             if self._save_timer:
                 self._save_timer.cancel()
@@ -100,6 +122,7 @@ class MetadataBufferManager:
     def cleanup(self):
         """Cleanup resources."""
         with self._buffer_lock:
+            self._is_shutdown = True
             if self._save_timer:
                 self._save_timer.cancel()
                 self._save_timer = None
@@ -115,6 +138,7 @@ class MetadataRegistry:
     _instances: Dict[str, weakref.ReferenceType] = {}
     _instances_lock = threading.RLock()
     _cleanup_timer = None
+    _cleanup_interval = 60.0  # POPRAWKA: Konfigurowalny interval
 
     @classmethod
     def get_instance(cls, working_directory: str) -> "MetadataManager":
@@ -133,6 +157,8 @@ class MetadataRegistry:
                 else:
                     # Usuń martwe weak reference
                     del cls._instances[norm_dir]
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Usunięto martwe weak reference dla {norm_dir}")
 
             # Utwórz nową instancję
             new_instance = MetadataManager(working_directory)
@@ -155,15 +181,17 @@ class MetadataRegistry:
 
             for key in to_remove:
                 del cls._instances[key]
-                logger.debug(f"Usunięto martwe weak reference dla {key}")
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Usunięto martwe weak reference dla {key}")
 
     @classmethod
     def _schedule_cleanup(cls):
         """Planuje periodic cleanup martwych references."""
         if cls._cleanup_timer is None:
             cls._cleanup_timer = threading.Timer(
-                60.0, cls._periodic_cleanup
-            )  # Co minutę
+                cls._cleanup_interval, cls._periodic_cleanup
+            )
+            cls._cleanup_timer.daemon = True  # POPRAWKA: Daemon thread
             cls._cleanup_timer.start()
 
     @classmethod
@@ -183,6 +211,16 @@ class MetadataRegistry:
             if cls._cleanup_timer:
                 cls._cleanup_timer.cancel()
                 cls._cleanup_timer = None
+
+            # POPRAWKA: Explicit cleanup wszystkich instancji
+            for key, ref in list(cls._instances.items()):
+                instance = ref()
+                if instance is not None:
+                    try:
+                        instance.cleanup()
+                    except Exception as e:
+                        logger.warning(f"Błąd podczas cleanup instancji {key}: {e}")
+
             cls._instances.clear()
 
 
@@ -221,10 +259,17 @@ class MetadataManager:
             success = self.io.atomic_write(data)
             if success:
                 self.cache.invalidate()  # Invalidate cache po zapisie
-                logger.debug("Pomyślnie zapisano zmiany z bufora")
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("Pomyślnie zapisano zmiany z bufora")
             return success
+        except (OSError, IOError) as e:
+            logger.error(f"Błąd I/O podczas atomic write: {e}", exc_info=True)
+            return False
+        except (ValueError, TypeError) as e:
+            logger.error(f"Błąd walidacji podczas atomic write: {e}", exc_info=True)
+            return False
         except Exception as e:
-            logger.error(f"Błąd atomic write: {e}", exc_info=True)
+            logger.error(f"Nieoczekiwany błąd podczas atomic write: {e}", exc_info=True)
             return False
 
     @classmethod
@@ -258,10 +303,27 @@ class MetadataManager:
 
         # Wczytaj z pliku z thread safety
         with self._operation_lock:
-            metadata = self.io.load_metadata_from_file()
-            # Zaktualizuj cache
-            self.cache.set(metadata)
-            return metadata
+            try:
+                metadata = self.io.load_metadata_from_file()
+                # Zaktualizuj cache
+                self.cache.set(metadata)
+                return metadata
+            except (OSError, IOError) as e:
+                logger.error(
+                    f"Błąd I/O podczas ładowania metadanych: {e}", exc_info=True
+                )
+                return {}
+            except (ValueError, TypeError) as e:
+                logger.error(
+                    f"Błąd walidacji podczas ładowania metadanych: {e}", exc_info=True
+                )
+                return {}
+            except Exception as e:
+                logger.error(
+                    f"Nieoczekiwany błąd podczas ładowania metadanych: {e}",
+                    exc_info=True,
+                )
+                return {}
 
     def save_metadata(
         self,
@@ -279,23 +341,37 @@ class MetadataManager:
                     file_pairs_list, unpaired_archives, unpaired_previews
                 )
 
-                logger.debug(
-                    "Dodaję metadane do bufora: %s", self.io.get_metadata_path()
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        "Dodaję metadane do bufora: %s", self.io.get_metadata_path()
+                    )
 
                 # Użyj buffer manager zamiast direct write
                 self.buffer_manager.add_changes(metadata_to_save)
 
                 return True
 
+            except (ValueError, TypeError) as e:
+                logger.error(
+                    "Błąd walidacji podczas prepare metadata: %s", e, exc_info=True
+                )
+                return False
             except Exception as e:
-                logger.error("Błąd podczas prepare metadata: %s", e, exc_info=True)
+                logger.error(
+                    "Nieoczekiwany błąd podczas prepare metadata: %s", e, exc_info=True
+                )
                 return False
 
     def apply_metadata_to_file_pairs(self, file_pairs_list: List) -> bool:
         """Aplikuje metadane do listy par plików."""
-        metadata = self.load_metadata()
-        return self.operations.apply_metadata_to_file_pairs(metadata, file_pairs_list)
+        try:
+            metadata = self.load_metadata()
+            return self.operations.apply_metadata_to_file_pairs(
+                metadata, file_pairs_list
+            )
+        except Exception as e:
+            logger.error(f"Błąd podczas aplikowania metadanych: {e}", exc_info=True)
+            return False
 
     def remove_metadata_for_file(self, relative_archive_path: str) -> bool:
         """
@@ -333,20 +409,31 @@ class MetadataManager:
 
                     self.buffer_manager.add_changes(changes)
 
-                    logger.debug(
-                        "Zaplanowano usunięcie metadanych dla: %s",
-                        relative_archive_path,
-                    )
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            "Zaplanowano usunięcie metadanych dla: %s",
+                            relative_archive_path,
+                        )
                     return True
                 else:
-                    logger.debug(
-                        "Brak metadanych do usunięcia dla: %s", relative_archive_path
-                    )
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            "Brak metadanych do usunięcia dla: %s",
+                            relative_archive_path,
+                        )
                     return True
 
+            except (ValueError, TypeError) as e:
+                logger.error(
+                    "Błąd walidacji podczas usuwania metadanych dla %s: %s",
+                    relative_archive_path,
+                    e,
+                    exc_info=True,
+                )
+                return False
             except Exception as e:
                 logger.error(
-                    "Błąd podczas usuwania metadanych dla %s: %s",
+                    "Nieoczekiwany błąd podczas usuwania metadanych dla %s: %s",
                     relative_archive_path,
                     e,
                     exc_info=True,
@@ -365,14 +452,21 @@ class MetadataManager:
         Returns:
             Dict z metadanymi dla pliku lub None jeśli nie znaleziono
         """
-        metadata = self.load_metadata()
-        if (
-            "file_pairs" in metadata
-            and isinstance(metadata.get("file_pairs"), dict)
-            and relative_archive_path in metadata["file_pairs"]
-        ):
-            return metadata["file_pairs"][relative_archive_path]
-        return None
+        try:
+            metadata = self.load_metadata()
+            if (
+                "file_pairs" in metadata
+                and isinstance(metadata.get("file_pairs"), dict)
+                and relative_archive_path in metadata["file_pairs"]
+            ):
+                return metadata["file_pairs"][relative_archive_path]
+            return None
+        except Exception as e:
+            logger.error(
+                f"Błąd podczas pobierania metadanych dla {relative_archive_path}: {e}",
+                exc_info=True,
+            )
+            return None
 
     def has_special_folders(self) -> bool:
         """
@@ -381,17 +475,23 @@ class MetadataManager:
         Returns:
             True jeśli katalog zawiera specjalne foldery, False w przeciwnym razie
         """
-        metadata = self.load_metadata()
-        if (
-            "file_pairs" in metadata
-            and isinstance(metadata.get("file_pairs"), dict)
-            and "__metadata__" in metadata["file_pairs"]
-            and isinstance(metadata["file_pairs"]["__metadata__"], dict)
-        ):
-            return metadata["file_pairs"]["__metadata__"].get(
-                "has_special_folders", False
+        try:
+            metadata = self.load_metadata()
+            if (
+                "file_pairs" in metadata
+                and isinstance(metadata.get("file_pairs"), dict)
+                and "__metadata__" in metadata["file_pairs"]
+                and isinstance(metadata["file_pairs"]["__metadata__"], dict)
+            ):
+                return metadata["file_pairs"]["__metadata__"].get(
+                    "has_special_folders", False
+                )
+            return False
+        except Exception as e:
+            logger.error(
+                f"Błąd podczas sprawdzania specjalnych folderów: {e}", exc_info=True
             )
-        return False
+            return False
 
     def get_special_folders(self) -> List[str]:
         """
@@ -400,16 +500,22 @@ class MetadataManager:
         Returns:
             Lista nazw specjalnych folderów lub pusta lista
         """
-        metadata = self.load_metadata()
-        if (
-            "file_pairs" in metadata
-            and isinstance(metadata.get("file_pairs"), dict)
-            and "__metadata__" in metadata["file_pairs"]
-            and isinstance(metadata["file_pairs"]["__metadata__"], dict)
-            and "special_folders" in metadata["file_pairs"]["__metadata__"]
-        ):
-            return metadata["file_pairs"]["__metadata__"]["special_folders"]
-        return []
+        try:
+            metadata = self.load_metadata()
+            if (
+                "file_pairs" in metadata
+                and isinstance(metadata.get("file_pairs"), dict)
+                and "__metadata__" in metadata["file_pairs"]
+                and isinstance(metadata["file_pairs"]["__metadata__"], dict)
+                and "special_folders" in metadata["file_pairs"]["__metadata__"]
+            ):
+                return metadata["file_pairs"]["__metadata__"]["special_folders"]
+            return []
+        except Exception as e:
+            logger.error(
+                f"Błąd podczas pobierania specjalnych folderów: {e}", exc_info=True
+            )
+            return []
 
     def save_file_pair_metadata(self, file_pair, working_directory: str = None) -> bool:
         """
@@ -447,14 +553,21 @@ class MetadataManager:
 
                 self.buffer_manager.add_changes(changes)
 
-                logger.debug(
-                    f"Zaplanowano zapis metadanych dla: {relative_archive_path}"
-                )
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Zaplanowano zapis metadanych dla: {relative_archive_path}"
+                    )
                 return True
 
+            except (ValueError, TypeError) as e:
+                logger.error(
+                    f"Błąd walidacji podczas zapisywania metadanych dla pary: {e}",
+                    exc_info=True,
+                )
+                return False
             except Exception as e:
                 logger.error(
-                    f"Błąd podczas zapisywania metadanych dla pary: {e}",
+                    f"Nieoczekiwany błąd podczas zapisywania metadanych dla pary: {e}",
                     exc_info=True,
                 )
                 return False
@@ -469,15 +582,22 @@ class MetadataManager:
 
     def backup_metadata(self, backup_suffix: str = ".backup") -> bool:
         """Tworzy kopię zapasową pliku metadanych."""
-        return self.io.backup_metadata_file(backup_suffix)
+        try:
+            return self.io.backup_metadata_file(backup_suffix)
+        except Exception as e:
+            logger.error(f"Błąd podczas tworzenia backup: {e}", exc_info=True)
+            return False
 
     def cleanup(self):
         """
         NOWY: Cleanup resources.
         Ważne dla proper resource management.
         """
-        if hasattr(self, "buffer_manager"):
-            self.buffer_manager.cleanup()
+        try:
+            if hasattr(self, "buffer_manager"):
+                self.buffer_manager.cleanup()
+        except Exception as e:
+            logger.warning(f"Błąd podczas cleanup: {e}")
 
     def __del__(self):
         """Destructor - cleanup resources."""

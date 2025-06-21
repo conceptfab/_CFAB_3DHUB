@@ -56,20 +56,20 @@ Analiza będzie przeprowadzana zgodnie z priorytetami, od ⚫⚫⚫⚫ do 🟢. 
 
 ### 📁 `src/logic/` (Logika biznesowa)
 
-| Plik                              | Priorytet | Opis problemu/potrzeby                                                                                     | Zależności               | Szacowany Zakres |
-| --------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------- | ------------------------ | ---------------- |
-| `file_operations.py`              | ⚫⚫⚫⚫  | [W TRAKCIE ANALIZY] Operacje na plikach, atomicity, batch, thread safety.                                  | `shutil`, `os`           | Wysoki           |
-| `file_pairing.py`                 | 🔴🔴🔴    | Kluczowy algorytm parowania plików. Wydajność jest krytyczna.                                              | `os`, `app_config`       | Wysoki           |
-| `filter_logic.py`                 | 🟡🟡      | Logika filtrowania w galerii.                                                                              | `FilePair`               | Średni           |
-| `metadata_manager.py`             | ⚫⚫⚫⚫  | [Zrefaktoryzowano] Był `metadata_manager_old.py`. Nowa implementacja z `metadata_core` wymaga weryfikacji. | `metadata.metadata_core` | Wysoki           |
-| `scanner.py`                      | ⚫⚫⚫⚫  | [W TRAKCIE ANALIZY] Skanowanie folderów, wydajność, thread safety.                                         | `os`, `file_pairing`     | Wysoki           |
-| `scanner_core.py`                 | 🔴🔴🔴    | Rdzeń skanera. Powiązany z `scanner.py`.                                                                   | `os`, `app_config`       | Wysoki           |
-| `cache_monitor.py`                | 🟢        | Monitorowanie cache. Prosta logika.                                                                        | -                        | Niski            |
-| `scanner_cache.py`                | 🟡🟡      | Cache dla skanera. Może być uproszczony.                                                                   | `json`                   | Średni           |
-| `metadata/metadata_core.py`       | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] Rdzeń systemu metadanych. Thread safety, memory leaks, performance.      | `threading`, `weakref`   | Bardzo Wysoki    |
-| `metadata/metadata_io.py`         | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] Operacje I/O metadanych, atomic write, walidacja.                        | `filelock`, `json`       | Bardzo Wysoki    |
-| `metadata/metadata_operations.py` | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] Operacje biznesowe na metadanych, batch, path logic.                     | `os`, `path_utils`       | Bardzo Wysoki    |
-| `metadata/metadata_validator.py`  | ⚫⚫⚫⚫  | [W TRAKCIE ANALIZY] Walidacja metadanych, edge cases, duże pliki.                                          | `logging`, `typing`      | Bardzo Wysoki    |
+| Plik                              | Priorytet | Opis problemu/potrzeby                                                                                                              | Zależności               | Szacowany Zakres |
+| --------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ---------------- |
+| `file_operations.py`              | ⚫⚫⚫⚫  | [W TRAKCIE ANALIZY] Operacje na plikach, atomicity, batch, thread safety.                                                           | `shutil`, `os`           | Wysoki           |
+| `file_pairing.py`                 | 🔴🔴🔴    | Kluczowy algorytm parowania plików. Wydajność jest krytyczna.                                                                       | `os`, `app_config`       | Wysoki           |
+| `filter_logic.py`                 | 🟡🟡      | Logika filtrowania w galerii.                                                                                                       | `FilePair`               | Średni           |
+| `metadata_manager.py`             | ⚫⚫⚫⚫  | [Zrefaktoryzowano] Był `metadata_manager_old.py`. Nowa implementacja z `metadata_core` wymaga weryfikacji.                          | `metadata.metadata_core` | Wysoki           |
+| `scanner.py`                      | ⚫⚫⚫⚫  | [W TRAKCIE ANALIZY] Skanowanie folderów, wydajność, thread safety.                                                                  | `os`, `file_pairing`     | Wysoki           |
+| `scanner_core.py`                 | 🔴🔴🔴    | Rdzeń skanera. Powiązany z `scanner.py`.                                                                                            | `os`, `app_config`       | Wysoki           |
+| `cache_monitor.py`                | 🟢        | Monitorowanie cache. Prosta logika.                                                                                                 | -                        | Niski            |
+| `scanner_cache.py`                | 🟡🟡      | Cache dla skanera. Może być uproszczony.                                                                                            | `json`                   | Średni           |
+| `metadata/metadata_core.py`       | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅ Rdzeń systemu metadanych. Thread safety, memory leaks, performance. | `threading`, `weakref`   | Bardzo Wysoki    |
+| `metadata/metadata_io.py`         | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] Operacje I/O metadanych, atomic write, walidacja.                                                 | `filelock`, `json`       | Bardzo Wysoki    |
+| `metadata/metadata_operations.py` | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] Operacje biznesowe na metadanych, batch, path logic.                                              | `os`, `path_utils`       | Bardzo Wysoki    |
+| `metadata/metadata_validator.py`  | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] Walidacja metadanych, brak walidacji zakresów, nadmierne logowanie.                               | `logging`, `typing`      | Bardzo Wysoki    |
 
 ### 📁 `src/ui/` (Interfejs użytkownika)
 
@@ -92,13 +92,13 @@ Analiza będzie przeprowadzana zgodnie z priorytetami, od ⚫⚫⚫⚫ do 🟢. 
 
 ### ✅ Przeanalizowane pliki:
 
-1. **`src/logic/metadata/metadata_core.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
+1. **`src/logic/metadata/metadata_core.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
 2. **`src/logic/metadata/metadata_io.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
 3. **`src/logic/metadata/metadata_operations.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
+4. **`src/logic/metadata/metadata_validator.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
 
 ### 🔄 W trakcie analizy:
 
-4. **`src/logic/metadata/metadata_validator.py`** - 🔄 [W TRAKCIE ANALIZY]
 5. **`src/logic/scanner.py`** - 🔄 [W TRAKCIE ANALIZY]
 6. **`src/logic/file_operations.py`** - 🔄 [W TRAKCIE ANALIZY]
 7. **`src/ui/main_window/main_window.py`** - 🔄 [W TRAKCIE ANALIZY]
