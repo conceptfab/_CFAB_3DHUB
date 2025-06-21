@@ -1,0 +1,41 @@
+# Konfiguracja vulture - wykrywanie martwego kodu w formacie TOML
+
+[tool.vulture]
+# Ścieżki do skanowania
+paths = ["src"]
+
+# Ignorowane ścieżki
+exclude = [
+    "__pycache__",
+    "*.pyc", 
+    "venv",
+    ".git",
+    "AUDYT",
+    "tests"
+]
+
+# Ignorowane wzorce funkcji/metod
+ignore_names = [
+    "*_event",
+    "*Event", 
+    "*Callback",
+    "*callback",
+    "setupUi",
+    "retranslateUi", 
+    "closeEvent",
+    "resizeEvent",
+    "paintEvent",
+    "mousePressEvent",
+    "mouseReleaseEvent", 
+    "mouseMoveEvent",
+    "keyPressEvent",
+    "showEvent",
+    "hideEvent",
+    "main"
+]
+
+# Ignorowane rozszerzenia plików
+ignore_decorators = ["@property", "@staticmethod", "@classmethod"]
+
+# Minimalna pewność (0-100)
+min_confidence = 60

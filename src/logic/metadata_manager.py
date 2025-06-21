@@ -1,6 +1,9 @@
 """
-Zarządzanie metadanymi aplikacji, takimi jak "ulubione" oraz inne ustawienia.
-Metadane są przechowywane w pliku JSON w folderze `.app_metadata`.
+Legacy wrapper dla MetadataManager CFAB_3DHUB.
+🚀 ETAP 3: Refaktoryzacja MetadataManager - backward compatibility
+
+Ten plik zapewnia backward compatibility dla istniejącego kodu.
+Wszystkie funkcje delegują do nowych komponentów w pakiecie metadata/.
 """
 
 import json
@@ -8,11 +11,68 @@ import logging
 import os
 import shutil
 import tempfile
-from typing import Any, Dict, List
+import threading
+import time
+from typing import Any, Dict, List, Optional
 
-# Stałe związane z metadanymi
+from filelock import FileLock, Timeout
+
+# Import normalizacji ścieżek
+from src.utils.path_utils import normalize_path
+
+# Import nowej implementacji
+from .metadata import MetadataManager
+
+# Stałe związane z metadanymi - zachowane dla compatibility
 METADATA_DIR_NAME = ".app_metadata"
 METADATA_FILE_NAME = "metadata.json"
+LOCK_FILE_NAME = "metadata.lock"
+LOCK_TIMEOUT = 0.5
+MIN_THUMBNAIL_WIDTH = 80
+
+# Konfiguracja loggera dla tego modułu
+logger = logging.getLogger(__name__)
+
+# Singleton instance
+_instance = None
+_instance_lock = threading.RLock()
+
+
+def get_instance() -> "MetadataManager":
+    """
+    Zwraca instancję singleton MetadataManager.
+
+    Returns:
+        MetadataManager: Instancja singleton.
+    """
+    global _instance
+    with _instance_lock:
+        if _instance is None:
+            _instance = MetadataManager(working_directory=".")
+        return _instance
+
+
+# Legacy functions - delegated to MetadataManager for backward compatibility
+def load_metadata(working_directory: str) -> Dict[str, Any]:
+    """
+    Legacy function: Use MetadataManager.get_instance(dir).load_metadata()
+    Maintained for backward compatibility.
+    """
+    return _load_metadata_direct(working_directory)
+
+
+def save_metadata(
+    working_directory: str,
+    file_pairs_list: List,
+    unpaired_archives: List[str],
+    unpaired_previews: List[str],
+) -> bool:
+    """
+    Legacy function: Use MetadataManager.get_instance(dir).save_metadata()
+    Maintained for backward compatibility.
+    """
+    manager = MetadataManager.get_instance(working_directory)
+    return manager.save_metadata(file_pairs_list, unpaired_archives, unpaired_previews)
 
 
 def get_metadata_path(working_directory: str) -> str:
@@ -25,240 +85,240 @@ def get_metadata_path(working_directory: str) -> str:
     Returns:
         str: Pełna ścieżka do pliku metadanych
     """
-    metadata_dir = os.path.join(working_directory, METADATA_DIR_NAME)
-    return os.path.join(metadata_dir, METADATA_FILE_NAME)
+    # Normalizujemy ścieżkę katalogu roboczego
+    normalized_working_dir = normalize_path(working_directory)
+    metadata_dir = os.path.join(normalized_working_dir, METADATA_DIR_NAME)
+    return normalize_path(os.path.join(metadata_dir, METADATA_FILE_NAME))
 
 
-def get_relative_path(absolute_path: str, base_path: str) -> str:
+def get_lock_path(working_directory: str) -> str:
     """
-    Konwertuje ścieżkę absolutną na względną względem podanej ścieżki bazowej.
-
-    Args:
-        absolute_path (str): Ścieżka absolutna do konwersji
-        base_path (str): Ścieżka bazowa, względem której tworzona jest ścieżka względna
-
-    Returns:
-        str: Ścieżka względna
-    """
-    try:
-        # Upewniamy się, że obie ścieżki są absolutne i znormalizowane
-        abs_path = os.path.abspath(absolute_path)
-        base = os.path.abspath(base_path)
-
-        # Konwertujemy na ścieżkę względną
-        rel_path = os.path.relpath(abs_path, base)
-        return rel_path
-    except Exception as e:
-        logging.error(
-            f"Błąd konwersji ścieżki {absolute_path} względem {base_path}: {e}"
-        )
-        # W razie problemu zwracamy ścieżkę oryginalną
-        return absolute_path
-
-
-def get_absolute_path(relative_path: str, base_path: str) -> str:
-    """
-    Konwertuje ścieżkę względną na absolutną względem podanej ścieżki bazowej.
-
-    Args:
-        relative_path (str): Ścieżka względna do konwersji
-        base_path (str): Ścieżka bazowa, względem której rozwiązywana jest ścieżka względna
-
-    Returns:
-        str: Ścieżka absolutna
-    """
-    try:
-        # Łączymy ścieżkę bazową i względną, a następnie normalizujemy
-        abs_path = os.path.normpath(os.path.join(base_path, relative_path))
-        return abs_path
-    except Exception as e:
-        logging.error(
-            f"Błąd konwersji ścieżki względnej {relative_path} względem {base_path}: {e}"
-        )
-        # W razie problemu zwracamy None
-        return None
-
-
-def load_metadata(working_directory: str) -> Dict[str, Any]:
-    """
-    Wczytuje metadane z pliku JSON w podanym folderze roboczym.
-
-    Args:
-        working_directory (str): Ścieżka do folderu roboczego
-
-    Returns:
-        Dict[str, Any]: Słownik z metadanymi. Zawsze zawiera klucze
-                        'file_pairs', 'unpaired_archives', 'unpaired_previews'.
-    """
-    metadata_path = get_metadata_path(working_directory)
-
-    # Domyślna struktura metadanych
-    default_metadata = {
-        "file_pairs": {},  # Dane par plików, klucz to względna ścieżka archiwum
-        "unpaired_archives": [],  # Lista względnych ścieżek do niesparowanych archiwów
-        "unpaired_previews": [],  # Lista względnych ścieżek do niesparowanych podglądów
-    }
-
-    # Jeśli plik nie istnieje, zwracamy domyślne metadane
-    if not os.path.exists(metadata_path):
-        logging.debug(f"Plik metadanych nie istnieje: {metadata_path}")
-        return default_metadata
-
-    try:
-        # Wczytujemy dane z pliku JSON
-        with open(metadata_path, "r", encoding="utf-8") as file:
-            metadata = json.load(file)
-            logging.debug(f"Wczytano metadane z {metadata_path}")
-
-            # Uzupełnienie o brakujące klucze dla niesparowanych plików
-            if "unpaired_archives" not in metadata:
-                metadata["unpaired_archives"] = []
-            if "unpaired_previews" not in metadata:
-                metadata["unpaired_previews"] = []
-
-            # Upewnienie się, że klucz file_pairs istnieje
-            if "file_pairs" not in metadata:
-                metadata["file_pairs"] = {}
-
-            return metadata
-    except json.JSONDecodeError as e:
-        logging.error(f"Błąd parsowania JSON w pliku metadanych {metadata_path}: {e}")
-        return default_metadata  # Zwracamy domyślną strukturę w przypadku błędu
-    except Exception as e:
-        logging.error(f"Błąd wczytywania metadanych z {metadata_path}: {e}")
-        return default_metadata  # Zwracamy domyślną strukturę w przypadku błędu
-
-
-def save_metadata(
-    working_directory: str,
-    file_pairs_list: List,
-    unpaired_archives: List[str],
-    unpaired_previews: List[str],
-) -> bool:
-    """
-    Zapisuje metadane do pliku JSON w podanym folderze roboczym.
-    Obejmuje to dane sparowanych plików oraz listy niesparowanych archiwów i podglądów.
+    Zwraca pełną ścieżkę do pliku blokady metadanych.
 
     Args:
         working_directory (str): Ścieżka do folderu roboczego.
-        file_pairs_list (List): Lista obiektów FilePair, których metadane mają być zapisane.
-        unpaired_archives (List[str]): Lista ścieżek absolutnych do niesparowanych archiwów.
-        unpaired_previews (List[str]): Lista ścieżek absolutnych do niesparowanych podglądów.
 
     Returns:
-        bool: True jeśli zapisano pomyślnie, False w przypadku błędu.
+        str: Pełna ścieżka do pliku blokady.
     """
-    # Utwórz folder metadanych jeśli nie istnieje
-    metadata_dir = os.path.join(working_directory, METADATA_DIR_NAME)
-    metadata_path = os.path.join(metadata_dir, METADATA_FILE_NAME)
+    normalized_working_dir = normalize_path(working_directory)
+    metadata_dir = os.path.join(normalized_working_dir, METADATA_DIR_NAME)
+    return normalize_path(os.path.join(metadata_dir, LOCK_FILE_NAME))
 
-    try:
-        # Tworzenie katalogu metadanych, jeśli nie istnieje
-        os.makedirs(metadata_dir, exist_ok=True)
 
-        # Wczytanie istniejących metadanych, jeśli są dostępne
-        current_metadata = load_metadata(working_directory)
+def get_relative_path(absolute_path: str, base_path: str) -> Optional[str]:
+    """
+    Legacy function: Use MetadataOperations.get_relative_path()
+    Maintained for backward compatibility.
+    """
+    manager = MetadataManager.get_instance(base_path)
+    return manager.operations.get_relative_path(absolute_path, base_path)
 
-        # Zapewnienie, że 'file_pairs' istnieje w current_metadata, nawet jeśli load_metadata zwróciło domyślne
-        if "file_pairs" not in current_metadata:
-            current_metadata["file_pairs"] = {}
 
-        # Przygotowanie danych do zapisu dla sparowanych plików
-        for file_pair in file_pairs_list:
-            # Konwersja ścieżki absolutnej na względną
-            relative_archive_path = get_relative_path(
-                file_pair.archive_path, working_directory
-            )
+def get_absolute_path(relative_path: str, base_path: str) -> Optional[str]:
+    """
+    Legacy function: Use MetadataOperations.get_absolute_path()
+    Maintained for backward compatibility.
+    """
+    manager = MetadataManager.get_instance(base_path)
+    return manager.operations.get_absolute_path(relative_path, base_path)
 
-            # Zapisujemy tylko te właściwości, które chcemy zachować między sesjami
-            pair_metadata = {
-                "is_favorite": file_pair.is_favorite,
-                "stars": file_pair.get_stars(),
-                "color_tag": file_pair.get_color_tag(),
-            }
 
-            # Aktualizujemy istniejące metadane
-            current_metadata["file_pairs"][relative_archive_path] = pair_metadata
+def _validate_metadata_structure(metadata: Dict[str, Any]) -> bool:
+    """
+    Legacy function: Use MetadataValidator.validate_metadata_structure()
+    Maintained for backward compatibility.
+    """
+    from .metadata.metadata_validator import MetadataValidator
 
-        # Przygotowanie i zapis list niesparowanych plików (jako ścieżki względne)
-        current_metadata["unpaired_archives"] = [
-            get_relative_path(p, working_directory) for p in unpaired_archives
-        ]
-        current_metadata["unpaired_previews"] = [
-            get_relative_path(p, working_directory) for p in unpaired_previews
-        ]
+    return MetadataValidator.validate_metadata_structure(metadata)
 
-        # Zapisujemy do pliku tymczasowego, a potem zastępujemy docelowy
-        # dla bezpieczeństwa (w przypadku przerwania zapisu)
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, encoding="utf-8"
-        ) as temp_file:
-            json.dump(current_metadata, temp_file, ensure_ascii=False, indent=4)
 
-        # Zastępujemy docelowy plik tymczasowym
-        shutil.move(temp_file.name, metadata_path)
-        logging.debug(f"Zapisano metadane do {metadata_path}")
-        return True
+def _load_metadata_direct(working_directory: str) -> Dict[str, Any]:
+    """
+    Direct metadata loading without caching - used by legacy load_metadata function.
 
-    except Exception as e:
-        logging.error(f"Błąd zapisywania metadanych do {metadata_path}: {e}")
-        return False
+    Args:
+        working_directory (str): Ścieżka do folderu roboczego.
+
+    Returns:
+        Dict[str, Any]: Słownik metadanych lub domyślna struktura w przypadku błędu.
+    """
+    manager = MetadataManager.get_instance(working_directory)
+    return manager.io.load_metadata_from_file()
 
 
 def apply_metadata_to_file_pairs(working_directory: str, file_pairs_list: List) -> bool:
     """
-    Aktualizuje obiekty FilePair na podstawie metadanych z pliku JSON.
+    Legacy function: Use MetadataManager.get_instance(dir).apply_metadata_to_file_pairs()
+    Maintained for backward compatibility.
 
     Args:
-        working_directory (str): Ścieżka do folderu roboczego
-        file_pairs_list (List): Lista obiektów FilePair do aktualizacji
+        working_directory (str): Ścieżka do folderu roboczego.
+        file_pairs_list (List): Lista obiektów FilePair do aktualizacji.
 
     Returns:
-        bool: True jeśli aktualizacja przebiegła pomyślnie, False w przypadku błędu
+        bool: True jeśli aktualizacja przebiegła pomyślnie, False w przypadku błędu.
+    """
+    manager = MetadataManager.get_instance(working_directory)
+    return manager.apply_metadata_to_file_pairs(file_pairs_list)
+
+
+def _apply_metadata_to_file_pairs_direct(
+    metadata: Dict[str, Any], file_pairs_list: List, working_directory: str
+) -> bool:
+    """
+    Direct implementation of metadata application - used by legacy function.
+    """
+    manager = MetadataManager.get_instance(working_directory)
+    return manager.operations.apply_metadata_to_file_pairs(metadata, file_pairs_list)
+
+
+def save_file_pair_metadata(file_pair, working_directory: str) -> bool:
+    """
+    Legacy function: Use MetadataManager.get_instance(dir).save_file_pair_metadata()
+    Maintained for backward compatibility.
+
+    Args:
+        file_pair: Obiekt FilePair do zapisania metadanych
+        working_directory: Katalog roboczy
+
+    Returns:
+        bool: True jeśli zapisano pomyślnie, False w przypadku błędu
+    """
+    manager = MetadataManager.get_instance(working_directory)
+    return manager.save_file_pair_metadata(file_pair, working_directory)
+
+
+def remove_metadata_for_file(
+    working_directory: str, relative_archive_path: str
+) -> bool:
+    """
+    Legacy function: Use MetadataManager.get_instance(dir).remove_metadata_for_file()
+    Maintained for backward compatibility.
+    """
+    manager = MetadataManager.get_instance(working_directory)
+    return manager.remove_metadata_for_file(relative_archive_path)
+
+
+def get_metadata_for_relative_path(
+    working_directory: str, relative_archive_path: str
+) -> Optional[Dict[str, Any]]:
+    """
+    Legacy function: Use MetadataManager.get_instance(dir).get_metadata_for_relative_path()
+    Maintained for backward compatibility.
+    """
+    manager = MetadataManager.get_instance(working_directory)
+    return manager.get_metadata_for_relative_path(relative_archive_path)
+
+
+def get_special_folders(directory_path: str) -> List[str]:
+    """
+    Pobiera listę specjalnych folderów z metadanych.
+
+    Args:
+        directory_path: Ścieżka do katalogu
+
+    Returns:
+        Lista nazw specjalnych folderów
+    """
+    manager = MetadataManager.get_instance(directory_path)
+    return manager.metadata_core.get_special_folders(directory_path)
+
+
+def save_special_folders(directory_path: str, special_folders: List[str]) -> bool:
+    """
+    Zapisuje listę specjalnych folderów do metadanych.
+
+    Args:
+        directory_path: Ścieżka do katalogu
+        special_folders: Lista nazw specjalnych folderów
+
+    Returns:
+        True jeśli zapis się powiódł
+    """
+    manager = MetadataManager.get_instance(directory_path)
+    return manager.metadata_core.save_special_folders(directory_path, special_folders)
+
+
+def add_special_folder(directory_path: str, folder_name: str) -> bool:
+    """
+    Dodaje folder specjalny do metadanych dla podanego katalogu.
+
+    Args:
+        directory_path (str): Ścieżka do katalogu, dla którego dodajemy folder specjalny
+        folder_name (str): Nazwa folderu specjalnego
+
+    Returns:
+        bool: True jeśli operacja się powiodła, False w przeciwnym razie
     """
     try:
-        # Wczytujemy metadane
-        metadata = load_metadata(working_directory)
+        # Pobierz instancję managera metadanych
+        manager = get_instance()
 
-        # Sprawdzamy, czy są jakiekolwiek metadane dla par plików
-        if "file_pairs" not in metadata or not metadata["file_pairs"]:
-            logging.debug("Brak metadanych par plików do zastosowania")
-            return True
+        # Utwórz ścieżkę do pliku metadanych
+        metadata_dir = os.path.join(directory_path, METADATA_DIR_NAME)
+        metadata_path = os.path.join(metadata_dir, METADATA_FILE_NAME)
 
-        # Aktualizujemy obiekty FilePair
-        for file_pair in file_pairs_list:
-            # Konwersja ścieżki absolutnej na względną dla dopasowania
-            relative_archive_path = get_relative_path(
-                file_pair.archive_path, working_directory
+        # Utwórz katalog metadanych, jeśli nie istnieje
+        if not os.path.exists(metadata_dir):
+            os.makedirs(metadata_dir, exist_ok=True)
+            logging.info(f"Utworzono katalog metadanych: {metadata_dir}")
+
+        # Wczytaj istniejące metadane lub utwórz nowe
+        metadata = {}
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+            except Exception as e:
+                logging.error(f"Błąd wczytywania metadanych: {e}")
+                return False
+
+        # Dodaj lub zaktualizuj sekcję special_folders
+        if "special_folders" not in metadata:
+            metadata["special_folders"] = []
+
+        # Sprawdź, czy folder już istnieje
+        folder_exists = False
+        for folder in metadata["special_folders"]:
+            if folder.get("name") == folder_name:
+                folder_exists = True
+                break
+
+        # Dodaj folder, jeśli nie istnieje
+        if not folder_exists:
+            folder_path = os.path.join(directory_path, folder_name)
+            metadata["special_folders"].append(
+                {
+                    "name": folder_name,
+                    "path": folder_path,
+                    "type": "tex",  # Typ folderu (tex, textures, itp.)
+                }
             )
+            logging.info(f"Dodano folder specjalny {folder_name} do metadanych")
 
-            # Sprawdzamy, czy istnieją metadane dla tego pliku
-            if relative_archive_path in metadata["file_pairs"]:
-                pair_metadata = metadata["file_pairs"][relative_archive_path]
-
-                # Ustawiamy status "ulubiony", jeśli istnieje w metadanych
-                if "is_favorite" in pair_metadata:
-                    file_pair.is_favorite = pair_metadata["is_favorite"]
-                    logging.debug(
-                        f"Zastosowano status 'ulubiony' dla {file_pair.get_base_name()}: {file_pair.is_favorite}"
-                    )
-
-                # Ustawiamy liczbę gwiazdek, jeśli istnieje w metadanych
-                if "stars" in pair_metadata:
-                    file_pair.set_stars(pair_metadata["stars"])
-                    logging.debug(
-                        f"Zastosowano gwiazdki dla {file_pair.get_base_name()}: {file_pair.get_stars()}"
-                    )
-
-                # Ustawiamy tag kolorystyczny, jeśli istnieje w metadanych
-                if "color_tag" in pair_metadata:
-                    file_pair.set_color_tag(pair_metadata["color_tag"])
-                    logging.debug(
-                        f"Zastosowano tag koloru dla {file_pair.get_base_name()}: {file_pair.get_color_tag()}"
-                    )
+        # Zapisz metadane
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+            logging.info(f"Zapisano metadane z folderem specjalnym: {metadata_path}")
 
         return True
-
     except Exception as e:
-        logging.error(f"Błąd stosowania metadanych do par plików: {e}")
+        logging.error(f"Błąd dodawania folderu specjalnego: {e}", exc_info=True)
         return False
+
+
+def remove_special_folder(directory_path: str, folder_name: str) -> bool:
+    """
+    Usuwa specjalny folder z metadanych.
+
+    Args:
+        directory_path: Ścieżka do katalogu
+        folder_name: Nazwa specjalnego folderu
+
+    Returns:
+        True jeśli usunięcie się powiodło
+    """
+    manager = MetadataManager.get_instance(directory_path)
+    return manager.metadata_core.remove_special_folder(directory_path, folder_name)

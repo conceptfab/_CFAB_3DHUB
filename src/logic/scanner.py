@@ -1,119 +1,199 @@
 """
 Moduł odpowiedzialny za skanowanie folderów i parowanie plików.
+
+Ten moduł zawiera publiczne API do skanowania katalogów w poszukiwaniu plików
+oraz ich łączenia w pary (archiwa + podglądy).
+
+UWAGA: Ten moduł jest fasadą publicznego API. Implementacja podzielona na:
+- scanner_core.py - podstawowe funkcje skanowania
+- scanner_cache.py - zarządzanie cache
+- file_pairing.py - logika parowania plików
 """
 
 import logging
-import os
-from collections import defaultdict
-from typing import List, Tuple
+from functools import wraps
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
-from src import app_config  # Importujemy moduł konfiguracji
+from src.logic.file_pairing import ARCHIVE_EXTENSIONS, PREVIEW_EXTENSIONS
+from src.logic.file_pairing import create_file_pairs as _create_file_pairs
+from src.logic.file_pairing import identify_unpaired_files as _identify_unpaired_files
+from src.logic.scanner_cache import clear_cache as _clear_cache
+from src.logic.scanner_core import ScanningInterrupted
+from src.logic.scanner_core import collect_files_streaming as _collect_files_streaming
+from src.logic.scanner_core import get_scan_statistics as _get_scan_statistics
+from src.logic.scanner_core import scan_folder_for_pairs as _scan_folder_for_pairs
 from src.models.file_pair import FilePair
-from src.utils.path_utils import normalize_path
+
+__all__ = [
+    "collect_files_streaming",
+    "collect_files",
+    "create_file_pairs",
+    "identify_unpaired_files",
+    "scan_folder_for_pairs",
+    "clear_cache",
+    "get_scan_statistics",
+    "ARCHIVE_EXTENSIONS",
+    "PREVIEW_EXTENSIONS",
+    "ScanningInterrupted",
+]
 
 logger = logging.getLogger(__name__)
 
-# Używamy definicji rozszerzeń z centralnego pliku konfiguracyjnego
-ARCHIVE_EXTENSIONS = set(app_config.SUPPORTED_ARCHIVE_EXTENSIONS)
-PREVIEW_EXTENSIONS = set(app_config.SUPPORTED_PREVIEW_EXTENSIONS)
+
+def _log_scanner_operation(operation_name: str):
+    """Dekorator do logowania operacji skanera."""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            logger.debug(f"Wywołanie {operation_name}: {func.__name__}")
+            try:
+                result = func(*args, **kwargs)
+                logger.debug(f"Zakończono {operation_name}: {func.__name__}")
+                return result
+            except Exception as e:
+                logger.error(f"Błąd w {operation_name}: {e}")
+                raise
+
+        return wrapper
+
+    return decorator
 
 
+@_log_scanner_operation("skanowanie plików")
+def collect_files_streaming(
+    directory: str,
+    max_depth: int = -1,
+    interrupt_check: Optional[Callable[[], bool]] = None,
+    force_refresh: bool = False,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> Dict[str, List[str]]:
+    """
+    Zbiera wszystkie pliki w katalogu z streaming progress.
+
+    Args:
+        directory: Ścieżka do katalogu do przeskanowania
+        max_depth: Maksymalna głębokość skanowania (-1 = bez limitu)
+        interrupt_check: Funkcja sprawdzająca czy przerwać skanowanie
+        force_refresh: Czy wymusić odświeżenie cache
+        progress_callback: Callback dla raportowania postępu
+
+    Returns:
+        Dict[str, List[str]]: Mapa rozszerzeń na listy plików
+
+    Raises:
+        ScanningInterrupted: Gdy skanowanie zostało przerwane
+        OSError: Problemy z dostępem do systemu plików
+    """
+    return _collect_files_streaming(
+        directory=directory,
+        max_depth=max_depth,
+        interrupt_check=interrupt_check,
+        force_refresh=force_refresh,
+        progress_callback=progress_callback,
+    )
+
+
+# Alias dla kompatybilności wstecznej - NIE UŻYWAĆ w nowym kodzie
+collect_files = collect_files_streaming
+
+
+@_log_scanner_operation("tworzenie par plików")
+def create_file_pairs(
+    file_map: Dict[str, List[str]],
+    base_directory: str,
+    pair_strategy: str = "first_match",
+) -> Tuple[List[FilePair], Set[str]]:
+    """
+    Tworzy pary plików na podstawie zebranych danych.
+
+    Args:
+        file_map: Mapa rozszerzeń na listy plików
+        base_directory: Bazowy katalog dla par
+        pair_strategy: Strategia parowania ("first_match", "best_match")
+
+    Returns:
+        Tuple[List[FilePair], Set[str]]: Pary plików i zestaw przetworzonych plików
+
+    Raises:
+        ValueError: Nieprawidłowa strategia parowania
+    """
+    return _create_file_pairs(
+        file_map=file_map,
+        base_directory=base_directory,
+        pair_strategy=pair_strategy,
+    )
+
+
+@_log_scanner_operation("identyfikacja niesparowanych plików")
+def identify_unpaired_files(
+    file_map: Dict[str, List[str]],
+    processed_files: Set[str],
+) -> Tuple[List[str], List[str]]:
+    """
+    Identyfikuje niesparowane pliki.
+
+    Args:
+        file_map: Mapa rozszerzeń na listy plików
+        processed_files: Zestaw już przetworzonych plików
+
+    Returns:
+        Tuple[List[str], List[str]]: Niesparowane archiwa i podglądy
+    """
+    return _identify_unpaired_files(file_map, processed_files)
+
+
+@_log_scanner_operation("pełne skanowanie z parowaniem")
 def scan_folder_for_pairs(
     directory: str,
+    max_depth: int = -1,
+    use_cache: bool = True,
+    pair_strategy: str = "first_match",
+    interrupt_check: Optional[Callable[[], bool]] = None,
+    force_refresh_cache: bool = False,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> Tuple[List[FilePair], List[str], List[str]]:
     """
     Skanuje podany katalog i jego podkatalogi w poszukiwaniu par plików.
 
     Args:
-        directory (str): Ścieżka do katalogu do przeskanowania.
+        directory: Ścieżka do katalogu do przeskanowania
+        max_depth: Maksymalna głębokość skanowania
+        use_cache: Czy używać cache
+        pair_strategy: Strategia parowania plików
+        interrupt_check: Funkcja sprawdzająca przerwanie
+        force_refresh_cache: Czy wymusić odświeżenie cache
+        progress_callback: Callback postępu
 
     Returns:
-        Tuple[List[FilePair], List[str], List[str]]: Krotka zawierająca listę
-        znalezionych par, listę niesparowanych archiwów i listę niesparowanych
-        podglądów.
+        Tuple: Pary, niesparowane archiwa, niesparowane podglądy
+
+    Raises:
+        ScanningInterrupted: Gdy skanowanie zostało przerwane
+        OSError: Problemy z dostępem do systemu plików
     """
-    directory = normalize_path(directory)
-    logger.info(f"Rozpoczęto skanowanie katalogu: {directory}")
-    logger.debug(f"Obsługiwane rozszerzenia archiwów: {ARCHIVE_EXTENSIONS}")
-    logger.debug(f"Obsługiwane rozszerzenia podglądów: {PREVIEW_EXTENSIONS}")
-
-    found_pairs: List[FilePair] = []
-    unpaired_archives: List[str] = []
-    unpaired_previews: List[str] = []
-    file_map = defaultdict(list)
-
-    total_folders_scanned = 0
-    total_files_found = 0
-
-    # Krok 1: Zbieranie wszystkich plików i normalizacja ścieżek od razu
-    for root, dirs, files in os.walk(directory):
-        normalized_root = normalize_path(root)
-        total_folders_scanned += 1
-
-        logger.debug(f"Skanowanie folderu: {normalized_root}")
-        logger.debug(f"  Znalezione podfoldery: {dirs}")
-        logger.debug(f"  Znalezione pliki: {len(files)}")
-
-        for name in files:
-            total_files_found += 1
-            base_name, ext = os.path.splitext(name)
-            ext_lower = ext.lower()
-            if ext_lower in ARCHIVE_EXTENSIONS or ext_lower in PREVIEW_EXTENSIONS:
-                map_key = os.path.join(normalized_root, base_name.lower())
-                full_file_path = normalize_path(os.path.join(normalized_root, name))
-                file_map[map_key].append(full_file_path)
-                logger.debug(f"  Dodano do mapy: {name} (klucz: {map_key})")
-
-    logger.info(
-        f"Przeskanowano {total_folders_scanned} folderów, znaleziono {total_files_found} plików"
+    return _scan_folder_for_pairs(
+        directory=directory,
+        max_depth=max_depth,
+        use_cache=use_cache,
+        pair_strategy=pair_strategy,
+        interrupt_check=interrupt_check,
+        force_refresh_cache=force_refresh_cache,
+        progress_callback=progress_callback,
     )
-    logger.info(f"Znaleziono {len(file_map)} unikalnych grup plików do sparowania")
-
-    # Krok 2: Przetwarzanie zebranych plików i tworzenie par
-    all_files_in_map = {file for files_list in file_map.values() for file in files_list}
-    processed_files = set()
-
-    for files_list in file_map.values():
-        archive_files = [
-            f
-            for f in files_list
-            if os.path.splitext(f)[1].lower() in ARCHIVE_EXTENSIONS
-        ]
-        preview_files = [
-            f
-            for f in files_list
-            if os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS
-        ]
-
-        # Tworzenie par
-        if archive_files and preview_files:
-            try:
-                # Na razie bierzemy pierwszą znalezioną parę
-                pair = FilePair(archive_files[0], preview_files[0], directory)
-                found_pairs.append(pair)
-                processed_files.add(archive_files[0])
-                processed_files.add(preview_files[0])
-            except ValueError as e:
-                logger.error(f"Błąd tworzenia FilePair dla '{archive_files[0]}': {e}")
-
-    # Krok 3: Identyfikacja niesparowanych plików
-    unpaired_files = all_files_in_map - processed_files
-    for f in unpaired_files:
-        if os.path.splitext(f)[1].lower() in ARCHIVE_EXTENSIONS:
-            unpaired_archives.append(f)
-        elif os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS:
-            unpaired_previews.append(f)
-
-    logger.info(
-        f"Zakończono skanowanie '{directory}'. Znaleziono {len(found_pairs)} par, "
-        f"{len(unpaired_archives)} niesparowanych archiwów i "
-        f"{len(unpaired_previews)} niesparowanych podglądów."
-    )
-    return found_pairs, unpaired_archives, unpaired_previews
 
 
-if __name__ == "__main__":
-    # Ten blok jest przeznaczony do prostych testów manualnych.
-    # Aby go użyć, odkomentuj i dostosuj ścieżkę `test_dir`.
-    # Pamiętaj o utworzeniu odpowiedniej struktury folderów i plików.
-    pass
+def clear_cache() -> None:
+    """
+    Czyści bufor wyników skanowania.
+    """
+    _clear_cache()
+    logger.info("Wyczyszczono bufor wyników skanowania")
+
+
+@_log_scanner_operation("pobieranie statystyk")
+def get_scan_statistics() -> Dict[str, float]:
+    """
+    Zwraca statystyki dotyczące bieżącego stanu cache.
+    """
+    return _get_scan_statistics()

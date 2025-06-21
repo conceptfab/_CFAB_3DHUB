@@ -1,0 +1,287 @@
+/* Style bazujące na CFAB NeuroSorter */
+
+/* --- Definicje kolorów z _apply_material_theme --- */
+/*
+    primary_color: #007ACC;
+    success_color: #10B981;
+    warning_color: #DC2626;
+    background_color: #1E1E1E;
+    surface_color: #252526;
+    border_color: #3F3F46;
+    text_color: #CCCCCC;
+    selection_color: #264F78;
+*/
+
+QMainWindow, QDialog {
+    background-color: #1E1E1E; /* background */
+    color: #CCCCCC; /* text_color */
+}
+
+QPushButton {
+    background-color: #252526; /* surface */
+    color: #CCCCCC; /* text_color */
+    border: 1px solid #3F3F46; /* border_color */
+    border-radius: 2px;
+    padding: 4px 12px;
+    min-height: 24px;
+    max-height: 24px;
+}
+
+QPushButton:hover {
+    background-color: #2A2D2E;
+}
+
+QPushButton:pressed {
+    background-color: #3E3E40;
+}
+
+/* --- Przyciski akcji z _apply_material_theme --- */
+/* Aby ich użyć w prostej aplikacji, musisz nadać przyciskom property, np: */
+/* w Pythonie: button.setProperty("action", "primary") */
+QPushButton[action="primary"] {
+    background-color: #007ACC; /* primary_color */
+    color: white;
+    border: none;
+}
+QPushButton[action="primary"]:hover {
+    background-color: #1C97EA;
+}
+QPushButton[action="primary"]:pressed {
+    background-color: #005A9E;
+}
+
+QPushButton[action="warning"] {
+    background-color: #DC2626; /* warning_color */
+    color: white;
+    border: none;
+}
+QPushButton[action="warning"]:hover {
+    background-color: #EF4444;
+}
+QPushButton[action="warning"]:pressed {
+    background-color: #B91C1C;
+}
+
+QPushButton[action="success"] {
+    background-color: #10B981; /* success_color */
+    color: white;
+    border: none;
+}
+QPushButton[action="success"]:hover {
+    background-color: #059669;
+}
+QPushButton[action="success"]:pressed {
+    background-color: #047857;
+}
+
+/* --- Zakładki (Tabs) z _apply_material_theme --- */
+QTabWidget {
+    border: none; /* NAPRAWKA: usuń zbędne obramowanie */
+}
+
+QTabWidget::pane {
+    border: 1px solid #3F3F46; /* border_color */
+    background-color: #252526; /* surface */
+    color: #CCCCCC; /* text_color - dziedziczone, ale można jawnie */
+    top: -1px; /* Zapobiega podwójnej granicy */
+    margin: 0px; /* NAPRAWKA: usuń nadmierne marginesy */
+    padding: 2px; /* NAPRAWKA: minimalny padding */
+}
+
+QTabBar::tab {
+    background-color: #1E1E1E; /* background */
+    color: #CCCCCC; /* text_color */
+    padding: 5px 10px;
+    margin-right: 2px;
+    border-top-left-radius: 2px;
+    border-top-right-radius: 2px;
+    border: 1px solid #3F3F46; /* border_color */
+    min-width: 80px;
+    max-height: 25px;
+}
+
+QTabBar::tab:selected {
+    background-color: #252526; /* surface */
+    border-bottom-color: #252526; /* Łączy się z panelem */
+    font-weight: bold; /* Wyróżnienie aktywnej zakładki */
+}
+
+QTabBar::tab:hover {
+    background-color: #2A2D2E; /* Lekko jaśniejszy przy najechaniu */
+}
+
+QTabBar::tab:disabled {
+    color: #666666; /* Wygaszone zakładki */
+    background-color: #1A1A1A;
+}
+
+/* Zapobiega znikaniu zakładek */
+QTabWidget::tab-bar {
+    alignment: left;
+    background: #1E1E1E;
+}
+
+/* Poprawia widoczność aktywnej zakładki */
+QTabWidget::tab-bar::tab:selected {
+    margin-bottom: -1px;
+    border-bottom: 2px solid #007ACC; /* primary_color */
+}
+
+/* --- Grupy (GroupBox) z _apply_material_theme --- */
+QGroupBox {
+    background-color: #252526; /* surface */
+    color: #CCCCCC; /* text_color */
+    border: 1px solid #3F3F46; /* border_color */
+    border-radius: 2px;
+    margin-top: 14px;
+    padding-top: 14px;
+    font-weight: normal;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px; /* W Twoim kodzie było subcontrol-position, ale QSS preferuje left/right/top/bottom dla subcontrol-origin: margin */
+    padding: 0 5px;
+    color: #FFFFFF; /* text_color dla tytułu był #FFFFFF */
+}
+
+/* --- Pola edycji i tabele z _apply_material_theme --- */
+QLineEdit, QTextEdit, QTableWidget { /* Dodaj QSpinBox, QComboBox itp. jeśli też mają tak wyglądać */
+    background-color: #1C1C1C; /* Ciemniejsze tło */
+    color: #CCCCCC; /* text_color */
+    border: 1px solid #3F3F46; /* border_color */
+    border-radius: 2px;
+    padding: 2px; /* W Twoim kodzie było padding: 2px */
+    selection-background-color: #264F78; /* selection_color */
+}
+
+QTableWidget::item:selected {
+    background-color: #264F78; /* selection_color */
+    color: #FFFFFF; /* Biały tekst zaznaczenia */
+}
+
+QHeaderView::section {
+    background-color: #252526; /* surface */
+    color: #CCCCCC; /* text_color */
+    padding: 2px;
+    border: 1px solid #3F3F46; /* border_color */
+}
+
+/* --- Pasek postępu z _apply_material_theme --- */
+QProgressBar {
+    border: 1px solid #3F3F46; /* border_color */
+    background-color: #252526; /* surface */
+    text-align: center;
+    color: #CCCCCC; /* Dodaję, bo może być potrzebne */
+}
+
+QProgressBar::chunk {
+    background-color: #007ACC; /* primary_color */
+}
+
+/* --- Etykiety z _apply_material_theme --- */
+QLabel {
+    color: #CCCCCC; /* text_color */
+    background-color: transparent; /* Ogólne ustawienie */
+}
+
+/* --- Menu z _apply_material_theme --- */
+QMenu {
+    background-color: #252526; /* surface */
+    color: #CCCCCC; /* text_color */
+    border: 1px solid #3F3F46; /* border_color */
+}
+
+QMenu::item:selected {
+    background-color: #264F78; /* selection_color */
+    /* color: white; Można dodać jeśli chcemy biały tekst */
+}
+
+/* Style dla MenuBar (nie było w _apply_material_theme, dodaję podstawowe) */
+QMenuBar {
+    background-color: #1E1E1E;
+    color: #CCCCCC;
+}
+QMenuBar::item {
+    background: transparent;
+    padding: 4px 8px;
+}
+QMenuBar::item:selected {
+    background-color: #2A2D2E;
+}
+QMenuBar::item:pressed {
+    background-color: #252526;
+}
+
+
+/* --- Style z _create_console_panel --- */
+
+/* Dla nagłówków KONSOLA i POSTĘP AKTUALNEGO ZADANIA */
+/* Użyj objectName w Pythonie, np. console_header.setObjectName("ConsoleHeaderLabel") */
+#ConsoleHeaderLabel, #ProgressHeaderLabel {
+    font-weight: bold;
+    color: #CCCCCC;
+    font-size: 11px;
+    padding-bottom: 4px;
+}
+
+/* Dla QTextEdit konsoli */
+/* Użyj self.console_text.setObjectName("ConsoleOutput") */
+#ConsoleOutput {
+    background-color: #1C1C1C;
+    color: #CCCCCC;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10px;
+}
+
+/* Dla etykiet informacyjnych w panelu postępu */
+/* Np. self.current_task_info.setObjectName("CurrentTaskInfoLabel") */
+/* self.task_progress_details.setObjectName("TaskProgressDetailsLabel") */
+#CurrentTaskInfoLabel {
+    color: #CCCCCC; /* Już pokryte przez ogólne QLabel, ale można bardziej specyficznie */
+}
+#TaskProgressDetailsLabel {
+    color: #CCCCCC;
+    font-style: italic;
+}
+
+/* Dla przycisku zatrzymania zadania */
+/* Np. self.stop_task_btn.setObjectName("StopTaskButton") */
+#StopTaskButton { /* Ważne: To ID musi być ustawione w Pythonie! */
+    background-color: #DC2626; /* warning_color */
+    color: white;
+    border: none; /* Zgodnie z Twoim kodem */
+    border-radius: 4px; /* Zgodnie z Twoim kodem */
+    padding: 4px 8px; /* Zgodnie z Twoim kodem */
+    /* min-height i max-height dziedziczone z ogólnego QPushButton */
+}
+#StopTaskButton:hover {
+    background-color: #EF4444; /* Jaśniejszy czerwony */
+}
+#StopTaskButton:disabled {
+    background-color: #4B5563; /* Ciemnoszary */
+    color: #9CA3AF; /* Jasnoszary tekst */
+}
+
+/* Dla separatora */
+QFrame[frameShape="HLine"] {
+    /* QSS nie ma bezpośredniego odpowiednika dla setStyleSheet("background-color: #3F3F46;") */
+    /* dla QFrame rysującego linię. Kolor linii jest zwykle dziedziczony lub kontrolowany */
+    /* przez właściwości palety. Można spróbować: */
+    border: none;
+    border-top: 1px solid #3F3F46; /* Rysuje górną krawędź jako linię */
+    /* Lub jeśli chcesz mieć grubszy separator jako tło: */
+    /* background-color: #3F3F46; */
+    /* min-height: 1px; */
+    /* max-height: 1px; */
+}
+
+/* Pasek statusu */
+QStatusBar {
+    background-color: #1E1E1E; /* Dopasowuję do tła głównego okna */
+    color: #A0A0A0; /* Standardowy kolor tekstu statusu */
+    border-top: 1px solid #3F3F46; /* Linia oddzielająca */
+}
+QStatusBar::item {
+    border: none;
+}

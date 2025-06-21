@@ -1,0 +1,52 @@
+[run]
+# Źródła do analizy
+source = src/
+
+# Pliki do pominięcia
+omit = 
+    */tests/*
+    */test_*
+    */__pycache__/*
+    */venv/*
+    */AUDYT/*
+    setup.py
+    conftest.py
+
+# Katalogi z danymi
+data_file = .coverage
+
+# Rozgałęzienia
+branch = True
+
+[report]
+# Wyświetlanie linii bez pokrycia
+show_missing = True
+
+# Sortowanie według Name
+sort = Name
+
+# Pomijanie pustych plików
+skip_empty = True
+
+# Precyzja procentowa
+precision = 2
+
+# Wyklucz pliki z raportu
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    @abstract
+
+[html]
+# Katalog z raportem HTML
+directory = htmlcov
+
+# Tytuł raportu
+title = CFAB_3DHUB Coverage Report
+
+[xml]
+# Plik XML
+output = coverage.xml

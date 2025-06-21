@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+_CFAB_3DHUB-env/
 
 # C extensions
 *.so
@@ -156,7 +157,12 @@ Desktop.ini
 $RECYCLE.BIN/
 
 # CFAB_3DHUB specific
-# Jeśli masz jakieś pliki lub foldery specyficzne dla projektu, które powinny być ignorowane,
-# dodaj je tutaj. Np. folder na dane tymczasowe, logi aplikacji itp.
-# .app_data/ # Jeśli zdecydujesz się na lokalne przechowywanie metadanych w ten sposób i nie chcesz tego wersjonować
-# *.log # Ogólne logi aplikacji
+# Audyt archive - zorganizowany i można wersjonować
+# _AUDIT_ARCHIVE/ 
+
+# Pliki aplikacji
+cache/
+temp/
+thumbnails/
+local_config.json
+user_settings.json

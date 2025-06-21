@@ -1,97 +1,88 @@
 # src/app_config.py
-import json
-import os
-from collections import OrderedDict
+"""
+🚀 ETAP 2: Zrefaktoryzowany AppConfig - backward compatibility wrapper
+Oryginalny plik został podzielony na komponenty w src/config/
 
-# --- Ścieżka do pliku konfiguracyjnego ---
-CONFIG_FILE_NAME = "config.json"
-# Używamy katalogu domowego użytkownika do przechowywania konfiguracji
-APP_DATA_DIR = os.path.join(os.path.expanduser("~"), ".CFAB_3DHUB")
-CONFIG_FILE_PATH = os.path.join(APP_DATA_DIR, CONFIG_FILE_NAME)
+Struktura komponentów:
+- config_core.py - główna klasa AppConfig
+- config_defaults.py - domyślne wartości
+- config_validator.py - walidacja
+- config_io.py - operacje I/O
+- config_properties.py - właściwości i gettery/settery
+"""
 
-# --- Domyślne wartości konfiguracyjne ---
-DEFAULT_CONFIG = {
-    "thumbnail_size": 150,
-    "thumbnail_slider_position": 50,
-}
+from typing import Any, Dict, List
 
-# --- Funkcje do zarządzania konfiguracją ---
+# Import głównej klasy z nowego pakietu
+from src.config import AppConfig
 
-
-def _load_config():
-    """Wczytuje konfigurację z pliku JSON."""
-    if not os.path.exists(CONFIG_FILE_PATH):
-        return DEFAULT_CONFIG.copy()
-    try:
-        with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
-            config = json.load(f)
-            # Uzupełnij o brakujące klucze, jeśli plik konfiguracyjny jest stary
-            for key, value in DEFAULT_CONFIG.items():
-                if key not in config:
-                    config[key] = value
-            return config
-    except (json.JSONDecodeError, IOError):
-        return DEFAULT_CONFIG.copy()
+# --- Legacy global functions (backward compatibility) ---
 
 
-def _save_config(config):
-    """Zapisuje konfigurację do pliku JSON."""
-    try:
-        os.makedirs(APP_DATA_DIR, exist_ok=True)
-        with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=4)
-    except IOError:
-        # Logowanie błędu może być tutaj przydatne
-        pass
+def set_thumbnail_slider_position(position: int) -> bool:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.set_thumbnail_slider_position(position)
 
 
-# --- Inicjalizacja konfiguracji przy starcie modułu ---
-_config = _load_config()
-
-# --- Funkcje publiczne do zarządzania konfiguracją ---
-
-
-def set_thumbnail_slider_position(position: int):
-    """Zapisuje pozycję suwaka do konfiguracji."""
-    _config["thumbnail_slider_position"] = position
-    _save_config(_config)
+def get_supported_extensions(extension_type: str) -> List[str]:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.get_supported_extensions(extension_type)
 
 
-# --- Istniejące stałe i te, które stają się konfigurowalne ---
+def get_predefined_colors() -> Dict[str, str]:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.get_predefined_colors()
 
-# Lista obsługiwanych rozszerzeń plików archiwów
-SUPPORTED_ARCHIVE_EXTENSIONS = [".rar", ".zip", ".7z", ".tar", ".gz", ".bz2"]
 
-# Lista obsługiwanych rozszerzeń plików podglądów (obrazów)
-SUPPORTED_PREVIEW_EXTENSIONS = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".bmp",
-    ".tiff",
-]
+def set_predefined_colors(colors: Dict[str, str]) -> bool:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.set_predefined_colors(colors)
 
-# Kolory do filtrowania w MainWindow
-PREDEFINED_COLORS_FILTER = OrderedDict(
-    [
-        ("Wszystkie kolory", "ALL"),
-        ("Brak koloru", "__NONE__"),
-        ("Czerwony", "#E53935"),
-        ("Zielony", "#43A047"),
-        ("Niebieski", "#1E88E5"),
-        ("Żółty", "#FDD835"),
-        ("Fioletowy", "#8E24AA"),
-        ("Czarny", "#000000"),
-    ]
-)
 
-# Rozmiary miniatur dla MainWindow
-MIN_THUMBNAIL_SIZE = (50, 50)
-MAX_THUMBNAIL_SIZE = (300, 300)
+# --- Thumbnail format legacy functions ---
 
-# --- Obliczanie początkowego rozmiaru na podstawie konfiguracji ---
-_slider_pos = _config.get("thumbnail_slider_position", 50)
-_size_range = MAX_THUMBNAIL_SIZE[0] - MIN_THUMBNAIL_SIZE[0]
-_initial_width = MIN_THUMBNAIL_SIZE[0] + int((_size_range * _slider_pos) / 100)
-DEFAULT_THUMBNAIL_SIZE = (_initial_width, _initial_width)
+
+def get_thumbnail_format() -> str:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.get_thumbnail_format()
+
+
+def set_thumbnail_format(format_name: str) -> bool:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.set_thumbnail_format(format_name)
+
+
+def get_thumbnail_quality() -> int:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.get_thumbnail_quality()
+
+
+def set_thumbnail_quality(quality: int) -> bool:
+    """Legacy function for backward compatibility."""
+    config = AppConfig.get_instance()
+    return config.set_thumbnail_quality(quality)
+
+
+# --- Legacy constants for backward compatibility ---
+config = AppConfig.get_instance()
+
+SUPPORTED_ARCHIVE_EXTENSIONS = config.supported_archive_extensions
+SUPPORTED_PREVIEW_EXTENSIONS = config.supported_preview_extensions
+PREDEFINED_COLORS_FILTER = config.predefined_colors_filter
+MIN_THUMBNAIL_SIZE = config.min_thumbnail_size
+MAX_THUMBNAIL_SIZE = config.max_thumbnail_size
+DEFAULT_THUMBNAIL_SIZE = config.default_thumbnail_size
+
+# Parametry cache dla skanera
+SCANNER_MAX_CACHE_ENTRIES = config.scanner_max_cache_entries
+SCANNER_MAX_CACHE_AGE_SECONDS = config.scanner_max_cache_age_seconds
+
+# Parametry timerów
+resize_timer_delay_ms = config.get("resize_timer_delay_ms", 150)

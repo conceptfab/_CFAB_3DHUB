@@ -1,3 +1,7 @@
+# Zamiast C:\_cloud\_CFAB_3DHUB użyj:
+
+cd /mnt/c/_cloud/_CFAB_3DHUB
+
 # CFAB_3DHUB
 
 Aplikacja do zarządzania i przeglądania sparowanych plików archiwów i odpowiadających im plików podglądu.
@@ -47,14 +51,30 @@ python src/main.py
 
 ## Funkcjonalności
 
-Aktualnie aplikacja znajduje się w fazie początkowej (Etap 0) i posiada tylko podstawową strukturę. Planowane funkcjonalności obejmują:
+✅ **Aplikacja po kompletnej refaktoryzacji** - wszystkie główne funkcjonalności zaimplementowane:
 
-- Wybór folderu roboczego
-- Rekursywne skanowanie w poszukiwaniu par plików (archiwum + podgląd)
-- Wyświetlanie podglądów jako kafelków w interfejsie
-- Tagowanie plików (ulubione, gwiazdki, kolory)
-- Filtrowanie i sortowanie
-- Podgląd i operacje na plikach
+- ✅ Wybór i skanowanie folderu roboczego
+- ✅ Rekursywne skanowanie w poszukiwaniu par plików (archiwum + podgląd)
+- ✅ Wyświetlanie podglądów jako kafelków w galerii z wirtualizacją
+- ✅ Tagowanie plików (gwiazdki, kolory) z trwałymi metadanymi
+- ✅ Operacje na plikach (usuwanie, przenoszenie, zmiana nazwy)
+- ✅ Operacje zbiorcze na zaznaczonych plikach
+- ✅ Filtrowanie i sortowanie według różnych kryteriów
+- ✅ Drzewo katalogów z statystykami folderów
+- ✅ Eksplorację plików z integracją narzędzi
+- ✅ System workerów dla operacji w tle
+- ✅ Cache z zaawansowaną optymalizacją
+- ✅ Narzędzia specjalne (SBSAR extractor, konwersja WebP)
+
+## 🏗️ Architektura po audycie
+
+Aplikacja posiada teraz solidną architekturę warstwową:
+- **UI Layer** - PyQt6 komponenty interfejsu
+- **Controllers** - Logika kontrolerów (MainWindow, Gallery, FileOperations, Statistics)
+- **Services** - Serwisy biznesowe (Scanning, FileOperations, ThreadCoordinator)
+- **Logic** - Logika podstawowa (Scanner, MetadataManager, FilePariring)
+- **Models** - Modele danych (FilePair, SpecialFolder)
+- **Utils** - Narzędzia pomocnicze (PathValidator, Logging, ImageUtils)
 
 ## Struktura projektu
 
@@ -62,14 +82,33 @@ Aktualnie aplikacja znajduje się w fazie początkowej (Etap 0) i posiada tylko 
 CFAB_3DHUB/
 ├── .venv/                  # Wirtualne środowisko Pythona
 ├── src/                    # Główny kod źródłowy aplikacji
-│   ├── models/             # Modele danych
-│   ├── logic/              # Logika biznesowa
+│   ├── controllers/        # Kontrolery (Gallery, FileOperations, Statistics)
+│   ├── services/           # Serwisy biznesowe (Scanning, FileOperations)
+│   ├── logic/              # Logika podstawowa (Scanner, Metadata, Pairing)
+│   ├── models/             # Modele danych (FilePair, SpecialFolder)
 │   ├── ui/                 # Komponenty interfejsu użytkownika
-│   └── utils/              # Narzędzia pomocnicze
-├── tests/                  # Testy
-├── ui_files/               # Pliki .ui z Qt Designer (opcjonalnie)
-└── requirements.txt        # Zależności projektu
+│   ├── utils/              # Narzędzia pomocnicze (PathValidator, Logging)
+│   ├── config/             # Konfiguracja aplikacji
+│   ├── interfaces/         # Interfejsy i abstrakcje
+│   ├── factories/          # Fabryki obiektów
+│   └── resources/          # Zasoby (style, obrazy)
+├── __tools/                # Narzędzia pomocnicze projektu
+├── logs/                   # Logi aplikacji
+├── _AUDIT_ARCHIVE/         # Archiwum audytu (analiza, poprawki, raporty)
+├── requirements.txt        # Zależności projektu
+├── pytest.ini             # Konfiguracja testów
+└── run_app.py              # Główny punkt wejścia
 ```
+
+## 📊 Archiwum audytu
+
+W folderze `_AUDIT_ARCHIVE/` znajduje się kompletna dokumentacja przeprowadzonego audytu:
+- **analysis/** - Analiza biznesowa i architektoniczna
+- **corrections/** - Lista i implementacja wszystkich 19 poprawek  
+- **reports/** - Raporty techniczne i analizy wydajności
+- **temp_files/** - Pliki tymczasowe i narzędzia audytu
+
+Wszystkie 19 zidentyfikowanych problemów zostało rozwiązane - aplikacja ma teraz solidną architekturę!
 
 ## Licencja
 
