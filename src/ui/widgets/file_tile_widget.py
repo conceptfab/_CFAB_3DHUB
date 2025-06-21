@@ -8,12 +8,22 @@ Zachowanie 100% kompatybilności API z legacy code.
 
 # Standard library imports
 import logging
+import os
 import threading
+import warnings
 from typing import Optional, Tuple
 
 # Third-party imports
-from PyQt6.QtCore import QEvent, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QDesktopServices, QDrag, QFont, QPixmap
+from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import (
+    QAction,
+    QColor,
+    QDesktopServices,
+    QDrag,
+    QFont,
+    QPainter,
+    QPixmap,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -54,6 +64,53 @@ from .file_tile_widget_thumbnail import ThumbnailOperations
 from .file_tile_widget_ui_manager import FileTileWidgetUIManager
 
 logger = logging.getLogger(__name__)
+
+
+class CompatibilityAdapter:
+    """Adapter dla zachowania kompatybilności wstecznej."""
+
+    def __init__(self, widget):
+        self.widget = widget
+        self._deprecation_warnings_shown = set()
+
+    def show_deprecation_warning(self, old_method_name, new_method_name=None):
+        """Pokazuje ostrzeżenie o przestarzałej metodzie."""
+        if old_method_name in self._deprecation_warnings_shown:
+            return
+
+        if new_method_name:
+            message = (
+                f"{self.widget.__class__.__name__}.{old_method_name}() is deprecated. "
+                f"Use {new_method_name}() instead."
+            )
+        else:
+            message = (
+                f"{self.widget.__class__.__name__}.{old_method_name}() is deprecated. "
+                f"Use the new API."
+            )
+
+        warnings.warn(message, DeprecationWarning, stacklevel=3)
+        self._deprecation_warnings_shown.add(old_method_name)
+
+    def update_data_legacy(self, file_pair):
+        self.show_deprecation_warning("update_data", "set_file_pair")
+        self.widget.set_file_pair(file_pair)
+
+    def change_thumbnail_size_legacy(self, size):
+        self.show_deprecation_warning("change_thumbnail_size", "set_thumbnail_size")
+        self.widget.set_thumbnail_size(size)
+
+    def refresh_thumbnail_legacy(self):
+        self.show_deprecation_warning("refresh_thumbnail", "reload_thumbnail")
+        self.widget.reload_thumbnail()
+
+    def get_file_data_legacy(self):
+        self.show_deprecation_warning("get_file_data", "file_pair property")
+        return self.widget.file_pair
+
+    def set_selection_legacy(self, selected):
+        self.show_deprecation_warning("set_selection", "set_selected")
+        self.widget.set_selected(selected)
 
 
 class FileTileWidget(QWidget):
@@ -539,8 +596,6 @@ class FileTileWidget(QWidget):
         """
         if hasattr(self, "_compatibility_adapter"):
             return self._compatibility_adapter.change_thumbnail_size_legacy(size)
-        else:
-            return self.set_thumbnail_size(size)
 
     def refresh_thumbnail(self):
         """
@@ -550,9 +605,6 @@ class FileTileWidget(QWidget):
         """
         if hasattr(self, "_compatibility_adapter"):
             return self._compatibility_adapter.refresh_thumbnail_legacy()
-        else:
-            if hasattr(self, "_thumbnail_component"):
-                return self._thumbnail_component.reload_current()
 
     def get_file_data(self):
         """
@@ -565,8 +617,6 @@ class FileTileWidget(QWidget):
         """
         if hasattr(self, "_compatibility_adapter"):
             return self._compatibility_adapter.get_file_data_legacy()
-        else:
-            return self.file_pair
 
     def set_selection(self, selected: bool):
         """
@@ -579,21 +629,6 @@ class FileTileWidget(QWidget):
         """
         if hasattr(self, "_compatibility_adapter"):
             return self._compatibility_adapter.set_selection_legacy(selected)
-        else:
-            return self.set_selected(selected)
-
-    def set_selected(self, selected: bool):
-        """
-        NOWE API: Ustawia status selekcji.
-
-        Args:
-            selected: Czy kafelek jest zaznaczony
-        """
-        if self.is_selected != selected:
-            self.is_selected = selected
-            # Emit sygnał o zmianie selekcji
-            if self.file_pair:
-                self.tile_selected.emit(self.file_pair, selected)
 
     # === Getters/Setters dla kompatybilności ===
 
@@ -654,3 +689,18 @@ class FileTileWidget(QWidget):
         except Exception:
             # Ignoruj błędy w destruktorze
             pass
+
+    # --- NOWE API ---
+
+    def set_selected(self, selected: bool):
+        """
+        NOWE API: Ustawia status selekcji.
+
+        Args:
+            selected: Czy kafelek jest zaznaczony
+        """
+        if self.is_selected != selected:
+            self.is_selected = selected
+            # Emit sygnał o zmianie selekcji
+            if self.file_pair:
+                self.tile_selected.emit(self.file_pair, selected)
