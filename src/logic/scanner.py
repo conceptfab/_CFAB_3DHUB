@@ -11,6 +11,9 @@ UWAGA: Ten moduł jest fasadą publicznego API. Implementacja podzielona na:
 """
 
 import logging
+import os
+import threading
+import warnings
 from functools import wraps
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
@@ -39,20 +42,63 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+# Thread safety dla dekoratora logowania
+_log_lock = threading.RLock()
+
+
+def _validate_directory(directory: str) -> None:
+    """Waliduje ścieżkę katalogu."""
+    if not directory:
+        raise ValueError("Ścieżka katalogu nie może być pusta")
+    if not os.path.exists(directory):
+        raise FileNotFoundError(f"Katalog nie istnieje: {directory}")
+    if not os.path.isdir(directory):
+        raise NotADirectoryError(f"Ścieżka nie jest katalogiem: {directory}")
+
+
+def _validate_max_depth(max_depth: int) -> None:
+    """Waliduje parametr max_depth."""
+    if not isinstance(max_depth, int):
+        raise TypeError("max_depth musi być liczbą całkowitą")
+    if max_depth < -1:
+        raise ValueError("max_depth musi być >= -1")
+
+
+def _validate_callback(callback: Optional[Callable], name: str) -> None:
+    """Waliduje callback pod kątem thread safety."""
+    if callback is not None and not callable(callback):
+        raise TypeError(f"{name} musi być callable lub None")
+
 
 def _log_scanner_operation(operation_name: str):
-    """Dekorator do logowania operacji skanera."""
+    """Dekorator do logowania operacji skanera z thread safety."""
 
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            logger.debug(f"Wywołanie {operation_name}: {func.__name__}")
+            # Thread-safe logowanie
+            with _log_lock:
+                logger.debug(f"Rozpoczęto {operation_name}: {func.__name__}")
+
             try:
                 result = func(*args, **kwargs)
-                logger.debug(f"Zakończono {operation_name}: {func.__name__}")
+
+                # Thread-safe logowanie sukcesu
+                with _log_lock:
+                    logger.debug(f"Zakończono {operation_name}: {func.__name__}")
                 return result
+
+            except ScanningInterrupted:
+                # Thread-safe logowanie przerwania
+                with _log_lock:
+                    logger.info(f"Przerwano {operation_name}: {func.__name__}")
+                raise
             except Exception as e:
-                logger.error(f"Błąd w {operation_name}: {e}")
+                # Thread-safe logowanie błędu z kontekstem
+                with _log_lock:
+                    logger.error(
+                        f"Błąd w {operation_name} {func.__name__}: {e}", exc_info=True
+                    )
                 raise
 
         return wrapper
@@ -82,9 +128,18 @@ def collect_files_streaming(
         Dict[str, List[str]]: Mapa rozszerzeń na listy plików
 
     Raises:
+        ValueError: Nieprawidłowe parametry
+        FileNotFoundError: Katalog nie istnieje
+        NotADirectoryError: Ścieżka nie jest katalogiem
         ScanningInterrupted: Gdy skanowanie zostało przerwane
         OSError: Problemy z dostępem do systemu plików
     """
+    # Walidacja parametrów wejściowych
+    _validate_directory(directory)
+    _validate_max_depth(max_depth)
+    _validate_callback(interrupt_check, "interrupt_check")
+    _validate_callback(progress_callback, "progress_callback")
+
     return _collect_files_streaming(
         directory=directory,
         max_depth=max_depth,
@@ -94,8 +149,30 @@ def collect_files_streaming(
     )
 
 
-# Alias dla kompatybilności wstecznej - NIE UŻYWAĆ w nowym kodzie
-collect_files = collect_files_streaming
+def collect_files(
+    directory: str,
+    max_depth: int = -1,
+    interrupt_check: Optional[Callable[[], bool]] = None,
+    force_refresh: bool = False,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> Dict[str, List[str]]:
+    """
+    Alias dla collect_files_streaming - DEPRECATED.
+
+    Użyj collect_files_streaming zamiast tej funkcji.
+    """
+    warnings.warn(
+        "collect_files jest deprecated. Użyj collect_files_streaming.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return collect_files_streaming(
+        directory=directory,
+        max_depth=max_depth,
+        interrupt_check=interrupt_check,
+        force_refresh=force_refresh,
+        progress_callback=progress_callback,
+    )
 
 
 @_log_scanner_operation("tworzenie par plików")
@@ -116,8 +193,16 @@ def create_file_pairs(
         Tuple[List[FilePair], Set[str]]: Pary plików i zestaw przetworzonych plików
 
     Raises:
-        ValueError: Nieprawidłowa strategia parowania
+        ValueError: Nieprawidłowa strategia parowania lub parametry
     """
+    # Walidacja parametrów
+    if not isinstance(file_map, dict):
+        raise ValueError("file_map musi być słownikiem")
+    if not base_directory:
+        raise ValueError("base_directory nie może być puste")
+    if pair_strategy not in ["first_match", "best_match"]:
+        raise ValueError(f"Nieprawidłowa strategia parowania: {pair_strategy}")
+
     return _create_file_pairs(
         file_map=file_map,
         base_directory=base_directory,
@@ -139,7 +224,16 @@ def identify_unpaired_files(
 
     Returns:
         Tuple[List[str], List[str]]: Niesparowane archiwa i podglądy
+
+    Raises:
+        ValueError: Nieprawidłowe parametry
     """
+    # Walidacja parametrów
+    if not isinstance(file_map, dict):
+        raise ValueError("file_map musi być słownikiem")
+    if not isinstance(processed_files, set):
+        raise ValueError("processed_files musi być zestawem")
+
     return _identify_unpaired_files(file_map, processed_files)
 
 
@@ -169,9 +263,21 @@ def scan_folder_for_pairs(
         Tuple: Pary, niesparowane archiwa, niesparowane podglądy
 
     Raises:
+        ValueError: Nieprawidłowe parametry
+        FileNotFoundError: Katalog nie istnieje
+        NotADirectoryError: Ścieżka nie jest katalogiem
         ScanningInterrupted: Gdy skanowanie zostało przerwane
         OSError: Problemy z dostępem do systemu plików
     """
+    # Walidacja parametrów wejściowych
+    _validate_directory(directory)
+    _validate_max_depth(max_depth)
+    _validate_callback(interrupt_check, "interrupt_check")
+    _validate_callback(progress_callback, "progress_callback")
+
+    if pair_strategy not in ["first_match", "best_match"]:
+        raise ValueError(f"Nieprawidłowa strategia parowania: {pair_strategy}")
+
     return _scan_folder_for_pairs(
         directory=directory,
         max_depth=max_depth,
@@ -187,13 +293,27 @@ def clear_cache() -> None:
     """
     Czyści bufor wyników skanowania.
     """
-    _clear_cache()
-    logger.info("Wyczyszczono bufor wyników skanowania")
+    try:
+        _clear_cache()
+        logger.info("Wyczyszczono bufor wyników skanowania")
+    except Exception as e:
+        logger.error(f"Błąd podczas czyszczenia cache: {e}", exc_info=True)
+        raise
 
 
 @_log_scanner_operation("pobieranie statystyk")
 def get_scan_statistics() -> Dict[str, float]:
     """
     Zwraca statystyki dotyczące bieżącego stanu cache.
+
+    Returns:
+        Dict[str, float]: Statystyki cache
+
+    Raises:
+        OSError: Problemy z dostępem do cache
     """
-    return _get_scan_statistics()
+    try:
+        return _get_scan_statistics()
+    except Exception as e:
+        logger.error(f"Błąd podczas pobierania statystyk: {e}", exc_info=True)
+        raise

@@ -62,7 +62,7 @@ Analiza będzie przeprowadzana zgodnie z priorytetami, od ⚫⚫⚫⚫ do 🟢. 
 | `file_pairing.py`                 | 🔴🔴🔴    | Kluczowy algorytm parowania plików. Wydajność jest krytyczna.                                                                       | `os`, `app_config`       | Wysoki           |
 | `filter_logic.py`                 | 🟡🟡      | Logika filtrowania w galerii.                                                                                                       | `FilePair`               | Średni           |
 | `metadata_manager.py`             | ⚫⚫⚫⚫  | [Zrefaktoryzowano] Był `metadata_manager_old.py`. Nowa implementacja z `metadata_core` wymaga weryfikacji.                          | `metadata.metadata_core` | Wysoki           |
-| `scanner.py`                      | ⚫⚫⚫⚫  | [W TRAKCIE ANALIZY] Skanowanie folderów, wydajność, thread safety.                                                                  | `os`, `file_pairing`     | Wysoki           |
+| `scanner.py`                      | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅ Skanowanie folderów, wydajność, thread safety.                      | `os`, `file_pairing`     | Wysoki           |
 | `scanner_core.py`                 | 🔴🔴🔴    | Rdzeń skanera. Powiązany z `scanner.py`.                                                                                            | `os`, `app_config`       | Wysoki           |
 | `cache_monitor.py`                | 🟢        | Monitorowanie cache. Prosta logika.                                                                                                 | -                        | Niski            |
 | `scanner_cache.py`                | 🟡🟡      | Cache dla skanera. Może być uproszczony.                                                                                            | `json`                   | Średni           |
@@ -96,7 +96,7 @@ Analiza będzie przeprowadzana zgodnie z priorytetami, od ⚫⚫⚫⚫ do 🟢. 
 2. **`src/logic/metadata/metadata_io.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
 3. **`src/logic/metadata/metadata_operations.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
 4. **`src/logic/metadata/metadata_validator.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
-5. **`src/logic/scanner.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
+5. **`src/logic/scanner.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
 6. **`src/logic/file_operations.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
 
 ### 🔄 W trakcie analizy:
