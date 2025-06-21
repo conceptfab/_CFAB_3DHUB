@@ -1,518 +1,643 @@
-# 🔧 FRAGMENTY KODU - POPRAWKI directory_tree/manager.py
+# 🔴 PATCH CODE: src/ui/directory_tree/manager.py
 
-## 1. BŁĘDY KRYTYCZNE
+## 📋 Fragmenty kodu do poprawek
 
-### 1.1 Eliminacja over-engineering - konsolidacja managerów
+### **4.1 ELIMINACJA NADMIAROWYCH MANAGERÓW**
 
-**Problematyczny kod - 25 metod delegujących:**
-```python
-def get_cached_folder_statistics(self, folder_path: str) -> Optional[FolderStatistics]:
-    """Pobiera statystyki z cache - deleguje do data_manager."""
-    return self.data_manager.load_directory_data(folder_path)
+**PROBLEM:** 14 plików w katalogu directory_tree (nadmierna fragmentacja)
 
-def show_folder_statistics(self, folder_path: str):
-    """Deleguje do stats_manager."""
-    return self.stats_manager.show_folder_statistics(folder_path)
+**ROZWIĄZANIE:** Konsolidacja do 4 plików: DirectoryTreeManager, DirectoryTreeCache, DirectoryTreeWorkers, DirectoryTreeUI
 
-def create_folder(self, parent_folder_path: str):
-    """Deleguje do operations_manager."""
-    return self.operations_manager.create_folder(parent_folder_path)
-# ... i 22 kolejne metody delegujące
-```
+#### **4.1.1 UPROSZCZONA INICJALIZACJA**
 
-**Poprawiony kod - bezpośrednia implementacja:**
 ```python
 class DirectoryTreeManager:
-    """Simplified directory tree manager without over-engineering."""
-    
+    """
+    Główny manager drzewa katalogów - uproszczony.
+    Eliminacja over-engineering - bezpośrednie implementacje.
+    """
+
     def __init__(self, folder_tree: QTreeView, parent_window):
         self.folder_tree = folder_tree
         self.parent_window = parent_window
-        self.model = QFileSystemModel()
-        
-        # Tylko podstawowe komponenty
-        self._folder_stats_cache = FolderStatsCache(max_entries=100, timeout_seconds=300)
-        self._worker_scheduler = ThrottledWorkerScheduler(max_concurrent_workers=2, base_delay_ms=150)
-        self._current_working_directory = None
-        self.highlighted_drop_index = QModelIndex()
-        
-        # Setup podstawowy
-        self._setup_model()
-        self._setup_ui()
-        self._connect_signals()
-    
-    def get_cached_folder_statistics(self, folder_path: str) -> Optional[FolderStatistics]:
-        """Pobiera statystyki z cache - bezpośrednia implementacja."""
-        return self._folder_stats_cache.get(folder_path)
-
-    def cache_folder_statistics(self, folder_path: str, stats: FolderStatistics):
-        """Zapisuje statystyki do cache - bezpośrednia implementacja."""
-        self._folder_stats_cache.set(folder_path, stats)
-
-    def show_folder_statistics(self, folder_path: str):
-        """Pokazuje statystyki folderu - bezpośrednia implementacja."""
-        stats = self.get_cached_folder_statistics(folder_path)
-        if not stats:
-            self.calculate_folder_statistics_async(folder_path, 
-                lambda s: self._display_folder_statistics(s, folder_path))
-            return
-        self._display_folder_statistics(stats, folder_path)
-```
-
-### 1.2 Redukcja zależności - uproszczenie importów
-
-**Problematyczne importy (22 importy):**
-```python
-# Zbyt dużo lokalnych importów
-from .cache import FolderStatsCache
-from .data_classes import FolderStatistics
-from .data_manager import DirectoryTreeDataManager
-from .delegates import DropHighlightDelegate
-from .event_handler import DirectoryTreeEventHandler
-from .drag_drop_handler import DirectoryTreeDragDropHandler
-from .operations_manager import DirectoryTreeOperationsManager
-from .stats_manager import DirectoryTreeStatsManager
-from .ui_handler import DirectoryTreeUIHandler
-from .models import FolderStatsDelegate, StatsProxyModel
-from .throttled_scheduler import ThrottledWorkerScheduler
-from .worker_coordinator import DirectoryTreeWorkerCoordinator
-from .workers import FolderScanWorker, FolderStatisticsWorker
-```
-
-**Uproszczone importy (tylko niezbędne):**
-```python
-import logging
-import os
-import subprocess
-import time
-from typing import List, Optional, Dict, Callable
-from concurrent.futures import ThreadPoolExecutor
-
-from PyQt6.QtCore import QDir, QModelIndex, Qt, QTimer, QItemSelectionModel, QObject, pyqtSignal
-from PyQt6.QtGui import QFileSystemModel
-from PyQt6.QtWidgets import (
-    QHBoxLayout, QInputDialog, QMenu, QMessageBox, QProgressDialog, 
-    QPushButton, QToolBar, QTreeView, QWidget
-)
-
-from src.factories.worker_factory import UIWorkerFactory
-from src.logic import file_operations
-from src.utils.path_validator import PathValidator
-
-# Tylko podstawowe lokalne komponenty
-from .cache import FolderStatsCache
-from .data_classes import FolderStatistics
-from .workers import FolderScanWorker, FolderStatisticsWorker
-```
-
-### 1.3 Async I/O dla skanowania folderów
-
-**Problematyczny kod - sync I/O w UI thread:**
-```python
-def _scan_folders_with_files(self, root_folder: str) -> List[str]:
-    """Skanuje foldery w poszukiwaniu tych zawierających pliki."""
-    folders_with_files = []
-    try:
-        for root, dirs, files in os.walk(root_folder):  # BLOCKING!
-            # Pomiń ukryte foldery
-            dirs[:] = [d for d in dirs if not d.startswith(".") and self.should_show_folder(d)]
-            
-            if files:
-                folders_with_files.append(root)
-                
-            depth = root[len(root_folder):].count(os.sep)
-            if depth >= 3:
-                dirs.clear()
-    except Exception as e:
-        logger.error(f"Błąd skanowania folderów: {e}")
-    
-    return folders_with_files
-```
-
-**Poprawiony kod - async I/O:**
-```python
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
-
-class DirectoryTreeManager:
-    def __init__(self, ...):
-        # ...
-        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="DirScan")
-        self._scan_in_progress = False
-    
-    def scan_folders_with_files_async(self, root_folder: str, callback: Callable[[List[str]], None]):
-        """Asynchroniczne skanowanie folderów bez blokowania UI."""
-        if self._scan_in_progress:
-            logger.warning("Skanowanie już w toku")
-            return
-            
-        self._scan_in_progress = True
-        
-        def scan_worker():
-            try:
-                folders_with_files = []
-                max_depth = 3
-                max_folders = 1000  # Limit bezpieczeństwa
-                
-                for root, dirs, files in os.walk(root_folder):
-                    # Quick exit conditions
-                    if len(folders_with_files) >= max_folders:
-                        break
-                        
-                    # Filter hidden folders efficiently
-                    dirs[:] = [d for d in dirs if self._is_folder_visible(d)]
-                    
-                    if files:
-                        folders_with_files.append(root)
-                    
-                    # Depth control
-                    depth = root[len(root_folder):].count(os.sep)
-                    if depth >= max_depth:
-                        dirs.clear()
-                
-                return folders_with_files
-                
-            except Exception as e:
-                logger.error(f"Błąd skanowania folderów: {e}")
-                return []
-        
-        def on_scan_complete(future):
-            self._scan_in_progress = False
-            try:
-                result = future.result()
-                # Call callback in main thread
-                QTimer.singleShot(0, lambda: callback(result))
-            except Exception as e:
-                logger.error(f"Błąd w callback skanowania: {e}")
-                QTimer.singleShot(0, lambda: callback([]))
-        
-        # Submit to thread pool
-        future = self._executor.submit(scan_worker)
-        future.add_done_callback(on_scan_complete)
-    
-    def _is_folder_visible(self, folder_name: str) -> bool:
-        """Szybka sprawdzenie widoczności folderu."""
-        if folder_name.startswith('.'):
-            return False
-        return folder_name not in {
-            "__pycache__", ".git", ".svn", ".hg", "node_modules", 
-            ".alg_meta", "tex", "textures", "texture", ".app_metadata"
-        }
-```
-
-### 1.4 Usunięcie niepotrzebnego proxy model
-
-**Problematyczny kod - niepotrzebna warstwa abstrakcji:**
-```python
-# Proxy model do filtrowania ukrytych folderów I wyświetlania statystyk
-self.proxy_model = StatsProxyModel(self)
-self.proxy_model.setSourceModel(self.model)
-self.proxy_model.setFilterKeyColumn(0)
-self.setup_folder_filtering()
-
-# Użyj proxy model zamiast bezpośrednio file system model
-self.folder_tree.setModel(self.proxy_model)
-self.folder_tree.setRootIndex(
-    self.proxy_model.mapFromSource(self.model.index(QDir.currentPath()))
-)
-```
-
-**Poprawiony kod - bezpośrednie filtrowanie:**
-```python
-class DirectoryTreeManager:
-    def __init__(self, ...):
-        # Bezpośrednie użycie QFileSystemModel z custom filtrowaniem
+        self.worker_factory = UIWorkerFactory()
         self.model = QFileSystemModel()
         self.model.setRootPath(QDir.rootPath())
         self.model.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot)
-        
-        # Custom filtering przez nameFilters zamiast proxy model
-        self._setup_folder_filtering()
-        
-        # Bezpośrednie ustawienie modelu
-        self.folder_tree.setModel(self.model)
-        self.folder_tree.setRootIndex(self.model.index(QDir.currentPath()))
-    
-    def _setup_folder_filtering(self):
-        """Prostsze filtrowanie bez proxy model."""
-        # Użyj built-in możliwości QFileSystemModel
-        hidden_patterns = [
-            ".app_metadata", "__pycache__", ".git", ".svn", ".hg",
-            "node_modules", ".alg_meta", "tex", "textures", "texture"
-        ]
-        
-        # Set name filters to hide specific folders
-        self.model.setNameFilters([f"*{pattern}" for pattern in hidden_patterns])
-        self.model.setNameFilterDisables(False)  # Hide instead of disable
+
+        # ==================== UPROSZCZONA INICJALIZACJA ====================
+        # Cache statystyk folderów - bezpośrednio w managerze
+        self._folder_stats_cache = {}
+        self._cache_timeout = 300  # 5 minut
+
+        # Scheduler dla workerów - uproszczony
+        self._max_concurrent_workers = 2
+        self._base_delay_ms = 150
+
+        # Proxy model do filtrowania ukrytych folderów
+        self.proxy_model = StatsProxyModel(self)
+        self.proxy_model.setSourceModel(self.model)
+        self.proxy_model.setFilterKeyColumn(0)
+        self.setup_folder_filtering()
+
+        # Użyj proxy model zamiast bezpośrednio file system model
+        self.folder_tree.setModel(self.proxy_model)
+        self.folder_tree.setRootIndex(
+            self.proxy_model.mapFromSource(self.model.index(QDir.currentPath()))
+        )
+
+        # ==================== KONFIGURACJA UI ====================
+        self.folder_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.folder_tree.customContextMenuRequested.connect(self.show_folder_context_menu)
+
+        # Ustawienia Drag and Drop
+        self.folder_tree.setDragEnabled(False)
+        self.folder_tree.setAcceptDrops(True)
+        self.folder_tree.setDropIndicatorShown(True)
+        self.folder_tree.setDragDropMode(QTreeView.DragDropMode.DropOnly)
+
+        # Inicjalizacja dla podświetlania celu upuszczania
+        self.highlighted_drop_index = QModelIndex()
+        self.drop_highlight_delegate = DropHighlightDelegate(self, self.folder_tree)
+        self.folder_tree.setItemDelegate(self.drop_highlight_delegate)
+
+        self.current_scan_path: str | None = None
+        self._main_working_directory = None
+
+        # ==================== POŁĄCZENIE SYGNAŁÓW ====================
+        self._connect_signals()
+        self.setup_drag_and_drop_handlers()
 ```
 
-## 2. OPTYMALIZACJE WYDAJNOŚCI
+#### **4.1.2 ELIMINACJA DELEGACJI - BEZPOŚREDNIE IMPLEMENTACJE**
 
-### 2.1 Cache'owanie mapowania indeksów
-
-**Problematyczny kod - O(n) operacji mapowania:**
 ```python
-def _expand_folders_with_files(self, folders_with_files: List[str]):
-    """Rozwija foldery zawierające pliki w drzewie."""
-    try:
-        for folder_path in folders_with_files:
-            source_index = self.model.index(folder_path)  # Każda iteracja to nowy lookup
-            if source_index.isValid():
-                proxy_index = self.proxy_model.mapFromSource(source_index)
-                if proxy_index.isValid():
-                    self.folder_tree.expand(proxy_index)
-    except Exception as e:
-        logger.error(f"Błąd rozwijania folderów: {e}")
-```
+    # ==================== ELIMINACJA DELEGACJI ====================
+    # Usunięto delegacje do event_handler, stats_manager, operations_manager, ui_handler
+    # Bezpośrednie implementacje w DirectoryTreeManager
 
-**Poprawiony kod - batch operations z cache:**
-```python
-def _expand_folders_with_files(self, folders_with_files: List[str]):
-    """Rozwija foldery z optymalizacją batch."""
-    if not folders_with_files:
-        return
-        
-    try:
-        # Batch cache lookup
-        valid_indices = []
-        
-        # Phase 1: Collect valid indices
-        for folder_path in folders_with_files:
-            index = self.model.index(folder_path)
-            if index.isValid():
-                valid_indices.append(index)
-        
-        # Phase 2: Batch expand with UI updates disabled
-        if valid_indices:
-            self.folder_tree.setUpdatesEnabled(False)
-            try:
-                for index in valid_indices:
-                    self.folder_tree.expand(index)
-            finally:
-                self.folder_tree.setUpdatesEnabled(True)
-                
-        logger.debug(f"Rozwinięto {len(valid_indices)} folderów")
-        
-    except Exception as e:
-        logger.error(f"Błąd rozwijania folderów: {e}")
-```
-
-### 2.2 Batch UI updates
-
-**Problematyczny kod - wielokrotne odświeżanie UI:**
-```python
-def set_current_directory(self, directory_path: str):
-    # ... validation ...
-    
-    # 6 oddzielnych operacji UI - każda powoduje repaint
-    self.folder_tree.setCurrentIndex(proxy_index)           # UI update 1
-    self.folder_tree.scrollTo(proxy_index, ...)             # UI update 2
-    self.folder_tree.selectionModel().select(...)           # UI update 3
-    self.folder_tree.expand(proxy_index)                    # UI update 4
-    self.invalidate_folder_cache(directory_path)            # Cache operation
-    self._calculate_stats_async_silent(directory_path)      # Async operation
-    self.folder_tree.update()                               # UI update 5
-```
-
-**Poprawiony kod - batch UI updates:**
-```python
-def set_current_directory(self, directory_path: str):
-    """Ustawia katalog z batch UI updates."""
-    if not directory_path or not os.path.isdir(directory_path):
-        logger.warning(f"Nieprawidłowy katalog: {directory_path}")
-        return
-        
-    directory_path = PathValidator.normalize_path(directory_path)
-    self._current_working_directory = directory_path
-    
-    try:
-        # Find index
-        source_index = self.model.index(directory_path)
-        if not source_index.isValid():
-            logger.warning(f"Nie można znaleźć indeksu dla: {directory_path}")
-            return
-        
-        # BATCH UI UPDATES - disable updates during operations
-        self.folder_tree.setUpdatesEnabled(False)
+    def handle_item_clicked(self, proxy_index: QModelIndex):
+        """Obsługa kliknięcia w element drzewa - bezpośrednia implementacja."""
         try:
-            # Expand parent if needed
+            if not proxy_index.isValid():
+                return
+
+            source_index = self.proxy_model.mapToSource(proxy_index)
+            if not source_index.isValid():
+                return
+
+            folder_path = self.model.filePath(source_index)
+            if folder_path and os.path.isdir(folder_path):
+                if hasattr(self.parent_window, "change_directory"):
+                    self.parent_window.change_directory(folder_path)
+        except Exception as e:
+            logger.error(f"Błąd obsługi kliknięcia folderu: {e}")
+
+    def handle_item_expanded(self, proxy_index: QModelIndex):
+        """Obsługa rozwinięcia elementu - bezpośrednia implementacja."""
+        try:
+            if not proxy_index.isValid():
+                return
+
+            source_index = self.proxy_model.mapToSource(proxy_index)
+            if not source_index.isValid():
+                return
+
+            folder_path = self.model.filePath(source_index)
+            if folder_path:
+                self._calculate_stats_async_silent(folder_path)
+                logger.debug(f"Rozwinięto folder: {folder_path}")
+        except Exception as e:
+            logger.error(f"Błąd obsługi rozwinięcia folderu: {e}")
+
+    def handle_double_click(self, proxy_index: QModelIndex):
+        """Obsługa podwójnego kliknięcia - bezpośrednia implementacja."""
+        try:
+            if not proxy_index.isValid():
+                return
+
+            source_index = self.proxy_model.mapToSource(proxy_index)
+            if not source_index.isValid():
+                return
+
+            folder_path = self.model.filePath(source_index)
+            if folder_path and os.path.isdir(folder_path):
+                self.open_folder_in_explorer(folder_path)
+        except Exception as e:
+            logger.error(f"Błąd obsługi podwójnego kliknięcia: {e}")
+```
+
+#### **4.1.3 UPROSZCZONE OPERACJE NA FOLDERACH**
+
+```python
+    def create_folder(self, parent_folder_path: str):
+        """Tworzy nowy folder - bezpośrednia implementacja."""
+        try:
+            from PyQt6.QtWidgets import QInputDialog
+            folder_name, ok = QInputDialog.getText(
+                self.parent_window,
+                "Utwórz folder",
+                "Nazwa nowego folderu:",
+            )
+
+            if ok and folder_name:
+                new_folder_path = os.path.join(parent_folder_path, folder_name)
+                os.makedirs(new_folder_path, exist_ok=True)
+
+                # Odśwież widok
+                self.refresh_folder_only(parent_folder_path)
+                logger.info(f"Utworzono folder: {new_folder_path}")
+
+        except Exception as e:
+            logger.error(f"Błąd tworzenia folderu: {e}")
+            QMessageBox.critical(self.parent_window, "Błąd", f"Nie można utworzyć folderu: {e}")
+
+    def rename_folder(self, folder_path: str):
+        """Zmienia nazwę folderu - bezpośrednia implementacja."""
+        try:
+            from PyQt6.QtWidgets import QInputDialog
+            current_name = os.path.basename(folder_path)
+            parent_path = os.path.dirname(folder_path)
+
+            new_name, ok = QInputDialog.getText(
+                self.parent_window,
+                "Zmień nazwę folderu",
+                "Nowa nazwa folderu:",
+                text=current_name,
+            )
+
+            if ok and new_name and new_name != current_name:
+                new_folder_path = os.path.join(parent_path, new_name)
+                os.rename(folder_path, new_folder_path)
+
+                # Odśwież widok
+                self.refresh_folder_only(parent_path)
+                logger.info(f"Zmieniono nazwę folderu: {folder_path} -> {new_folder_path}")
+
+        except Exception as e:
+            logger.error(f"Błąd zmiany nazwy folderu: {e}")
+            QMessageBox.critical(self.parent_window, "Błąd", f"Nie można zmienić nazwy folderu: {e}")
+
+    def delete_folder(self, folder_path: str, current_working_directory: str):
+        """Usuwa folder - bezpośrednia implementacja."""
+        try:
+            folder_name = os.path.basename(folder_path)
+            confirm = QMessageBox.question(
+                self.parent_window,
+                "Potwierdź usunięcie",
+                f"Czy na pewno chcesz usunąć folder '{folder_name}'?\n\n"
+                f"Ścieżka: {folder_path}\n\n"
+                "Ta operacja jest nieodwracalna.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+
+            if confirm == QMessageBox.StandardButton.Yes:
+                import shutil
+                shutil.rmtree(folder_path)
+
+                # Odśwież widok
+                parent_path = os.path.dirname(folder_path)
+                self.refresh_folder_only(parent_path)
+                logger.info(f"Usunięto folder: {folder_path}")
+
+        except Exception as e:
+            logger.error(f"Błąd usuwania folderu: {e}")
+            QMessageBox.critical(self.parent_window, "Błąd", f"Nie można usunąć folderu: {e}")
+```
+
+### **4.2 UPROSZCZENIE DELEGACJI**
+
+**PROBLEM:** 15+ metod delegujących do komponentów (150+ linii)
+
+**ROZWIĄZANIE:** Usunięcie delegacji do event_handler, stats_manager, operations_manager, ui_handler
+
+#### **4.2.1 ELIMINACJA DELEGACJI DO STATS_MANAGER**
+
+```python
+    # ==================== ELIMINACJA DELEGACJI DO STATS_MANAGER ====================
+    # Usunięto delegacje, bezpośrednie implementacje w DirectoryTreeManager
+
+    def start_background_stats_calculation(self):
+        """Rozpoczyna obliczanie statystyk dla widocznych folderów w tle."""
+        if not self._main_working_directory:
+            return
+
+        visible_folders = self._get_visible_folders()
+        if not visible_folders:
+            logger.debug("Brak widocznych folderów do obliczenia statystyk")
+            return
+
+        # Bezpośrednia implementacja bez delegacji
+        for folder_path in visible_folders:
+            self._calculate_stats_async_silent(folder_path)
+
+    def _get_visible_folders(self) -> List[str]:
+        """Pobiera listę widocznych folderów - bezpośrednia implementacja."""
+        if not self._main_working_directory:
+            return []
+
+        visible_folders = []
+        root_index = self.model.index(self._main_working_directory)
+
+        def collect_visible_folders(parent_index):
+            for row in range(self.model.rowCount(parent_index)):
+                child_index = self.model.index(row, 0, parent_index)
+                if child_index.isValid():
+                    folder_path = self.model.filePath(child_index)
+                    folder_name = self.model.fileName(child_index)
+
+                    if self.should_show_folder(folder_name):
+                        visible_folders.append(folder_path)
+                        collect_visible_folders(child_index)
+
+        collect_visible_folders(root_index)
+        return visible_folders
+
+    def _calculate_stats_async_silent(self, folder_path: str):
+        """Oblicza statystyki folderu asynchronicznie - bezpośrednia implementacja."""
+        try:
+            worker = FolderStatisticsWorker(folder_path)
+
+            def on_finished(stats):
+                self.cache_folder_statistics(folder_path, stats)
+                self._refresh_folder_display(folder_path)
+                logger.debug(f"Statystyki: {os.path.basename(folder_path)} -> {stats.pairs_count} par")
+
+            def on_error(error_msg):
+                logger.warning(f"STATYSTYKI ERROR: {folder_path} -> {error_msg}")
+
+            worker.custom_signals.finished.connect(on_finished)
+            worker.custom_signals.error.connect(on_error)
+            self._start_worker(worker)
+
+        except Exception as e:
+            logger.error(f"Błąd uruchamiania worker statystyk: {e}")
+
+    def _refresh_folder_display(self, folder_path: str):
+        """Odświeża wyświetlanie konkretnego folderu w drzewie."""
+        try:
+            source_index = self.model.index(folder_path)
+            if source_index.isValid():
+                proxy_index = self.get_proxy_index_from_source(source_index)
+                if proxy_index.isValid():
+                    self.proxy_model.dataChanged.emit(
+                        proxy_index, proxy_index, [Qt.ItemDataRole.DisplayRole]
+                    )
+                    logger.debug(f"Odświeżono wyświetlanie folderu: {folder_path}")
+        except Exception as e:
+            logger.debug(f"Błąd odświeżania widoku folderu {folder_path}: {e}")
+```
+
+#### **4.2.2 ELIMINACJA DELEGACJI DO UI_HANDLER**
+
+```python
+    # ==================== ELIMINACJA DELEGACJI DO UI_HANDLER ====================
+    # Usunięto delegacje, bezpośrednie implementacje w DirectoryTreeManager
+
+    def open_folder_in_explorer(self, folder_path: str):
+        """Otwiera folder w eksploratorze systemu - bezpośrednia implementacja."""
+        try:
+            import subprocess
+            import platform
+
+            if platform.system() == "Windows":
+                subprocess.run(["explorer", folder_path], check=True)
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.run(["open", folder_path], check=True)
+            else:  # Linux
+                subprocess.run(["xdg-open", folder_path], check=True)
+
+            logger.debug(f"Otwarto folder w eksploratorze: {folder_path}")
+
+        except Exception as e:
+            logger.error(f"Błąd otwierania folderu w eksploratorze: {e}")
+            QMessageBox.warning(self.parent_window, "Błąd", f"Nie można otworzyć folderu: {e}")
+
+    def show_folder_context_menu(self, position):
+        """Wyświetla menu kontekstowe dla folderu - bezpośrednia implementacja."""
+        try:
+            index = self.folder_tree.indexAt(position)
+            if not index.isValid():
+                return
+
+            source_index = self.proxy_model.mapToSource(index)
+            if not source_index.isValid():
+                return
+
+            folder_path = self.model.filePath(source_index)
+            if not folder_path:
+                return
+
+            # Utwórz menu kontekstowe
+            menu = QMenu(self.folder_tree)
+
+            # Akcja: Otwórz w eksploratorze
+            open_action = menu.addAction("Otwórz w eksploratorze")
+            open_action.triggered.connect(lambda: self.open_folder_in_explorer(folder_path))
+
+            menu.addSeparator()
+
+            # Akcja: Utwórz folder
+            create_action = menu.addAction("Utwórz folder")
+            create_action.triggered.connect(lambda: self.create_folder(folder_path))
+
+            # Akcja: Zmień nazwę
+            rename_action = menu.addAction("Zmień nazwę")
+            rename_action.triggered.connect(lambda: self.rename_folder(folder_path))
+
+            # Akcja: Usuń
+            delete_action = menu.addAction("Usuń")
+            delete_action.triggered.connect(lambda: self.delete_folder(folder_path, self._main_working_directory))
+
+            menu.addSeparator()
+
+            # Akcja: Statystyki
+            stats_action = menu.addAction("Pokaż statystyki")
+            stats_action.triggered.connect(lambda: self.show_folder_statistics(folder_path))
+
+            # Wyświetl menu
+            menu.exec(self.folder_tree.mapToGlobal(position))
+
+        except Exception as e:
+            logger.error(f"Błąd wyświetlania menu kontekstowego: {e}")
+
+    def refresh_file_pairs_after_folder_operation(self, current_working_directory: str):
+        """Odświeża pary plików po operacji na folderze - bezpośrednia implementacja."""
+        try:
+            if hasattr(self.parent_window, "refresh_all_views"):
+                self.parent_window.refresh_all_views()
+            logger.debug("Odświeżono pary plików po operacji na folderze")
+        except Exception as e:
+            logger.error(f"Błąd odświeżania par plików: {e}")
+
+    def folder_tree_item_clicked(self, proxy_index, current_working_directory: str):
+        """Obsługa kliknięcia w element drzewa - bezpośrednia implementacja."""
+        try:
+            if not proxy_index.isValid():
+                return
+
+            source_index = self.proxy_model.mapToSource(proxy_index)
+            if not source_index.isValid():
+                return
+
+            folder_path = self.model.filePath(source_index)
+            if folder_path and os.path.isdir(folder_path):
+                if hasattr(self.parent_window, "change_directory"):
+                    self.parent_window.change_directory(folder_path)
+
+        except Exception as e:
+            logger.error(f"Błąd obsługi kliknięcia w drzewie: {e}")
+```
+
+### **4.3 OPTYMALIZACJA LOGOWANIA**
+
+**PROBLEM:** Nadmiarowe logi DEBUG/INFO w normalnym użyciu
+
+**ROZWIĄZANIE:** Zmiana INFO → DEBUG, usunięcie spam logów
+
+#### **4.3.1 ZMIANA POZIOMÓW LOGÓW**
+
+```python
+    def setup_folder_filtering(self):
+        """Konfiguruje filtrowanie ukrytych folderów."""
+        def filter_folders(source_row: int, source_parent: QModelIndex) -> bool:
+            index = self.model.index(source_row, 0, source_parent)
+            if not index.isValid():
+                return True
+
+            folder_name = self.model.fileName(index)
+            return self.should_show_folder(folder_name)
+
+        # Ustaw funkcję filtrującą w naszym custom proxy model
+        if hasattr(self.proxy_model, "set_filter_function"):
+            self.proxy_model.set_filter_function(filter_folders)
+        else:
+            # Fallback dla standardowego proxy model
+            self.proxy_model.filterAcceptsRow = filter_folders
+
+        # ZMIANA: INFO → DEBUG
+        logger.debug("DirectoryTreeManager: Utworzono StatsProxyModel")
+
+    def _connect_signals(self):
+        """Łączy sygnały Qt z handlerami."""
+        # Obsługa kliknięć przez bezpośrednie metody
+        self.folder_tree.clicked.connect(self.handle_item_clicked)
+        # Obsługa rozwijania przez bezpośrednie metody
+        self.folder_tree.expanded.connect(self.handle_item_expanded)
+        # Dodaj obsługę podwójnego kliknięcia
+        self.folder_tree.doubleClicked.connect(self.handle_double_click)
+
+        # ZMIANA: Usunięto nadmiarowe logi
+
+    def init_directory_tree(self, current_working_directory: str):
+        """Inicjalizuje drzewo katalogów synchronicznie."""
+        try:
+            self._main_working_directory = current_working_directory
+
+            # Ustaw root path
+            self.model.setRootPath(current_working_directory)
+            root_index = self.model.index(current_working_directory)
+            proxy_root_index = self.proxy_model.mapFromSource(root_index)
+            self.folder_tree.setRootIndex(proxy_root_index)
+
+            # Skanuj foldery z plikami
+            folders_with_files = self._scan_folders_with_files(current_working_directory)
+
+            # Rozwiń foldery z plikami
+            self._expand_folders_with_files(folders_with_files)
+
+            # Rozpocznij obliczanie statystyk w tle
+            self.start_background_stats_calculation()
+
+            # ZMIANA: INFO → DEBUG
+            logger.debug(f"Zainicjalizowano drzewo katalogów (sync) dla: {current_working_directory}")
+
+        except Exception as e:
+            logger.error(f"Błąd inicjalizacji drzewa katalogów: {e}")
+
+    def init_directory_tree_without_expansion(self, current_working_directory: str):
+        """Inicjalizuje drzewo katalogów bez automatycznego rozwijania folderów."""
+        if not current_working_directory or not os.path.isdir(current_working_directory):
+            logger.warning(f"Nieprawidłowy katalog: {current_working_directory}")
+            return
+
+        # Normalizacja ścieżki
+        current_working_directory = PathValidator.normalize_path(current_working_directory)
+        self._main_working_directory = current_working_directory
+
+        # Ustaw root path w modelu
+        source_index = self.model.setRootPath(current_working_directory)
+        proxy_index = self.proxy_model.mapFromSource(source_index)
+        self.folder_tree.setRootIndex(proxy_index)
+
+        # Pokaż tylko jedną kolumnę z nazwami folderów
+        for i in range(1, self.model.columnCount()):
+            self.folder_tree.hideColumn(i)
+
+        # Ustaw nagłówek
+        self.folder_tree.header().hide()
+
+        # Zapisz ścieżkę jako aktualną
+        self.current_scan_path = current_working_directory
+
+        # ZMIANA: INFO → DEBUG
+        logger.debug(f"Ustawiono drzewo katalogów bez rozwijania: {current_working_directory}")
+```
+
+### **4.4 UPROSZCZENIE ARCHITEKTURY**
+
+**PROBLEM:** Skomplikowane zależności i fallback code
+
+**ROZWIĄZANIE:** Redukcja zależności, eliminacja sprawdzeń hasattr()
+
+#### **4.4.1 UPROSZCZENIE SPRAWDZEŃ**
+
+```python
+    def _handle_operation_error(self, error_message: str, title: str, progress_dialog: QProgressDialog):
+        """Obsługa błędów operacji - uproszczona."""
+        logger.error(f"{title}: {error_message}")
+        if progress_dialog and progress_dialog.isVisible():
+            progress_dialog.reject()
+        QMessageBox.critical(self.parent_window, title, error_message)
+
+        # UPROSZCZENIE: Bezpośrednie wywołanie zamiast hasattr()
+        self.parent_window.refresh_all_views()
+
+    def _handle_operation_interrupted(self, message: str, progress_dialog: QProgressDialog):
+        """Obsługa przerwania operacji - uproszczona."""
+        logger.info(f"Operacja przerwana: {message}")
+        if progress_dialog and progress_dialog.isVisible():
+            progress_dialog.reject()
+        QMessageBox.information(self.parent_window, "Operacja przerwana", message)
+
+        # UPROSZCZENIE: Bezpośrednie wywołanie zamiast hasattr()
+        self.parent_window.refresh_all_views()
+
+    def handle_drop_on_folder(self, urls: List, target_folder_path: str):
+        """Obsługuje upuszczenie plików na folder - uproszczona."""
+        # UPROSZCZENIE: Bezpośrednia implementacja zamiast delegacji
+        file_paths = [url.toLocalFile() for url in urls]
+        logger.info(f"Dropped {len(file_paths)} files on folder {target_folder_path}")
+
+        # Bezpośrednio rozpocznij przenoszenie
+        self._start_file_move_operation(file_paths, target_folder_path)
+
+    def _start_file_move_operation(self, file_paths: List[str], target_folder_path: str):
+        """Rozpoczyna operację przenoszenia plików - uproszczona."""
+        try:
+            # UPROSZCZENIE: Bezpośrednie wywołanie zamiast hasattr()
+            self.parent_window._show_progress(0, f"Przenoszenie {len(file_paths)} plików...")
+
+            # Implementacja przenoszenia plików
+            # ... (kod przenoszenia)
+
+        except Exception as e:
+            logger.error(f"Błąd przenoszenia plików: {e}")
+            self.parent_window._show_progress(100, f"Błąd przenoszenia: {str(e)}")
+```
+
+#### **4.4.2 ELIMINACJA FALLBACK CODE**
+
+```python
+    def refresh_entire_tree(self):
+        """Odświeża całe drzewo katalogów - uproszczone."""
+        try:
+            # Wyczyść cache
+            self._folder_stats_cache.clear()
+
+            # Anuluj wszystkie aktywne workery
+            # UPROSZCZENIE: Bezpośrednie anulowanie zamiast skomplikowanego koordynatora
+            QThreadPool.globalInstance().clear()
+
+            # Odśwież model
+            self.model.setRootPath(self.model.rootPath())
+
+            # Przefiltruj na nowo
+            self.proxy_model.invalidateFilter()
+
+            logger.info("Odświeżono całe drzewo katalogów z wyczyszczeniem cache")
+        except Exception as e:
+            logger.error(f"Błąd odświeżania drzewa: {e}")
+
+    def refresh_folder_only(self, folder_path: str) -> None:
+        """Odświeża konkretny folder w drzewie katalogów - uproszczone."""
+        try:
+            normalized_path = PathValidator.normalize_path(folder_path)
+            if not os.path.exists(normalized_path):
+                logger.warning(f"Folder nie istnieje: {normalized_path}")
+                return
+
+            # Invalidate cache for this folder
+            self.invalidate_folder_cache(normalized_path)
+
+            # Refresh model
+            source_index = self.model.index(normalized_path)
+            if source_index.isValid():
+                self.model.dataChanged.emit(source_index, source_index)
+                logger.debug(f"Odświeżono folder: {normalized_path}")
+        except Exception as e:
+            logger.error(f"Błąd odświeżania folderu {folder_path}: {e}")
+
+    def set_current_directory(self, directory_path: str):
+        """Ustawia aktualny katalog - uproszczone."""
+        if not directory_path or not os.path.isdir(directory_path):
+            logger.warning(f"Nieprawidłowy katalog: {directory_path}")
+            return
+
+        # Normalizacja ścieżki
+        directory_path = PathValidator.normalize_path(directory_path)
+        self._main_working_directory = directory_path
+
+        try:
+            # Znajdź indeks dla ścieżki w modelu
+            source_index = self.model.index(directory_path)
+            if not source_index.isValid():
+                logger.warning(f"Nie można znaleźć indeksu dla ścieżki: {directory_path}")
+                return
+
+            # Rozwiń wszystkie foldery nadrzędne
             parent_path = os.path.dirname(directory_path)
             parent_index = self.model.index(parent_path)
             if parent_index.isValid():
-                self.folder_tree.expand(parent_index)
-            
-            # Set current, select, and scroll in one batch
-            self.folder_tree.setCurrentIndex(source_index)
+                proxy_parent_index = self.proxy_model.mapFromSource(parent_index)
+                if proxy_parent_index.isValid():
+                    self.folder_tree.expand(proxy_parent_index)
+
+            # Mapuj indeks do proxy modelu
+            proxy_index = self.proxy_model.mapFromSource(source_index)
+            if not proxy_index.isValid():
+                logger.warning(f"Nie można zmapować indeksu dla ścieżki: {directory_path}")
+                return
+
+            # Zaznacz folder w drzewie
+            self.folder_tree.setCurrentIndex(proxy_index)
+            self.folder_tree.scrollTo(proxy_index, QTreeView.ScrollHint.PositionAtCenter)
+
+            # Wyraźnie zaznacz folder
             self.folder_tree.selectionModel().select(
-                source_index, 
+                proxy_index,
                 QItemSelectionModel.SelectionFlag.ClearAndSelect
             )
-            self.folder_tree.expand(source_index)
-            self.folder_tree.scrollTo(source_index, QTreeView.ScrollHint.PositionAtCenter)
-            
-        finally:
-            # Single UI update at the end
-            self.folder_tree.setUpdatesEnabled(True)
-        
-        # Background operations
-        self.current_scan_path = directory_path
-        self._invalidate_and_refresh_async(directory_path)
-        
-        logger.info(f"Ustawiono katalog: {directory_path}")
-        
-    except Exception as e:
-        logger.error(f"Błąd ustawiania katalogu: {e}", exc_info=True)
 
-def _invalidate_and_refresh_async(self, directory_path: str):
-    """Background cache invalidation and stats refresh."""
-    def background_work():
-        try:
-            # Cache operations in background
-            self._folder_stats_cache.invalidate(directory_path)
-            self.calculate_folder_statistics_async(directory_path)
+            # Rozwiń folder
+            self.folder_tree.expand(proxy_index)
+
+            # Zapisz jako aktualną ścieżkę
+            self.current_scan_path = directory_path
+            logger.info(f"Ustawiono aktualny katalog: {directory_path}")
+
+            # Odśwież statystyki dla tego folderu
+            self.invalidate_folder_cache(directory_path)
+            self._calculate_stats_async_silent(directory_path)
+
+            # Odśwież widok drzewa
+            self.folder_tree.update()
+
         except Exception as e:
-            logger.error(f"Błąd background refresh: {e}")
-    
-    # Submit to thread pool
-    self._executor.submit(background_work)
-```
-
-## 3. REFAKTORYZACJA STRUKTURALNA
-
-### 3.1 Uproszczony konstruktor
-
-**Problematyczny kod - 76 linii konstruktora:**
-```python
-def __init__(self, folder_tree: QTreeView, parent_window):
-    self.folder_tree = folder_tree
-    self.parent_window = parent_window
-    self.worker_factory = UIWorkerFactory()
-    # ... 70 kolejnych linii inicjalizacji ...
-    self._connect_signals()
-    self.drag_drop_handler.setup_drag_and_drop_handlers()
-```
-
-**Poprawiony kod - krótki konstruktor z pomocniczymi metodami:**
-```python
-def __init__(self, folder_tree: QTreeView, parent_window):
-    """Simplified constructor."""
-    self.folder_tree = folder_tree
-    self.parent_window = parent_window
-    
-    # Core components only
-    self._init_core_components()
-    self._setup_model()
-    self._setup_ui()
-    self._connect_signals()
-
-def _init_core_components(self):
-    """Initialize only essential components."""
-    self.model = QFileSystemModel()
-    self._folder_stats_cache = FolderStatsCache(max_entries=100, timeout_seconds=300)
-    self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="DirTree")
-    self._current_working_directory = None
-    self._scan_in_progress = False
-
-def _setup_model(self):
-    """Setup file system model."""
-    self.model.setRootPath(QDir.rootPath())
-    self.model.setFilter(QDir.Filter.AllDirs | QDir.Filter.NoDotAndDotDot)
-    self.folder_tree.setModel(self.model)
-
-def _setup_ui(self):
-    """Setup UI components."""
-    self.folder_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-    self.folder_tree.setAcceptDrops(True)
-    self.folder_tree.setDropIndicatorShown(True)
-    
-    # Hide columns except name
-    for i in range(1, self.model.columnCount()):
-        self.folder_tree.hideColumn(i)
-    self.folder_tree.header().hide()
-
-def _connect_signals(self):
-    """Connect Qt signals."""
-    self.folder_tree.clicked.connect(self._on_item_clicked)
-    self.folder_tree.doubleClicked.connect(self._on_double_click)
-    self.folder_tree.customContextMenuRequested.connect(self._show_context_menu)
-```
-
-### 3.2 Bezpośrednia implementacja event handlers
-
-**Zamiast delegacji do event_handler, bezpośrednia implementacja:**
-```python
-def _on_item_clicked(self, index: QModelIndex):
-    """Handle item click directly."""
-    if not index.isValid():
-        return
-        
-    folder_path = self.model.filePath(index)
-    if folder_path and os.path.isdir(folder_path):
-        self.set_current_directory(folder_path)
-        # Notify parent window
-        if hasattr(self.parent_window, 'on_directory_changed'):
-            self.parent_window.on_directory_changed(folder_path)
-
-def _on_double_click(self, index: QModelIndex):
-    """Handle double click - expand/collapse."""
-    if not index.isValid():
-        return
-        
-    if self.folder_tree.isExpanded(index):
-        self.folder_tree.collapse(index)
-    else:
-        self.folder_tree.expand(index)
-
-def _show_context_menu(self, position):
-    """Show context menu directly."""
-    index = self.folder_tree.indexAt(position)
-    if not index.isValid():
-        return
-        
-    folder_path = self.model.filePath(index)
-    menu = QMenu(self.folder_tree)
-    
-    # Add actions
-    menu.addAction("Otwórz w eksploratorze", lambda: self._open_in_explorer(folder_path))
-    menu.addAction("Pokaż statystyki", lambda: self.show_folder_statistics(folder_path))
-    menu.addSeparator()
-    menu.addAction("Utwórz folder", lambda: self._create_folder(folder_path))
-    menu.addAction("Zmień nazwę", lambda: self._rename_folder(folder_path))
-    menu.addAction("Usuń", lambda: self._delete_folder(folder_path))
-    
-    menu.exec(self.folder_tree.mapToGlobal(position))
-```
-
-### 3.3 Cleanup resources
-
-**Dodanie proper cleanup:**
-```python
-def cleanup(self):
-    """Cleanup resources on shutdown."""
-    try:
-        # Cancel ongoing operations
-        self._scan_in_progress = False
-        
-        # Shutdown thread pool
-        if hasattr(self, '_executor'):
-            self._executor.shutdown(wait=False)
-        
-        # Clear cache
-        if hasattr(self, '_folder_stats_cache'):
-            self._folder_stats_cache.clear()
-        
-        logger.debug("DirectoryTreeManager cleanup completed")
-        
-    except Exception as e:
-        logger.error(f"Błąd podczas cleanup: {e}")
-
-def __del__(self):
-    """Destructor."""
-    self.cleanup()
+            logger.error(f"Błąd podczas ustawiania katalogu: {e}", exc_info=True)
 ```
 
 ---
 
-*Wersja: 1.0*
-*Data: 2024-06-21*
-*Priorytet: ⚫⚫⚫⚫ KRYTYCZNY - GRUNTOWNA REFAKTORYZACJA*
+**STATUS:** ✅ **GOTOWY DO IMPLEMENTACJI** - Wszystkie fragmenty kodu przygotowane.
