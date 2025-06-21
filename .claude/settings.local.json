@@ -25,7 +25,8 @@
       "Bash(pylint:*)",
       "Bash(flake8:*)",
       "Bash(vulture:*)",
-      "Bash(radon:*)"
+      "Bash(radon:*)",
+      "Bash(tree:*)"
     ],
     "deny": []
   }
