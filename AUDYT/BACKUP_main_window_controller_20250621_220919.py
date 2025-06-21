@@ -6,7 +6,7 @@ ZREFAKTORYZOWANY - usunięto problemy z dokumentacją correction_KRYTYCZNY_main_
 
 import logging
 import os
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from PyQt6.QtWidgets import QMessageBox
 
@@ -50,21 +50,17 @@ class MainWindowController:
         self.unpaired_previews: List[str] = []
         self.special_folders: List = []
 
-    def handle_folder_selection(self, directory_path: str) -> None:
+    def handle_folder_selection(self, directory_path: str):
         """
         Obsługuje wybór folderu roboczego przez uruchomienie asynchronicznego skanowania.
         """
         try:
-            self.logger.debug("Rozpoczęcie skanowania folderu: %s", directory_path)
-            
             errors = self.scan_service.validate_directory_path(directory_path)
             if errors:
                 error_msg = "Błędy walidacji folderu:\n" + "\n".join(errors)
-                self.logger.warning("Walidacja folderu nie powiodła się: %s", error_msg)
                 self.view.show_error_message("Błąd folderu", error_msg)
                 return
 
-            self.logger.debug("Walidacja folderu zakończona pomyślnie, uruchamianie workera")
             self.view.worker_manager.start_directory_scan_worker(directory_path)
 
         except Exception as e:
@@ -283,7 +279,7 @@ class MainWindowController:
             self.logger.error(f"Błąd odświeżania: {str(e)}")
             self.view.show_error_message("Błąd odświeżania", str(e))
 
-    def handle_metadata_change(self, file_pair: FilePair, field: str, value: Any) -> None:
+    def handle_metadata_change(self, file_pair: FilePair, field: str, value):
         """
         Obsługuje zmianę metadanych par plików.
 
@@ -333,13 +329,11 @@ class MainWindowController:
         # Deleguj do SelectionManager
         self.selection_manager.remove_pairs_from_selection(pairs_to_remove)
 
-    def _show_operation_errors(self, operation_name: str, errors: List[str]) -> None:
+    def _show_operation_errors(self, operation_name: str, errors: List[str]):
         """Pokazuje błędy operacji użytkownikowi."""
         if not errors:
             return
 
-        self.logger.warning("Operacja %s zakończona z %d błędami", operation_name, len(errors))
-        
         error_msg = f"Błędy podczas {operation_name}:\n\n"
 
         # Pokaż maksymalnie 5 błędów
@@ -347,8 +341,7 @@ class MainWindowController:
         error_msg += "\n".join(shown_errors)
 
         if len(errors) > 5:
-            remaining = len(errors) - 5
-            error_msg += f"\n\n... i {remaining} więcej błędów"
+            error_msg += f"\n\n... i {len(errors) - 5} więcej błędów"
 
         self.view.show_warning_message(f"Błędy {operation_name}", error_msg)
 

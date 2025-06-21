@@ -1,4 +1,3 @@
-import argparse
 import logging
 import os
 import sys
@@ -25,7 +24,7 @@ EXIT_INITIALIZATION_ERROR = 2
 EXIT_KEYBOARD_INTERRUPT = 130
 
 
-def _load_application_styles(args: argparse.Namespace, project_root: str) -> str:
+def _load_application_styles(args, project_root):
     """
     Ładuje style aplikacji na podstawie argumentów CLI.
 
@@ -45,10 +44,8 @@ def _load_application_styles(args: argparse.Namespace, project_root: str) -> str
         style_path = get_style_path(project_root, args.style)
         if args.style:
             logger.info("Niestandardowy styl: %s", args.style)
-            logger.debug("Argumenty stylów: %s", vars(args))
 
-        logger.info("Wczytywanie stylów z: %s", style_path)
-        logger.debug("Sprawdzanie istnienia pliku stylów: %s", os.path.exists(style_path))
+        logger.info(f"Wczytywanie stylów z: {style_path}")
         return load_styles(style_path, verbose=True)
 
     except Exception as e:
@@ -57,7 +54,7 @@ def _load_application_styles(args: argparse.Namespace, project_root: str) -> str
         return ""
 
 
-def run() -> int:
+def run():
     """
     Uruchamia aplikację z obsługą argumentów linii poleceń i obsługą błędów.
 
@@ -78,7 +75,7 @@ def run() -> int:
         setup_logging_from_args(args)
         logger = logging.getLogger(__name__)
 
-        logger.info("Root projektu: %s", _PROJECT_ROOT)
+        logger.info(f"Root projektu: {_PROJECT_ROOT}")
 
         # Ładowanie stylów
         style_sheet = _load_application_styles(args, _PROJECT_ROOT)

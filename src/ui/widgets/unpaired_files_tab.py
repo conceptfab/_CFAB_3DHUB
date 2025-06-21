@@ -1,5 +1,6 @@
 """
-Zakładka niesparowanych plików - wydzielona z main_window.py.
+Zakładka niesparowanych plików - ETAP 2 refaktoryzacji.
+Używa UnpairedFilesUIManager dla separacji odpowiedzialności UI.
 """
 
 import logging
@@ -24,6 +25,7 @@ from src.ui.widgets.preview_dialog import PreviewDialog
 # Dodaj import stylów z FileTileWidget
 from src.ui.widgets.tile_styles import TileSizeConstants
 from src.ui.widgets.unpaired_archives_list import UnpairedArchivesList
+from src.ui.widgets.unpaired_files_ui_manager import UnpairedFilesUIManager
 from src.ui.widgets.unpaired_preview_tile import UnpairedPreviewTile
 from src.ui.widgets.unpaired_previews_grid import UnpairedPreviewsGrid
 
@@ -33,7 +35,8 @@ if TYPE_CHECKING:
 
 class UnpairedFilesTab:
     """
-    Zarządza zakładką niesparowanych plików z archiwami i podglądami.
+    Zarządza zakładką niesparowanych plików - ETAP 2 refaktoryzacji.
+    Używa UnpairedFilesUIManager dla zarządzania UI.
     """
 
     def __init__(self, main_window: "MainWindow"):
@@ -44,26 +47,24 @@ class UnpairedFilesTab:
             main_window: Referencja do głównego okna aplikacji
         """
         self.main_window = main_window
+
+        # ETAP 2: Deleguj UI do dedykowanego managera
+        self.ui_manager = UnpairedFilesUIManager(main_window)
+
+        # Zachowaj kompatybilność z istniejącym API
+        self._setup_compatibility_properties()
+
+    def _setup_compatibility_properties(self):
+        """Ustawia właściwości dla zachowania kompatybilności API."""
+        # Te właściwości będą dostępne po utworzeniu UI
         self.unpaired_files_tab = None
-        self.unpaired_files_layout = None
-        self.unpaired_splitter = None
-        self.unpaired_archives_panel = None
-        self.unpaired_archives_list_widget = None
-        # Nowy widget do zarządzania archiwami
-        self.unpaired_archives_list = None
-        # Nowy widget do zarządzania podglądami
-        self.unpaired_previews_grid = None
-        self.unpaired_previews_panel = None
-        self.unpaired_previews_scroll_area = None
-        self.unpaired_previews_container = None
-        self.unpaired_previews_layout = None
-        self.unpaired_previews_list_widget = None
         self.pair_manually_button = None
-        self.preview_checkboxes = []
-        # Przechowywanie referencji do kafelków dla skalowania
-        self.preview_tile_widgets = []
-        # Aktualny rozmiar miniaturek
-        self.current_thumbnail_size = TileSizeConstants.DEFAULT_THUMBNAIL_SIZE
+        self.unpaired_archives_list_widget = None
+        self.unpaired_previews_list_widget = None
+
+        # Delegacja do UI managera
+        self.preview_tile_widgets = self.ui_manager.preview_tile_widgets
+        self.current_thumbnail_size = self.ui_manager.current_thumbnail_size
 
     def create_unpaired_files_tab(self) -> QWidget:
         """
@@ -72,302 +73,69 @@ class UnpairedFilesTab:
         Returns:
             Widget zakładki niesparowanych plików
         """
-        logging.debug("Creating unpaired files tab")
+        # ETAP 2: Deleguj tworzenie UI do managera
+        self.unpaired_files_tab = self.ui_manager.create_tab_ui()
 
-        self.unpaired_files_tab = QWidget()
-        self.unpaired_files_layout = QVBoxLayout(self.unpaired_files_tab)
-        self.unpaired_files_layout.setContentsMargins(5, 5, 5, 5)
-        logging.debug("Basic widget and layout created")
+        # Ustaw właściwości kompatybilności
+        self._update_compatibility_properties()
 
-        # Splitter dla dwóch list
-        self.unpaired_splitter = QSplitter()
-        logging.debug("Splitter created")
+        # Podłącz sygnały
+        self._connect_all_signals()
 
-        # Lista niesparowanych archiwów
-        logging.debug("Creating archives list")
-        self._create_unpaired_archives_list()
-        logging.debug("Archives list created successfully")
-
-        # Lista niesparowanych podglądów
-        logging.debug("Creating previews list")
-        self._create_unpaired_previews_list()
-        logging.debug("Previews list created successfully")
-
-        self.unpaired_files_layout.addWidget(self.unpaired_splitter)
-
-        # Panel przycisków
-        buttons_panel = QWidget()
-        buttons_panel.setFixedHeight(35)
-        buttons_layout = QHBoxLayout(buttons_panel)
-        buttons_layout.setContentsMargins(5, 2, 5, 2)
-        buttons_layout.setSpacing(10)
-
-        # Przycisk do ręcznego parowania
-        self.pair_manually_button = QPushButton("✅ Sparuj manualnie")
-        self.pair_manually_button.setToolTip(
-            "Sparuj zaznaczone archiwum z zaznaczonym podglądem"
-        )
-        self.pair_manually_button.setMinimumHeight(40)
-        self.pair_manually_button.clicked.connect(self._handle_manual_pairing)
-        self.pair_manually_button.setEnabled(False)
-        buttons_layout.addWidget(self.pair_manually_button)
-
-        # Przycisk do usuwania wszystkich nieparowanych podglądów
-        self.delete_unpaired_previews_button = QPushButton("🗑️ Usuń podglądy bez pary")
-        self.delete_unpaired_previews_button.setToolTip(
-            "Usuwa z dysku wszystkie pliki podglądów z tej listy"
-        )
-        self.delete_unpaired_previews_button.setMinimumHeight(40)
-        self.delete_unpaired_previews_button.clicked.connect(
-            self._handle_delete_unpaired_previews
-        )
-        buttons_layout.addWidget(self.delete_unpaired_previews_button)
-
-        # Przycisk do przenoszenia niesparowanych archiwów
-        self.move_unpaired_button = QPushButton("🚚 Przenieś archiwa")
-        self.move_unpaired_button.setToolTip(
-            "Przenosi wszystkie pliki archiwum bez pary do folderu '_bez_pary_'"
-        )
-        self.move_unpaired_button.setMinimumHeight(40)
-        self.move_unpaired_button.clicked.connect(self._handle_move_unpaired_archives)
-        buttons_layout.addWidget(self.move_unpaired_button)
-
-        self.unpaired_files_layout.addWidget(buttons_panel)
-        logging.debug("Przyciski parowania i przenoszenia utworzone")
-
-        logging.debug("UnpairedFilesTab utworzona")
         return self.unpaired_files_tab
 
-    def _create_unpaired_archives_list(self):
-        """
-        Tworzy listę niesparowanych archiwów używając dedykowanego widget'a.
-        """
-        # Utwórz nowy widget do zarządzania archiwami
-        self.unpaired_archives_list = UnpairedArchivesList(self.main_window)
-
-        # Podłącz sygnały
-        self.unpaired_archives_list.selection_changed.connect(
-            self._update_pair_button_state
+    def _update_compatibility_properties(self):
+        """Aktualizuje właściwości dla kompatybilności API."""
+        self.pair_manually_button = self.ui_manager.pair_manually_button
+        self.unpaired_archives_list_widget = (
+            self.ui_manager.unpaired_archives_list_widget
         )
-
-        # Zachowaj kompatybilność z istniejącym kodem
-        self.unpaired_archives_list_widget = self.unpaired_archives_list.list_widget
-
-        # Dodaj do splitter'a
-        self.unpaired_splitter.addWidget(self.unpaired_archives_list)
-
-    def _create_unpaired_previews_list(self):
-        """
-        Tworzy panel niesparowanych podglądów używając dedykowanego widget'a.
-        """
-        # Utwórz nowy widget do zarządzania podglądami
-        self.unpaired_previews_grid = UnpairedPreviewsGrid(self.main_window)
-
-        # Podłącz sygnały
-        self.unpaired_previews_grid.selection_changed.connect(
-            self._update_pair_button_state
-        )
-        self.unpaired_previews_grid.preview_deleted.connect(self._delete_preview_file)
-
-        # Zachowaj kompatybilność z istniejącym kodem
         self.unpaired_previews_list_widget = (
-            self.unpaired_previews_grid.hidden_list_widget
-        )
-        self.unpaired_previews_layout = self.unpaired_previews_grid.grid_layout
-        self.unpaired_previews_container = self.unpaired_previews_grid.container
-
-        # Dodaj do splitter'a
-        self.unpaired_splitter.addWidget(self.unpaired_previews_grid)
-
-    def _add_preview_thumbnail(self, preview_path):
-        """
-        Dodaje miniaturkę podglądu do kontenera podglądów.
-        Używa uproszczonej wersji FileTileWidget bez gwiazdek i tagów kolorów.
-
-        Args:
-            preview_path: Ścieżka do pliku podglądu
-        """
-        # Upewnij się, że plik istnieje
-        if not os.path.exists(preview_path):
-            return
-
-        # Utwórz kafelek podglądu
-        preview_tile = UnpairedPreviewTile(
-            preview_path, self.unpaired_previews_container
-        )
-        preview_tile.set_thumbnail_size(self.current_thumbnail_size)
-
-        # Podłącz sygnał preview_image_requested do metody wyświetlającej PreviewDialog
-        preview_tile.preview_image_requested.connect(self._show_preview_dialog)
-        preview_tile.checkbox.stateChanged.connect(
-            lambda state, cb=preview_tile.checkbox, path=preview_path: self._on_preview_checkbox_changed(
-                cb, path, state
-            )
-        )
-        preview_tile.delete_button.clicked.connect(
-            lambda: self._delete_preview_file(preview_path)
+            self.ui_manager.unpaired_previews_list_widget
         )
 
-        # Dodaj do layoutu siatki podglądów
-        row = self.unpaired_previews_layout.rowCount()
-        col = 0
-        while self.unpaired_previews_layout.itemAtPosition(row, col) is not None:
-            col += 1
-            if col >= 4:  # Maksymalnie 4 kolumny
-                col = 0
-                row += 1
+    def _connect_all_signals(self):
+        """Podłącza wszystkie sygnały UI do metod biznesowych."""
+        # Sygnały przycisków
+        button_callbacks = {
+            "manual_pairing": self._handle_manual_pairing,
+            "delete_previews": self._handle_delete_unpaired_previews,
+            "move_archives": self._handle_move_unpaired_archives,
+        }
+        self.ui_manager.connect_button_signals(button_callbacks)
 
-        self.unpaired_previews_layout.addWidget(preview_tile, row, col)
+        # Sygnały komponentów
+        component_callbacks = {
+            "selection_changed": self._update_pair_button_state,
+            "preview_deleted": self._delete_preview_file,
+        }
+        self.ui_manager.connect_component_signals(component_callbacks)
 
-        # Dodaj do listy referencji dla późniejszego skalowania
-        self.preview_tile_widgets.append(preview_tile)
+        # Dodatkowe sygnały dla kafelków podglądów
+        self._connect_preview_tile_signals()
 
-        # Dodaj również do ukrytej listy dla kompatybilności
-        item = QListWidgetItem(preview_path)
-        self.unpaired_previews_list_widget.addItem(item)
+    def _connect_preview_tile_signals(self):
+        """Podłącza sygnały kafelków podglądów."""
+        for tile in self.ui_manager.preview_tile_widgets:
+            # Sygnał podglądu obrazu
+            tile.preview_image_requested.connect(self._show_preview_dialog)
 
-        logging.debug(f"Dodano miniaturkę podglądu: {os.path.basename(preview_path)}")
-
-    def _show_preview_dialog(self, preview_path: str):
-        """
-        Wyświetla dialog podglądu dla wybranego pliku.
-
-        Args:
-            preview_path: Ścieżka do pliku podglądu
-        """
-        try:
-            pixmap = QPixmap(preview_path)
-            if pixmap.isNull():
-                QMessageBox.warning(
-                    self.main_window,
-                    "Błąd podglądu",
-                    f"Nie można załadować obrazu:\n{preview_path}",
+            # Sygnał zmiany checkbox
+            tile.checkbox.stateChanged.connect(
+                lambda state, cb=tile.checkbox, path=tile.preview_path: self._on_preview_checkbox_changed(
+                    cb, path, state
                 )
-                return
-
-            dialog = PreviewDialog(pixmap, self.main_window)
-            dialog.exec()
-        except Exception as e:
-            logging.error(f"Błąd podczas otwierania podglądu {preview_path}: {e}")
-            QMessageBox.warning(
-                self.main_window,
-                "Błąd podglądu",
-                f"Nie można otworzyć podglądu:\n{preview_path}\n\nBłąd: {str(e)}",
             )
 
-    def _on_preview_checkbox_changed(self, checkbox, preview_path, state):
-        """
-        Obsługuje zmianę stanu checkbox podglądu.
-        Zapewnia że tylko jeden podgląd może być zaznaczony jednocześnie.
-
-        Args:
-            checkbox: Widget checkbox który został zmieniony
-            preview_path: Ścieżka do pliku podglądu
-            state: Nowy stan checkbox (Qt.CheckState)
-        """
-        if state == Qt.CheckState.Checked.value:
-            # Odznacz wszystkie inne checkboxy
-            for tile in self.preview_tile_widgets:
-                if tile.checkbox != checkbox and tile.checkbox.isChecked():
-                    tile.checkbox.blockSignals(True)
-                    tile.checkbox.setChecked(False)
-                    tile.checkbox.blockSignals(False)
-
-            # Ustaw wybrany podgląd
-            self._select_preview_for_pairing(preview_path)
-        else:
-            # Jeśli odznaczono, wyczyść wybór
-            self._select_preview_for_pairing(None)
-
-        # Aktualizuj stan przycisków
-        self._update_pair_button_state()
-
-    def _select_preview_for_pairing(self, preview_path):
-        """
-        Ustawia wybrany podgląd do sparowania.
-
-        Args:
-            preview_path: Ścieżka do podglądu lub None aby wyczyścić wybór
-        """
-        if hasattr(self.main_window, "controller"):
-            self.main_window.controller.selected_preview_for_pairing = preview_path
-            logging.debug(f"Wybrano podgląd do parowania: {preview_path}")
-
-    def _delete_preview_file(self, preview_path):
-        """
-        Usuwa plik podglądu z dysku i aktualizuje interfejs.
-
-        Args:
-            preview_path: Ścieżka do pliku podglądu do usunięcia
-        """
-        try:
-            if os.path.exists(preview_path):
-                os.remove(preview_path)
-                logging.info(f"Usunięto plik podglądu: {preview_path}")
-
-                # Usuń z layoutu siatki
-                for i in range(self.unpaired_previews_layout.count()):
-                    item = self.unpaired_previews_layout.itemAt(i)
-                    if item and item.widget():
-                        tile = item.widget()
-                        if (
-                            hasattr(tile, "preview_path")
-                            and tile.preview_path == preview_path
-                        ):
-                            tile.setParent(None)
-                            self.preview_tile_widgets.remove(tile)
-                            break
-
-                # Usuń z ukrytej listy
-                for i in range(self.unpaired_previews_list_widget.count()):
-                    item = self.unpaired_previews_list_widget.item(i)
-                    if item and item.text() == preview_path:
-                        self.unpaired_previews_list_widget.takeItem(i)
-                        break
-
-                # Aktualizuj stan przycisków
-                self._update_pair_button_state()
-
-                # Odśwież widok
-                self._refresh_unpaired_files()
-
-        except Exception as e:
-            logging.error(f"Błąd podczas usuwania podglądu {preview_path}: {e}")
-            QMessageBox.critical(
-                self.main_window,
-                "Błąd usuwania",
-                f"Nie można usunąć pliku:\n{preview_path}\n\nBłąd: {str(e)}",
+            # Sygnał usuwania
+            tile.delete_button.clicked.connect(
+                lambda checked, path=tile.preview_path: self._delete_preview_file(path)
             )
 
     def clear_unpaired_files_lists(self):
         """Czyści listy niesparowanych plików."""
-        logging.debug("Czyszczenie list niesparowanych plików")
-
-        # Wyczyść listę archiwów
-        if self.unpaired_archives_list_widget:
-            self.unpaired_archives_list_widget.clear()
-
-        # Wyczyść ukrytą listę podglądów
-        if self.unpaired_previews_list_widget:
-            self.unpaired_previews_list_widget.clear()
-
-        # Usuń wszystkie kafelki podglądów
-        for tile in self.preview_tile_widgets:
-            tile.setParent(None)
-        self.preview_tile_widgets.clear()
-
-        # Wyczyść layout siatki
-        if self.unpaired_previews_layout:
-            while self.unpaired_previews_layout.count():
-                item = self.unpaired_previews_layout.takeAt(0)
-                if item.widget():
-                    item.widget().setParent(None)
-
-        # Zresetuj stan przycisków
-        if self.pair_manually_button:
-            self.pair_manually_button.setEnabled(False)
-
-        logging.debug("Listy niesparowanych plików wyczyszczone")
+        # ETAP 2: Deleguj do UI managera
+        self.ui_manager.clear_all_lists()
 
     def update_unpaired_files_lists(self):
         """
@@ -389,24 +157,17 @@ class UnpairedFilesTab:
             logging.debug("Brak danych o niesparowanych plikach w kontrolerze")
             return
 
-        # Wyczyść istniejące listy
-        self.clear_unpaired_files_lists()
+        # ETAP 2: Wyczyść przez UI manager
+        self.ui_manager.clear_all_lists()
 
-        # Aktualizuj listę archiwów
+        # ETAP 2: Aktualizuj przez UI manager
         if controller.unpaired_archives:
-            for archive_path in controller.unpaired_archives:
-                if os.path.exists(archive_path):
-                    filename = os.path.basename(archive_path)
-                    item = QListWidgetItem(filename)
-                    item.setData(Qt.ItemDataRole.UserRole, archive_path)
-                    item.setToolTip(archive_path)
-                    self.unpaired_archives_list_widget.addItem(item)
+            self.ui_manager.update_archives_list(controller.unpaired_archives)
 
-        # Aktualizuj listę podglądów
         if controller.unpaired_previews:
-            for preview_path in controller.unpaired_previews:
-                if os.path.exists(preview_path):
-                    self._add_preview_thumbnail(preview_path)
+            self.ui_manager.update_previews_list(controller.unpaired_previews)
+            # Podłącz sygnały dla nowo utworzonych kafelków
+            self._connect_preview_tile_signals()
 
         # Aktualizuj stan przycisków
         self._update_pair_button_state()
@@ -820,3 +581,97 @@ class UnpairedFilesTab:
             "Błąd usuwania",
             f"Wystąpił błąd podczas usuwania podglądów:\n{error_message}",
         )
+
+    def _show_preview_dialog(self, preview_path: str):
+        """
+        Wyświetla dialog podglądu dla wybranego pliku.
+
+        Args:
+            preview_path: Ścieżka do pliku podglądu
+        """
+        try:
+            pixmap = QPixmap(preview_path)
+            if pixmap.isNull():
+                QMessageBox.warning(
+                    self.main_window,
+                    "Błąd podglądu",
+                    f"Nie można załadować obrazu:\n{preview_path}",
+                )
+                return
+
+            dialog = PreviewDialog(pixmap, self.main_window)
+            dialog.exec()
+        except Exception as e:
+            logging.error(f"Błąd podczas otwierania podglądu {preview_path}: {e}")
+            QMessageBox.warning(
+                self.main_window,
+                "Błąd podglądu",
+                f"Nie można otworzyć podglądu:\n{preview_path}\n\nBłąd: {str(e)}",
+            )
+
+    def _on_preview_checkbox_changed(self, checkbox, preview_path, state):
+        """
+        Obsługuje zmianę stanu checkbox podglądu.
+        Zapewnia że tylko jeden podgląd może być zaznaczony jednocześnie.
+
+        Args:
+            checkbox: Widget checkbox który został zmieniony
+            preview_path: Ścieżka do pliku podglądu
+            state: Nowy stan checkbox (Qt.CheckState)
+        """
+        if state == Qt.CheckState.Checked.value:
+            # Odznacz wszystkie inne checkboxy
+            for tile in self.ui_manager.preview_tile_widgets:
+                if tile.checkbox != checkbox and tile.checkbox.isChecked():
+                    tile.checkbox.blockSignals(True)
+                    tile.checkbox.setChecked(False)
+                    tile.checkbox.blockSignals(False)
+
+            # Ustaw wybrany podgląd
+            self._select_preview_for_pairing(preview_path)
+        else:
+            # Jeśli odznaczono, wyczyść wybór
+            self._select_preview_for_pairing(None)
+
+        # Aktualizuj stan przycisków
+        self._update_pair_button_state()
+
+    def _select_preview_for_pairing(self, preview_path):
+        """
+        Ustawia wybrany podgląd do sparowania.
+
+        Args:
+            preview_path: Ścieżka do podglądu lub None aby wyczyścić wybór
+        """
+        if hasattr(self.main_window, "controller"):
+            self.main_window.controller.selected_preview_for_pairing = preview_path
+            logging.debug(f"Wybrano podgląd do parowania: {preview_path}")
+
+    def _delete_preview_file(self, preview_path):
+        """
+        Usuwa plik podglądu z dysku i aktualizuje interfejs.
+
+        Args:
+            preview_path: Ścieżka do pliku podglądu do usunięcia
+        """
+        try:
+            if os.path.exists(preview_path):
+                os.remove(preview_path)
+                logging.info(f"Usunięto plik podglądu: {preview_path}")
+
+                # ETAP 2: Usuń przez UI manager
+                self.ui_manager.remove_preview_tile(preview_path)
+
+                # Aktualizuj stan przycisków
+                self._update_pair_button_state()
+
+                # Odśwież widok
+                self._refresh_unpaired_files()
+
+        except Exception as e:
+            logging.error(f"Błąd podczas usuwania podglądu {preview_path}: {e}")
+            QMessageBox.critical(
+                self.main_window,
+                "Błąd usuwania",
+                f"Nie można usunąć pliku:\n{preview_path}\n\nBłąd: {str(e)}",
+            )

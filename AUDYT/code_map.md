@@ -1,288 +1,279 @@
 # 📋 MAPA KODU PROJEKTU CFAB_3DHUB
 
-## 📊 STATYSTYKI PROJEKTU
+**Data utworzenia:** 2025-06-21  
+**Status:** Kompletna analiza struktury projektu  
+**Łączna liczba plików Python:** 140
 
-- **Całkowita liczba plików Python**: 166 plików
-- **Całkowita liczba linii kodu**: 41,890 linii
-- **Średnio linii na plik**: 252 linii
-- **Framework**: PyQt6 (aplikacja GUI)
-- **Architektura**: MVC z komponentowymi wzorcami projektowymi
-- **Język komunikacji**: Polski (zgodnie z CLAUDE.md)
+## 🎯 PRIORYTETY LEGEND
 
-## 🎯 PRIORYTETY REFAKTORYZACJI
+- ⚫⚫⚫⚫ **KRYTYCZNY** - Błędy krytyczne, główny przepływ aplikacji
+- 🔴🔴🔴 **WYSOKI** - Poważne problemy wydajnościowe, duża złożoność
+- 🟡🟡 **ŚREDNI** - Optymalizacje, refaktoryzacja kodu
+- 🟢 **NISKI** - Drobne poprawki, cleanups
 
-### ⚫⚫⚫⚫ PRIORYTET KRYTYCZNY - NATYCHMIASTOWE DZIAŁANIE
+## 📊 PODSUMOWANIE ANALIZY NARZĘDZI
 
-1. **src/ui/widgets/unpaired_files_tab.py** [1016 linii] ⚫⚫⚫⚫ ✅ [PRZEANALIZOWANO 2024-12-21]
-   - **Problem**: Monolityczny gigant, największy plik w projekcie
-   - **Uzasadnienie**: Pojedynczy plik z ponad 1000 linii kodu
-   - **Działanie**: Podział na 4 logiczne komponenty (tile, ui_manager, operations, coordinator)
-   - **Dokumentacja**: `patch_code_unpaired_files_tab.md`, `correction_KRYTYCZNY.md`
-   - **Kopia bezpieczeństwa**: ✅ Utworzona
+### 🔍 Flake8 Report
+- **Łączne błędy:** 4359
+- **Główne problemy:** Długie linie (E501), nieużywane importy (F401), błędy formatowania
 
-### 🔴🔴🔴 PRIORYTET WYSOKI - KRYTYCZNE UPROSZCZENIA
+### 🦅 Vulture Report  
+- **Nieużywany kod:** Znaczna ilość dead code
+- **Krytyczne:** Całe klasy i metody nieużywane (np. StatisticsController, WorkerInterface)
 
-2. **src/ui/main_window/main_window.py** [617 linii] 🔴🔴🔴 ✅ [PRZEANALIZOWANO 2024-12-21]
-   - **Problem**: Ekstremalne over-engineering, 5 warstw abstrakcji, 17 nadmiarowych managerów
-   - **Uzasadnienie**: 104 linie zbędnych delegacji @property, mieszane podejścia architektoniczne
-   - **Działanie**: Konsolidacja 17→8 managerów, eliminacja delegacji, uproszczenie architektury
-   - **Dokumentacja**: `patch_code_main_window.md`, `correction_KRYTYCZNY.md`
-   - **Kopia bezpieczeństwa**: ✅ Utworzona
-
-3. **src/ui/widgets/file_tile_widget.py** [657 linii] 🔴🔴🔴
-   - **Problem**: Nadmierna złożoność komponentów
-   - **Uzasadnienie**: Zbyt skomplikowany jak na widget UI
-   - **Działanie**: Redukcja liczby managerów i abstrakcji
-
-4. **src/logic/file_operations.py** [682 linii] 🔴🔴🔴
-   - **Problem**: Nadmiernie skomplikowany factory pattern
-   - **Uzasadnienie**: Over-engineering dla prostych operacji
-   - **Działanie**: Uproszczenie do prostszego API
-
-5. **src/ui/widgets/preferences_dialog.py** [739 linii] 🔴🔴
-   - **Problem**: Monolityczny dialog konfiguracji
-   - **Uzasadnienie**: Wszystkie preferencje w jednym pliku
-   - **Działanie**: Podział na grupy funkcjonalne
-
-6. **src/ui/widgets/file_explorer_tab.py** [654 linii] 🔴🔴
-   - **Problem**: Duży plik UI z mieszaną logiką
-   - **Uzasadnienie**: Zbyt wiele odpowiedzialności w jednym pliku
-   - **Działanie**: Separacja UI od logiki biznesowej
-
-### 🟡🟡 PRIORYTET ŚREDNI - OPTYMALIZACJE
-
-7. **src/ui/gallery_manager.py** [628 linii] 🟡🟡
-   - **Problem**: Skomplikowana logika layoutu
-   - **Uzasadnienie**: Można uprościć algorytmy układania
-   - **Działanie**: Optymalizacja wydajności i czytelności
-
-8. **src/logic/scanner_core.py** [587 linii] 🟡🟡
-   - **Problem**: Złożona implementacja skanowania
-   - **Uzasadnienie**: Dobra implementacja ale można uprościć
-   - **Działanie**: Refaktoryzacja długich metod
-
-9. **src/config/config_core.py** [607 linii] 🟡🟡
-   - **Problem**: Skomplikowany singleton pattern
-   - **Uzasadnienie**: Można uprościć property mapping
-   - **Działanie**: Uproszczenie architektury
-
-10. **src/app_config.py** [89 linii] 🟡🟡
-    - **Problem**: Legacy wrapper dla kompatybilności
-    - **Uzasadnienie**: Duplikacja API, redundancja
-    - **Działanie**: Usunięcie po migracji
-
-### 🟢 PRIORYTET NISKI - DROBNE POPRAWKI
-
-11. **src/main.py** [161 linii] 🟢
-    - **Status**: Dobrze napisany entry point
-    - **Działanie**: Minimalne poprawki formatowania
-
-12. **src/ui/qt_imports.py** [33 linii] 🟢
-    - **Status**: Dobry centralny punkt importów
-    - **Działanie**: Brak zmian potrzebnych
-
-13. **src/utils/path_utils.py** [379 linii] 🟢
-    - **Status**: Dobrze napisany moduł utilities
-    - **Działanie**: Minimalne poprawki
-
-## 📂 SZCZEGÓŁOWA MAPA KATALOGÓW
-
-### 📁 src/ (główny katalog źródłowy)
-
-#### 🔧 **KONFIGURACJA** (config/)
-- `config_core.py` [607 linii] 🟡🟡 - Singleton konfiguracji
-- `config_defaults.py` [150+ linii] 🟢 - Wartości domyślne
-- `config_io.py` [226 linii] 🟡 - Operacje I/O na plikach config
-- `config_properties.py` [300+ linii] 🟡 - Właściwości konfiguracji
-- `config_validator.py` [200+ linii] 🟡 - Walidacja ustawień
-- `properties/` - Specjalizowane właściwości (colors, formats, etc.)
-
-#### 🎮 **KONTROLERY** (controllers/)
-- `main_window_controller.py` [300+ linii] 🟡 - Główny kontroler
-- `file_operations_controller.py` [200+ linii] 🟡 - Operacje na plikach
-- `gallery_controller.py` [100+ linii] 🟢 - Kontroler galerii
-- `scan_result_processor.py` [150+ linii] 🟡 - Przetwarzanie wyników
-- `selection_manager.py` [100+ linii] 🟢 - Zarządzanie selekcją
-- `statistics_controller.py` [250+ linii] 🟡 - Statystyki
-
-#### 🏭 **FABRYKI** (factories/)
-- `worker_factory.py` [50+ linii] 🟢 - Fabryka workerów
-
-#### 🔌 **INTERFEJSY** (interfaces/)
-- `worker_interface.py` [100+ linii] 🟡 - Definicje interfejsów
-
-#### 🧠 **LOGIKA BIZNESOWA** (logic/)
-- `file_operations.py` [682 linii] 🔴🔴🔴 - Operacje na plikach
-- `scanner.py` [320 linii] 🟡 - API skanowania
-- `scanner_core.py` [587 linii] 🟡🟡 - Core skanowania
-- `scanner_cache.py` [200+ linii] 🟡 - Cache skanowania
-- `metadata_manager.py` [300+ linii] 🟡 - Zarządzanie metadanymi
-- `file_pairing.py` [400+ linii] 🟡 - Parowanie plików
-- `filter_logic.py` [250+ linii] 🟡 - Logika filtrowania
-- `cache_monitor.py` [250+ linii] 🟡 - Monitoring cache
-
-#### 🔧 **PODKOMPONENTY LOGIKI**
-- `file_ops_components/` - Komponenty operacji plików
-- `metadata/` - Podsystem metadanych (5 plików)
-
-#### 📊 **MODELE DANYCH** (models/)
-- `file_pair.py` [400+ linii] 🟡 - Model pary plików
-- `special_folder.py` [100+ linii] 🟢 - Model folderów specjalnych
-
-#### 🌐 **USŁUGI** (services/)
-- `file_operations_service.py` [200+ linii] 🟡 - Serwis operacji
-- `scanning_service.py` [150+ linii] 🟡 - Serwis skanowania
-- `thread_coordinator.py` [100+ linii] 🟡 - Koordynacja wątków
-
-#### 🖼️ **INTERFEJS UŻYTKOWNIKA** (ui/)
-
-##### 🏠 **GŁÓWNE OKNO** (main_window/)
-- `main_window.py` [617 linii] 🔴🔴🔴 - Główne okno
-- `main_window_facade.py` [300+ linii] 🟡 - Fasada głównego okna
-- `main_window_orchestrator.py` [200+ linii] 🟡 - Orkiestrator
-- `manager_registry.py` [150+ linii] 🟡 - Rejestr managerów
-- `event_bus.py` [100+ linii] 🟡 - System zdarzeń
-- `ui_initializer.py` [200+ linii] 🟡 - Inicjalizator UI
-- ... + 10 dodatkowych managerów
-
-##### 🎛️ **KOMPONENTY GŁÓWNEGO OKNA** (main_window_components/)
-- `event_bus.py` [100+ linii] 🟡 - Magistrala zdarzeń
-- `view_refresh_manager.py` [150+ linii] 🟡 - Odświeżanie widoków
-
-##### 🧩 **WIDGETY** (widgets/)
-- `unpaired_files_tab.py` [1016 linii] ⚫⚫⚫⚫ - Zakładka niesparowanych
-- `file_tile_widget.py` [657 linii] 🔴🔴🔴 - Widget kafelka
-- `preferences_dialog.py` [739 linii] 🔴🔴 - Dialog preferencji
-- `file_explorer_tab.py` [654 linii] 🔴🔴 - Eksplorator plików
-- `gallery_tab.py` [400+ linii] 🟡 - Zakładka galerii
-- `preview_dialog.py` [300+ linii] 🟡 - Dialog podglądu
-- `filter_panel.py` [250+ linii] 🟡 - Panel filtrów
-- ... + 15 dodatkowych widgetów
-
-##### 📁 **ZARZĄDZANIE KATALOGAMI** (directory_tree/)
-- 12 plików specjalizowanych do zarządzania drzewem katalogów
-- Średnio 🟡 priorytet - kompleksowy ale dobrze zorganizowany
-
-##### 📂 **OPERACJE PLIKÓW** (file_operations/)
-- 8 plików do operacji na plikach UI
-- Średnio 🟡 priorytet - można uprościć
-
-##### 🎨 **DELEGACI I WORKERY** (delegates/)
-- Workery do różnych operacji asynchronicznych
-- Średnio 🟡 priorytet
-
-#### 🔧 **NARZĘDZIA** (utils/)
-- `path_utils.py` [379 linii] 🟢 - Narzędzia ścieżek
-- `logging_config.py` [150+ linii] 🟡 - Konfiguracja logowania
-- `image_utils.py` [200+ linii] 🟡 - Narzędzia obrazów
-- `style_loader.py` [100+ linii] 🟢 - Ładowanie stylów
-- `arg_parser.py` [50+ linii] 🟢 - Parsowanie argumentów
-- `path_validator.py` [212 linii] 🟡 - Walidacja ścieżek
-
-## 🚨 GŁÓWNE PROBLEMY ZIDENTYFIKOWANE
-
-### 1. **OVER-ENGINEERING (Nadmierna inżynieria)**
-- Zbyt wiele wzorców projektowych naraz
-- Nadmiernie skomplikowane architektury dla prostych funkcji
-- Factory patterns tam gdzie proste funkcje wystarczyłyby
-
-### 2. **MONOLITYCZNE STRUKTURY**
-- Pliki przekraczające 600 linii (7 plików)
-- Pojedyncze klasy z dziesiątkami metod
-- Brak separacji odpowiedzialności
-
-### 3. **DUPLIKACJA FUNKCJONALNOŚCI**
-- Legacy wrappers (app_config.py)
-- Podobne funkcje w różnych modułach
-- Redundantne walidacje
-
-### 4. **ZŁOŻONOŚĆ ARCHITEKTONICZNA**
-- Nadmierne użycie delegation pattern
-- Skomplikowane dependency injection
-- Za dużo poziomów abstrakcji
-
-### 5. **PROBLEMY WYDAJNOŚCIOWE**
-- Thread-safe singletons tam gdzie niepotrzebne
-- Nadmierne cache i optymalizacje
-- Skomplikowane batch processing
-
-## 📅 PLAN KOLEJNOŚCI ANALIZY
-
-### **ETAP 1: KRYTYCZNE REFAKTORYZACJE** (2-3 tygodnie)
-1. **unpaired_files_tab.py** ⚫⚫⚫⚫ - Podział na komponenty
-2. **main_window.py** 🔴🔴🔴 - Uproszczenie architektury
-3. **file_tile_widget.py** 🔴🔴🔴 - Redukcja managerów
-
-### **ETAP 2: OPERACJE I DIALOGI** (2 tygodnie)
-4. **file_operations.py** 🔴🔴🔴 - Uproszczenie factory
-5. **preferences_dialog.py** 🔴🔴 - Podział funkcjonalny
-6. **file_explorer_tab.py** 🔴🔴 - Separacja UI/logika
-
-### **ETAP 3: OPTYMALIZACJE** (1-2 tygodnie)
-7. **gallery_manager.py** 🟡🟡 - Optymalizacja layoutu
-8. **scanner_core.py** 🟡🟡 - Refaktoryzacja metod
-9. **config_core.py** 🟡🟡 - Uproszczenie singleton
-
-### **ETAP 4: CZYSZCZENIE** (1 tydzień)
-10. **app_config.py** 🟡🟡 - Usunięcie legacy
-11. **Pozostałe pliki** 🟡/🟢 - Drobne poprawki
-12. **Dead code removal** - Usunięcie nieużywanego kodu
-
-## 🎯 GRUPOWANIE PLIKÓW DO ANALIZY
-
-### **GRUPA A: CORE UI** (Najwyższy priorytet)
-- unpaired_files_tab.py
-- main_window.py
-- file_tile_widget.py
-- preferences_dialog.py
-
-### **GRUPA B: OPERACJE** (Wysoki priorytet)
-- file_operations.py
-- file_explorer_tab.py
-- gallery_manager.py
-
-### **GRUPA C: LOGIKA BIZNESOWA** (Średni priorytet)
-- scanner_core.py
-- config_core.py
-- metadata_operations.py
-
-### **GRUPA D: KOMPONENTY** (Niski priorytet)
-- Wszystkie pozostałe pliki w directory_tree/
-- Widgety pomocnicze
-- Utilities
-
-## 📈 SZACOWANY ZAKRES ZMIAN
-
-### **MASYWNE ZMIANY** (>50% kodu)
-- unpaired_files_tab.py - Podział na 3-4 pliki
-- main_window.py - Usunięcie 30-40% delegacji
-- file_tile_widget.py - Redukcja managerów o 50%
-
-### **ZNACZĄCE ZMIANY** (25-50% kodu)
-- file_operations.py - Uproszczenie factory
-- preferences_dialog.py - Podział na grupy
-- file_explorer_tab.py - Separacja logiki
-
-### **UMIARKOWANE ZMIANY** (10-25% kodu)
-- gallery_manager.py - Optymalizacja algorytmów
-- scanner_core.py - Refaktoryzacja metod
-- config_core.py - Uproszczenie pattern
-
-### **DROBNE ZMIANY** (<10% kodu)
-- app_config.py - Usunięcie wrapper
-- Utilities - Formatowanie i czyszczenie
-- Dead code removal
-
-## 🔍 REKOMENDACJE FINALNE
-
-1. **Rozpocznij od unpaired_files_tab.py** - największy impact
-2. **Uprość main_window.py** - centrum aplikacji
-3. **Nie bój się dużych zmian** - obecna architektura jest over-engineered
-4. **Testuj każdy etap** - zachowaj funkcjonalność
-5. **Dokumentuj zmiany** - dla przyszłych refaktoryzacji
+### 📈 Kluczowe obserwacje
+1. **Over-engineering:** Nadmierne abstrakcje w warstwie UI i kontrolerów
+2. **Dead code:** Wiele nieużywanych klas i metod
+3. **Problemy importów:** Niepotrzebne importy w wielu plikach
+4. **Formatowanie:** Masowe problemy ze stylem kodu
 
 ---
 
-**Status dokumentu**: ✅ KOMPLETNY - Gotowy do rozpoczęcia ETAPU 2
-**Data utworzenia**: 2024-12-21
-**Ostatnia aktualizacja**: 2024-12-21
+## 🗂️ ANALIZA PLIKÓW WEDŁUG PRIORYTETÓW
+
+### ⚫⚫⚫⚫ PRIORYTET KRYTYCZNY
+
+#### **1. GŁÓWNE PUNKTY WEJŚCIA**
+
+**`run_app.py`** ⚫⚫⚫⚫ ✅ [PRZEANALIZOWANO] [2025-06-21]  
+**Funkcja:** Punkt wejścia aplikacji  
+**Problem:** ✅ ZOPTYMALIZOWANO - type hints, lazy logging  
+**Czas analizy:** 15 min **UKOŃCZONY**
+
+**`src/main.py`** ⚫⚫⚫⚫ ✅ [PRZEANALIZOWANO] [2025-06-21]  
+**Funkcja:** Główna inicjalizacja aplikacji  
+**Problem:** ✅ ZOPTYMALIZOWANO - type hints, debug logging, obsługa błędów  
+**Czas analizy:** 20 min **UKOŃCZONY**
+
+#### **2. GŁÓWNE OKNO APLIKACJI**
+
+**`src/ui/main_window/main_window.py`** ⚫⚫⚫⚫ ⚠️ [PRZEANALIZOWANO] [2025-06-21]  
+**Funkcja:** Centralne okno aplikacji  
+**Problem:** 🚨 **EKSTREMALNE OVER-ENGINEERING** - 617 linii, 20+ managerów, plan refaktoryzacji utworzony  
+**Czas analizy:** 45 min **UKOŃCZONY** - **WYMAGA GŁĘBOKIEJ REFAKTORYZACJI**
+
+**`src/controllers/main_window_controller.py`** ⚫⚫⚫⚫ ✅ [PRZEANALIZOWANO] [2025-06-21]  
+**Funkcja:** Kontroler głównego okna  
+**Problem:** ✅ ZOPTYMALIZOWANO - type hints, debug logging, przykład dobrej architektury MVC  
+**Czas analizy:** 30 min **UKOŃCZONY**
+
+### 🔴🔴🔴 PRIORYTET WYSOKI
+
+#### **3. KLUCZOWE KOMPONENTY LOGIKI**
+
+**`src/logic/file_operations.py`** 🔴🔴🔴  
+**Funkcja:** Operacje na plikach  
+**Problem:** Wiele nieużywanych metod, potencjalne problemy wydajności  
+**Czas analizy:** 40 min
+
+**`src/logic/metadata_manager.py`** 🔴🔴🔴  
+**Funkcja:** Zarządzanie metadanymi  
+**Problem:** Kluczowy dla wydajności, sprawdzić optymalizacje  
+**Czas analizy:** 35 min
+
+**`src/logic/scanner.py`** 🔴🔴🔴  
+**Funkcja:** Skanowanie plików  
+**Problem:** Krytyczny dla wydajności aplikacji  
+**Czas analizy:** 30 min
+
+#### **4. KONFIGURACJA I CACHE**
+
+**`src/config/config_core.py`** 🔴🔴🔴  
+**Funkcja:** Podstawowa konfiguracja  
+**Problem:** Centrum zarządzania konfiguracją  
+**Czas analizy:** 25 min
+
+**`src/logic/cache_monitor.py`** 🔴🔴🔴  
+**Funkcja:** Monitoring cache  
+**Problem:** Nieużywane metody, optymalizacja wydajności  
+**Czas analizy:** 25 min
+
+#### **5. KLUCZOWE WIDGETY**
+
+**`src/ui/widgets/file_tile_widget.py`** 🔴🔴🔴  
+**Funkcja:** Widget dla kafli plików  
+**Problem:** Centralna część UI, może być over-engineered  
+**Czas analizy:** 40 min
+
+**`src/ui/widgets/unpaired_files_tab.py`** 🔴🔴🔴  
+**Funkcja:** Tab niesprawdzonych plików  
+**Problem:** Już w trakcie refaktoryzacji, przejrzyć postęp  
+**Czas analizy:** 35 min
+
+#### **6. DIRECTORY TREE (OVER-ENGINEERED)**
+
+**`src/ui/directory_tree/manager.py`** 🔴🔴🔴  
+**Funkcja:** Manager drzewa katalogów  
+**Problem:** Podejrzenie over-engineering  
+**Czas analizy:** 30 min
+
+**`src/ui/directory_tree_manager_refactored.py`** 🔴🔴🔴  
+**Funkcja:** Zrefaktoryzowany manager  
+**Problem:** Sprawdzić czy jest używany, duplikacja?  
+**Czas analizy:** 25 min
+
+### 🟡🟡 PRIORYTET ŚREDNI
+
+#### **7. KONTROLERY I SERWISY**
+
+**`src/controllers/statistics_controller.py`** 🟡🟡  
+**Funkcja:** Kontroler statystyk  
+**Problem:** **CAŁKOWICIE NIEUŻYWANY** wg vulture - do usunięcia  
+**Czas analizy:** 15 min
+
+**`src/services/scanning_service.py`** 🟡🟡  
+**Funkcja:** Serwis skanowania  
+**Problem:** Sprawdzić użycie i optymalizować  
+**Czas analizy:** 20 min
+
+**`src/controllers/gallery_controller.py`** 🟡🟡  
+**Funkcja:** Kontroler galerii  
+**Problem:** Wiele nieużywanych metod  
+**Czas analizy:** 20 min
+
+#### **8. FILE OPERATIONS COMPONENTS**
+
+**`src/logic/file_ops_components/`** (7 plików) 🟡🟡  
+**Funkcja:** Komponenty operacji na plikach  
+**Problem:** Potencjalne rozdrobnienie, sprawdzić konsolidację  
+**Czas analizy:** 40 min (wszystkie)
+
+#### **9. WORKERS I DELEGATY**
+
+**`src/ui/delegates/workers/`** (10 plików) 🟡🟡  
+**Funkcja:** Worker classes dla różnych operacji  
+**Problem:** Dużo abstrakcji, sprawdzić czy wszystkie potrzebne  
+**Czas analizy:** 50 min (wszystkie)
+
+#### **10. GŁÓWNE KOMPONENTY UI**
+
+**`src/ui/main_window/`** (pozostałe 20 plików) 🟡🟡  
+**Funkcja:** Komponenty głównego okna  
+**Problem:** Prawdopodobnie over-engineered, zbyt wiele plików  
+**Czas analizy:** 80 min (wszystkie)
+
+### 🟢 PRIORYTET NISKI
+
+#### **11. NARZĘDZIA POMOCNICZE**
+
+**`__tools/`** (7 plików) 🟢  
+**Funkcja:** Narzędzia pomocnicze  
+**Problem:** Problemy formatowania kodu, nieużywane importy  
+**Czas analizy:** 30 min (wszystkie)
+
+#### **12. UTILITIES**
+
+**`src/utils/`** (6 plików) 🟢  
+**Funkcja:** Narzędzia pomocnicze  
+**Problem:** Prawdopodobnie w porządku, drobne optymalizacje  
+**Czas analizy:** 25 min (wszystkie)
+
+#### **13. KONFIGURACJA PROPERTIES**
+
+**`src/config/properties/`** (4 pliki) 🟢  
+**Funkcja:** Właściwości konfiguracji  
+**Problem:** Wiele nieużywanych metod  
+**Czas analizy:** 20 min (wszystkie)
+
+#### **14. INTERFACES**
+
+**`src/interfaces/worker_interface.py`** 🟢  
+**Funkcja:** Interfejsy worker  
+**Problem:** **KOMPLETNIE NIEUŻYWANE** - do usunięcia  
+**Czas analizy:** 10 min
+
+#### **15. POZOSTAŁE KOMPONENTY**
+
+**Inne pliki (modele, metadane, directory tree components)** 🟢  
+**Funkcja:** Różne komponenty pomocnicze  
+**Problem:** Standardowe optymalizacje i cleanup  
+**Czas analizy:** 60 min (wszystkie)
+
+---
+
+## 📈 PLAN KOLEJNOŚCI ANALIZY
+
+### **FAZA 1: KRYTYCZNE (4-6 godzin)**
+1. `run_app.py` + `src/main.py` (35 min)
+2. `src/ui/main_window/main_window.py` (45 min)
+3. `src/controllers/main_window_controller.py` (30 min)
+
+### **FAZA 2: WYDAJNOŚĆ (4-5 godzin)**  
+4. `src/logic/file_operations.py` (40 min)
+5. `src/logic/metadata_manager.py` (35 min)
+6. `src/logic/scanner.py` (30 min)
+7. `src/config/config_core.py` (25 min)
+8. `src/logic/cache_monitor.py` (25 min)
+
+### **FAZA 3: UI CORE (3-4 godziny)**
+9. `src/ui/widgets/file_tile_widget.py` (40 min)
+10. `src/ui/widgets/unpaired_files_tab.py` (35 min)
+11. `src/ui/directory_tree/manager.py` (30 min)
+12. `src/ui/directory_tree_manager_refactored.py` (25 min)
+
+### **FAZA 4: ŚREDNI PRIORYTET (6-8 godzin)**
+13. Controllers i Services (55 min)
+14. File Operations Components (40 min)
+15. Workers i Delegaty (50 min)
+16. Main Window Components (80 min)
+
+### **FAZA 5: CLEANUP (4-5 godzin)**
+17. Tools (30 min)
+18. Utils (25 min)
+19. Config Properties (20 min)
+20. Interfaces (10 min)
+21. Pozostałe (60 min)
+
+---
+
+## 🎯 KLUCZOWE OBSERWACJE I REKOMENDACJE
+
+### 🚨 **PILNE PROBLEMY DO ROZWIĄZANIA:**
+
+1. **Over-engineering w warstwie UI:** 
+   - 20+ plików w `src/ui/main_window/`
+   - Nadmierne abstrakcje w directory tree
+   - Zbyt dużo workerów i delegatów
+
+2. **Dead Code (High Priority):**
+   - `StatisticsController` - całkowicie nieużywana klasa
+   - `WorkerInterface` - kompletnie nieużywane
+   - Dziesiątki nieużywanych metod w kontrolerach
+
+3. **Problemy wydajności:**
+   - Cache monitor z nieużywanymi funkcjami
+   - File operations z potencjalnymi wąskimi gardłami
+   - Scanner wymaga optymalizacji
+
+### 🔧 **STRATEGIA REFAKTORYZACJI:**
+
+**Krok 1: Eliminacja dead code**
+- Usunąć nieużywane klasy i metody
+- Zredukować liczbę plików o ~20-30%
+
+**Krok 2: Konsolidacja over-engineered komponentów**
+- Połączyć zbyt rozdrobnione komponenty
+- Uprościć hierarchie klas
+
+**Krok 3: Optymalizacja wydajności**
+- Poprawić algorytmy w krytycznych ścieżkach
+- Zoptymalizować operacje I/O
+
+**Krok 4: Cleanup i dokumentacja**
+- Poprawić formatowanie kodu
+- Usunąć nieużywane importy
+
+---
+
+## 📊 SZACUNKOWY CZAS WYKONANIA
+
+- **Łączny czas analizy:** ~20-26 godzin
+- **Czas implementacji:** ~40-60 godzin
+- **Testy i weryfikacja:** ~15-20 godzin
+- **RAZEM:** ~75-106 godzin pracy
+
+## 🚦 STATUS GOTOWOŚCI
+
+**✅ GOTOWE DO ROZPOCZĘCIA ETAPU 2**
+
+Plan został przygotowany zgodnie z wymaganiami dokumentacji. Kolejny krok: rozpoczęcie szczegółowej analizy według priorytetów, zaczynając od plików ⚫⚫⚫⚫.
