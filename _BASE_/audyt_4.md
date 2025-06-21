@@ -432,7 +432,6 @@ def old_location_method(self):
 **PRZYKŁAD RAPORTU POSTĘPU:**
 
 ```
-
 📊 POSTĘP AUDYTU:
 ✅ Ukończone etapy: 5/23 (22%)
 🔄 Aktualny etap: src/ui/main_window.py
@@ -504,14 +503,30 @@ def old_location_method(self):
 
 **W folderze `AUDYT/`:**
 
-- `correction_[PRIORYTET_POPRAWEK].md` - pliki z poprawnkami
-- `patch_code_[NAZWA_PLIKU].md` - fragmenty kodu do poprawek
-- `code_map.md` - mapa projektu (aktualizowana po każdej analizie)
+```
+AUDYT/
+├── corrections/
+│   ├── [nazwa_pliku]_correction.md      # OSOBNY plik dla każdego analizowanego pliku
+│   ├── main_window_correction.md        # Analiza, plan refaktoryzacji, testy
+│   ├── metadata_manager_correction.md   # Analiza, plan refaktoryzacji, testy
+│   └── ...
+├── patches/
+│   ├── [nazwa_pliku]_patch.md           # OSOBNY plik z kodem dla każdego pliku
+│   ├── main_window_patch.md             # Fragmenty kodu do poprawek
+│   ├── metadata_manager_patch.md        # Fragmenty kodu do poprawek
+│   └── ...
+├── backups/
+│   ├── [nazwa_pliku]_backup_[data].py   # Kopie bezpieczeństwa
+│   └── ...
+└── code_map.md                          # Mapa projektu (aktualizowana po każdej analizie)
+```
 
 **Zasady:**
 
-- Wszystkie fragmenty kodu w osobnym pliku `patch_code.md`
-- W `corrections.md` odwołania do fragmentów z `patch_code.md`
+- **KAŻDY PLIK AUDYTU = OSOBNY PLIK CORRECTION** - `[nazwa_pliku]_correction.md`
+- **KAŻDY PLIK AUDYTU = OSOBNY PLIK PATCH** - `[nazwa_pliku]_patch.md`
+- **NIE** zbiorcze pliki `correction_[PRIORYTET].md` - to wprowadza bałagan!
+- **NIE** zbiorcze pliki `patch_code_[NAZWA_PLIKU].md` - to wprowadza bałagan!
 - Plan poprawek etapowy - każda poprawka to osobny krok z testem
 - Po każdej analizie aktualizuj `code_map.md` (✅ [PRZEANALIZOWANO])
 
@@ -519,7 +534,7 @@ def old_location_method(self):
 
 **KAŻDY PLIK POPRAWEK MUSI ZAWIERAĆ CHECKLISTĘ DO WERYFIKACJI!**
 
-#### **WYMAGANA CHECKLISTA W `patch_code_[NAZWA_PLIKU].md`:**
+#### **WYMAGANA CHECKLISTA W `[nazwa_pliku]_patch.md`:**
 
 ```
 
@@ -620,85 +635,66 @@ def old_location_method(self):
 #### **1. AKTUALIZACJA `code_map.md`**
 
 ```
-
 Po analizie pliku `src/ui/main_window.py`:
 
 - Dodaj znacznik ✅ [PRZEANALIZOWANO] przy nazwie pliku
 - Zaktualizuj priorytet jeśli się zmienił
 - Dodaj datę analizy: [2024-01-15]
 - Zaktualizuj opis problemów/potrzeb
-
 ```
 
-#### **2. PROGRESYWNE UZUPEŁNIANIE `correction_[PRIORYTET].md`**
+#### **2. TWORZENIE `[nazwa_pliku]_correction.md`**
 
 ```
+Dla każdego analizowanego pliku:
 
-Po każdej analizie:
-
-- Dodaj nową sekcję ETAP [X]: [NAZWA_PLIKU]
+- Utwórz nowy plik `AUDYT/corrections/[nazwa_pliku]_correction.md`
 - Wypełnij wszystkie pola (identyfikacja, analiza, testy, status)
-- NIE nadpisuj istniejącej zawartości
-- DOPISUJ na końcu pliku
-
+- Dodaj plan refaktoryzacji z szablonem
+- NIE łącz z innymi plikami - każdy plik ma swój własny dokument!
 ```
 
-#### **3. TWORZENIE `patch_code_[NAZWA_PLIKU].md`**
+#### **3. TWORZENIE `[nazwa_pliku]_patch.md`**
 
 ```
-
 Dla każdego pliku z poprawnkami:
 
-- Utwórz nowy plik `patch_code_[NAZWA_PLIKU].md`
+- Utwórz nowy plik `AUDYT/patches/[nazwa_pliku]_patch.md`
 - Umieść wszystkie fragmenty kodu do poprawek
 - Dodaj numerację sekcji (1.1, 1.2, 1.3...)
-- W `audyt[PRIORYTET].md` odwołaj się do sekcji
-
+- Dodaj checklistę funkcjonalności i zależności
+- NIE łącz z innymi plikami - każdy plik ma swój własny patch!
 ```
 
 #### **4. CIĄGŁOŚĆ DOKUMENTACJI**
 
 - **NIE PRZERYWAJ** pracy bez aktualizacji plików
 - **KAŻDA ANALIZA** = natychmiastowa aktualizacja
-- **BACKUP** przed każdą zmianą
+- **BACKUP** przed każdą zmianą w `AUDYT/backups/`
 - **WERYFIKACJA** poprawności po każdej aktualizacji
 
 #### **5. PRZYKŁAD PROGRESYWNEGO UZUPEŁNIANIA**
 
 ```
-
 ETAP 1: Analiza src/ui/main_window.py ✅ [2024-01-15] UKOŃCZONY
+  ├── main_window_correction.md ✅
+  └── main_window_patch.md ✅
+
 ETAP 2: Analiza src/controllers/main_window_controller.py ✅ [2024-01-15] UKOŃCZONY
+  ├── main_window_controller_correction.md ✅
+  └── main_window_controller_patch.md ✅
+
 ETAP 3: Analiza src/logic/metadata_manager.py 🔄 [W TRAKCIE]
+  ├── metadata_manager_correction.md 🔄
+  └── metadata_manager_patch.md 🔄
+
 ETAP 4: Analiza src/config/config_core.py ⏳ [OCZEKUJE]
+  ├── config_core_correction.md ⏳
+  └── config_core_patch.md ⏳
 
 📊 POSTĘP: 2/4 etapów ukończonych (50%)
 🔄 AKTUALNY: ETAP 3 - src/logic/metadata_manager.py
 ⏳ POZOSTAŁO: 2 etapy
-
-```
-
-#### **6. OBOWIĄZKOWE SPRAWDZENIE POSTĘPU**
-
-**PO KAŻDYM ETAPIE MODEL MUSI:**
-
-- Policzyć ile etapów ukończono
-- Policzyć ile etapów pozostało
-- Podać procent ukończenia
-- Wskazać następny etap w kolejności
-- Sprawdzić czy wszystkie poprzednie etapy są ukończone
-
-**WZÓR RAPORTU:**
-
-```
-
-📊 RAPORT POSTĘPU AUDYTU:
-✅ Ukończone: X/Y etapów (Z%)
-🔄 W trakcie: [nazwa_pliku]
-⏳ Pozostałe: [liczba] etapów
-🎯 Następny: [nazwa_następnego_pliku]
-⚠️ Status: [WSZYSTKIE ETAPY PO KOLEI / PROBLEM]
-
 ```
 
 ### 🚨 WAŻNE: ZASADY DOKUMENTACJI I COMMITÓW
@@ -769,7 +765,7 @@ Przykład: "ETAP 1: main_window.py - Optymalizacja wydajności - ZAKOŃCZONY"
 
 ### 🛠️ INSTRUKCJE REFAKTORYZACJI - SZABLON DO KOPIOWANIA
 
-````markdown
+````
 ### 🛠️ PLAN REFAKTORYZACJI
 
 **Typ refaktoryzacji:** [Podział pliku/Optymalizacja kodu/Reorganizacja struktury/Usunięcie duplikatów]
@@ -826,7 +822,6 @@ class MainClass:
 
     def old_method(self):  # Zachowaj publiczne API
         return self._component.new_method()
-```
 ````
 
 **Jeśli optymalizujesz kod:**
@@ -880,43 +875,31 @@ OldClassName = NewClassName  # Backward compatibility alias
 - **TESTY:** Jakie testy zostały przeprowadzone
 - **REZULTAT:** Czy zmiana osiągnęła zamierzony cel
 
-````
+```
 
-#### **🚨 OBOWIĄZKOWE UŻYCIE SZABLONU:**
+#### **🚨 PAMIĘTAJ:** Bez wypełnionego szablonu refaktoryzacji ŻADEN etap nie może być uznany za ukończony!
 
-**W KAŻDYM PLIKU `correction_*.md` MUSISZ:**
+#### **6. OBOWIĄZKOWE SPRAWDZENIE POSTĘPU**
 
-1. **SKOPIOWAĆ** powyższy szablon do sekcji każdego etapu
-2. **WYPEŁNIĆ** konkretne wartości zamiast [placeholderów]
-3. **ZAZNACZYĆ** checkboxy w miarę postępu
-4. **UDOKUMENTOWAĆ** każdą zmianę
-5. **ZWERYFIKOWAĆ** wszystkie kryteria sukcesu
+**PO KAŻDYM ETAPIE MODEL MUSI:**
 
-**PRZYKŁAD UŻYCIA:**
-```markdown
-## ETAP 5: src/ui/main_window.py
+- Policzyć ile etapów ukończono
+- Policzyć ile etapów pozostało
+- Podać procent ukończenia
+- Wskazać następny etap w kolejności
+- Sprawdzić czy wszystkie poprzednie etapy są ukończone
 
-### 📋 Identyfikacja
-- **Plik główny:** `src/ui/main_window.py`
-- **Priorytet:** 🔴🔴🔴
-- **Zależności:** main_window_controller.py, gallery_manager.py
+**WZÓR RAPORTU:**
 
-### 🛠️ PLAN REFAKTORYZACJI
+```
 
-**Typ refaktoryzacji:** Podział pliku
+📊 RAPORT POSTĘPU AUDYTU:
+✅ Ukończone: X/Y etapów (Z%)
+🔄 W trakcie: [nazwa_pliku]
+⏳ Pozostałe: [liczba] etapów
+🎯 Następny: [nazwa_następnego_pliku]
+⚠️ Status: [WSZYSTKIE ETAPY PO KOLEI / PROBLEM]
 
-#### **KROK 1: PRZYGOTOWANIE** 🛡️
-- [x] **BACKUP UTWORZONY:** `main_window_backup_2024-01-15.py` w folderze `AUDYT/backups/`
-- [x] **ANALIZA ZALEŻNOŚCI:** 15 plików importuje MainWindow
-- [x] **IDENTYFIKACJA API:** 23 publiczne metody zidentyfikowane
-- [x] **PLAN ETAPOWY:** Podział na 3 komponenty: UI, Events, Data
+```
 
-#### **KROK 2: IMPLEMENTACJA** 🔧
-- [x] **ZMIANA 1:** Wydzielenie MainWindowUI do osobnego pliku
-- [ ] **ZMIANA 2:** Wydzielenie MainWindowEvents do osobnego pliku
-- [ ] **ZMIANA 3:** Wydzielenie MainWindowData do osobnego pliku
-- [x] **ZACHOWANIE API:** Wszystkie 23 metody zachowane w głównej klasie
-- [x] **BACKWARD COMPATIBILITY:** Facade pattern zachowuje kompatybilność
-````
-
-**⚠️ PAMIĘTAJ:** Bez wypełnionego szablonu refaktoryzacji ŻADEN etap nie może być uznany za ukończony!
+```
