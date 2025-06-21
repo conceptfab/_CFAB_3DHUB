@@ -5,7 +5,8 @@ Manager galerii - zarządzanie wyświetlaniem kafelków.
 import logging
 import math
 import os
-from typing import Dict, List
+import threading
+from typing import Dict, List, Optional
 
 from PyQt6.QtCore import QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
@@ -21,12 +22,75 @@ from src.ui.widgets.special_folder_tile_widget import SpecialFolderTileWidget
 logger = logging.getLogger(__name__)
 
 
+class LayoutGeometry:
+    """Klasa pomocnicza do obliczeń geometrii layoutu."""
+
+    def __init__(self, scroll_area, tiles_layout):
+        self.scroll_area = scroll_area
+        self.tiles_layout = tiles_layout
+        self._cache = {}
+        self._cache_lock = threading.Lock()
+
+    def get_layout_params(self, thumbnail_size):
+        """Zwraca parametry layoutu dla danego rozmiaru miniatur."""
+        with self._cache_lock:
+            cache_key = (
+                self.scroll_area.width(),
+                self.scroll_area.height(),
+                thumbnail_size,
+            )
+
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+
+            container_width = (
+                self.scroll_area.width() - self.scroll_area.verticalScrollBar().width()
+            )
+            tile_width_spacing = thumbnail_size + self.tiles_layout.spacing() + 10
+            tile_height_spacing = thumbnail_size + self.tiles_layout.spacing() + 40
+            cols = max(1, math.floor(container_width / tile_width_spacing))
+
+            params = {
+                "container_width": container_width,
+                "cols": cols,
+                "tile_width_spacing": tile_width_spacing,
+                "tile_height_spacing": tile_height_spacing,
+            }
+
+            self._cache[cache_key] = params
+            return params
+
+    def get_visible_range(self, thumbnail_size, total_items):
+        """Oblicza zakres widocznych elementów."""
+        params = self.get_layout_params(thumbnail_size)
+
+        viewport_height = self.scroll_area.viewport().height()
+        scroll_y = self.scroll_area.verticalScrollBar().value()
+
+        buffer = viewport_height
+        visible_start_y = max(0, scroll_y - buffer)
+        visible_end_y = scroll_y + viewport_height + buffer
+
+        first_visible_row = max(
+            0, math.floor(visible_start_y / params["tile_height_spacing"])
+        )
+        last_visible_row = math.ceil(visible_end_y / params["tile_height_spacing"])
+
+        first_visible_item = first_visible_row * params["cols"]
+        last_visible_item = min((last_visible_row + 1) * params["cols"], total_items)
+
+        return first_visible_item, last_visible_item, params
+
+
 class GalleryManager:
     """
-    Klasa zarządzająca galerią kafelków.
+    Klasa zarządzająca galerią kafelków z thread safety.
     """
 
     VIRTUALIZATION_UPDATE_DELAY = 50  # ms, opóźnienie dla aktualizacji wirtualizacji
+
+    # Flaga do włączania diagnostyki
+    DIAGNOSTIC_LOGGING = os.getenv("GALLERY_DIAGNOSTIC", "false").lower() == "true"
 
     def __init__(
         self,
@@ -52,6 +116,25 @@ class GalleryManager:
             self.current_thumbnail_size,
         )
 
+        # Thread safety
+        self._widgets_lock = threading.RLock()
+        self._geometry_cache_lock = threading.Lock()
+
+        # Cache dla obliczeń geometrii
+        self._geometry_cache = {
+            "container_width": 0,
+            "cols": 0,
+            "tile_width_spacing": 0,
+            "tile_height_spacing": 0,
+            "last_thumbnail_size": 0,
+        }
+
+        # Flaga dla pending size update
+        self._pending_size_update = False
+
+        # Klasa pomocnicza do geometrii
+        self._geometry = LayoutGeometry(self.scroll_area, self.tiles_layout)
+
         # Timer do opóźnionej aktualizacji wirtualizacji
         self._virtualization_timer = QTimer()
         self._virtualization_timer.setSingleShot(True)
@@ -59,6 +142,48 @@ class GalleryManager:
 
         # Podłącz sygnał zmiany scrollbara
         self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
+
+    def _log_diagnostic(self, message: str):
+        """Logowanie diagnostyczne - tylko gdy włączone."""
+        if self.DIAGNOSTIC_LOGGING:
+            logger.debug(f"GALLERY_DIAGNOSTIC: {message}")
+
+    def _get_cached_geometry(self):
+        """Zwraca cache'owane obliczenia geometrii lub oblicza nowe."""
+        with self._geometry_cache_lock:
+            container_width = (
+                self.scroll_area.width() - self.scroll_area.verticalScrollBar().width()
+            )
+
+            # Sprawdź czy cache jest aktualny
+            if (
+                self._geometry_cache["container_width"] == container_width
+                and self._geometry_cache["last_thumbnail_size"]
+                == self.current_thumbnail_size
+            ):
+                return self._geometry_cache
+
+            # Oblicz nowe wartości
+            tile_width_spacing = (
+                self.current_thumbnail_size + self.tiles_layout.spacing() + 10
+            )
+            tile_height_spacing = (
+                self.current_thumbnail_size + self.tiles_layout.spacing() + 40
+            )
+            cols = max(1, math.floor(container_width / tile_width_spacing))
+
+            # Zaktualizuj cache
+            self._geometry_cache.update(
+                {
+                    "container_width": container_width,
+                    "cols": cols,
+                    "tile_width_spacing": tile_width_spacing,
+                    "tile_height_spacing": tile_height_spacing,
+                    "last_thumbnail_size": self.current_thumbnail_size,
+                }
+            )
+
+            return self._geometry_cache
 
     def _on_scroll(self, value):
         """Wywołuje opóźnioną aktualizację widocznych kafelków."""
@@ -81,37 +206,43 @@ class GalleryManager:
                     widget.setVisible(False)
                     self.tiles_layout.removeWidget(widget)  # Jawne usunięcie
 
-            # Usuń widgety par plików ze słownika i pamięci
-            for archive_path in list(
-                self.gallery_tile_widgets.keys()
-            ):  # Iteruj po kopii kluczy
-                tile = self.gallery_tile_widgets.pop(archive_path)
-                tile.setParent(None)
-                tile.deleteLater()
-            self.gallery_tile_widgets.clear()
+            # Thread-safe czyszczenie słowników
+            with self._widgets_lock:
+                # Usuń widgety par plików ze słownika i pamięci
+                for archive_path in list(
+                    self.gallery_tile_widgets.keys()
+                ):  # Iteruj po kopii kluczy
+                    tile = self.gallery_tile_widgets.pop(archive_path)
+                    tile.setParent(None)
+                    tile.deleteLater()
+                self.gallery_tile_widgets.clear()
 
-            # Usuń widgety folderów ze słownika i pamięci
-            for folder_path in list(
-                self.special_folder_widgets.keys()
-            ):  # Iteruj po kopii kluczy
-                folder_widget = self.special_folder_widgets.pop(folder_path)
-                folder_widget.setParent(None)
-                folder_widget.deleteLater()
-            self.special_folder_widgets.clear()
+                # Usuń widgety folderów ze słownika i pamięci
+                for folder_path in list(
+                    self.special_folder_widgets.keys()
+                ):  # Iteruj po kopii kluczy
+                    folder_widget = self.special_folder_widgets.pop(folder_path)
+                    folder_widget.setParent(None)
+                    folder_widget.deleteLater()
+                self.special_folder_widgets.clear()
         finally:
             self.tiles_container.setUpdatesEnabled(True)
             self.tiles_container.update()
 
     def create_tile_widget_for_pair(self, file_pair: FilePair, parent_widget):
         """
-        Tworzy pojedynczy kafelek dla pary plików.
+        Tworzy pojedynczy kafelek dla pary plików - thread safe.
         """
         try:
             # Przekaż _current_size_tuple jako krotkę (width, height)
             tile = FileTileWidget(file_pair, self._current_size_tuple, parent_widget)
             # Ukryj na starcie, update_gallery_view zdecyduje o widoczności
             tile.setVisible(False)
-            self.gallery_tile_widgets[file_pair.get_archive_path()] = tile
+
+            # Thread-safe dodanie do słownika
+            with self._widgets_lock:
+                self.gallery_tile_widgets[file_pair.get_archive_path()] = tile
+
             return tile
         except Exception as e:
             logging.error(
@@ -164,16 +295,10 @@ class GalleryManager:
     def _update_visible_tiles(self):
         """Tworzy/usuwa kafelki w zależności od tego, czy są widoczne."""
 
-        container_width = (
-            self.scroll_area.width() - self.scroll_area.verticalScrollBar().width()
-        )
-        tile_width_with_spacing = (
-            self.current_thumbnail_size + self.tiles_layout.spacing() + 10
-        )
-        cols = max(1, math.floor(container_width / tile_width_with_spacing))
-        tile_height_with_spacing = (
-            self.current_thumbnail_size + self.tiles_layout.spacing() + 40
-        )
+        # Użyj cache'owanych obliczeń geometrii
+        geometry = self._get_cached_geometry()
+        cols = geometry["cols"]
+        tile_height_spacing = geometry["tile_height_spacing"]
 
         # Określ widoczny obszar
         viewport_height = self.scroll_area.viewport().height()
@@ -184,10 +309,8 @@ class GalleryManager:
         visible_start_y = max(0, scroll_y - buffer)
         visible_end_y = scroll_y + viewport_height + buffer
 
-        first_visible_row = max(
-            0, math.floor(visible_start_y / tile_height_with_spacing)
-        )
-        last_visible_row = math.ceil(visible_end_y / tile_height_with_spacing)
+        first_visible_row = max(0, math.floor(visible_start_y / tile_height_spacing))
+        last_visible_row = math.ceil(visible_end_y / tile_height_spacing)
 
         # Określ indeksy widocznych itemów
         first_visible_item_idx = first_visible_row * cols
@@ -224,20 +347,46 @@ class GalleryManager:
             row = i // cols
             col = i % cols
 
-            if self.tiles_layout.itemAtPosition(row, col) != widget:
+            # Sprawdź czy pozycja jest pusta lub zawiera inny widget
+            current_item = self.tiles_layout.itemAtPosition(row, col)
+            if current_item is None or current_item.widget() != widget:
+                # Jeśli pozycja zajęta przez inny widget, usuń go najpierw
+                if current_item is not None:
+                    old_widget = current_item.widget()
+                    if old_widget != widget:
+                        self.tiles_layout.removeWidget(old_widget)
+                        old_widget.setVisible(False)
                 self.tiles_layout.addWidget(widget, row, col)
 
             if not widget.isVisible():
                 widget.setVisible(True)
 
-        # Usuń niewidoczne kafelki
-        for path, widget in list(self.gallery_tile_widgets.items()):
-            if path not in visible_items_set:
-                widget.setVisible(False)
-                self.tiles_layout.removeWidget(widget)
-                widget.setParent(None)
-                # Nie niszczymy widgetu, zostaje w cache (self.gallery_tile_widgets)
+        # Dodaj lekkie zarządzanie cache - usuń najstarsze niewidoczne widgety
+        MAX_CACHED_WIDGETS = 200
 
+        with self._widgets_lock:
+            currently_cached = len(self.gallery_tile_widgets)
+
+            # Usuń niewidoczne kafelki z layoutu
+            hidden_widgets = []
+            for path, widget in list(self.gallery_tile_widgets.items()):
+                if path not in visible_items_set:
+                    widget.setVisible(False)
+                    self.tiles_layout.removeWidget(widget)
+                    widget.setParent(None)
+                    hidden_widgets.append((path, widget))
+
+            # Jeśli cache przekracza limit, usuń najstarsze widgety
+            if currently_cached > MAX_CACHED_WIDGETS:
+                widgets_to_remove = currently_cached - MAX_CACHED_WIDGETS
+                for i, (path, widget) in enumerate(hidden_widgets):
+                    if i >= widgets_to_remove:
+                        break
+                    self.gallery_tile_widgets.pop(path, None)
+                    widget.deleteLater()
+                    logging.debug(f"Usunięto z cache widget dla {path}")
+
+        # Usuń niewidoczne widgety folderów
         for path, widget in list(self.special_folder_widgets.items()):
             if path not in visible_items_set:
                 widget.setVisible(False)
@@ -281,14 +430,23 @@ class GalleryManager:
             f"GalleryManager: Ustawianie nowego rozmiaru: {self._current_size_tuple}"
         )
 
-        # Zaktualizuj rozmiar w kafelkach - dla WSZYSTKICH kafelków
-        for tile in self.gallery_tile_widgets.values():
-            # FileTileWidget.set_thumbnail_size oczekuje krotki (width, height)
-            tile.set_thumbnail_size(self._current_size_tuple)
+        # Zaktualizuj rozmiar tylko dla widocznych kafelków + cache nowego rozmiaru dla pozostałych
+        with self._widgets_lock:
+            # Natychmiast zaktualizuj widoczne kafelki
+            for tile in self.gallery_tile_widgets.values():
+                if tile.isVisible():
+                    tile.set_thumbnail_size(self._current_size_tuple)
 
-        # Zaktualizuj rozmiar w widgetach folderów
-        for folder_widget in self.special_folder_widgets.values():
-            folder_widget.set_thumbnail_size(self._current_size_tuple)
+            for folder_widget in self.special_folder_widgets.values():
+                if folder_widget.isVisible():
+                    folder_widget.set_thumbnail_size(self._current_size_tuple)
+
+        # Zaznacz, że niewidoczne kafelki potrzebują aktualizacji
+        self._pending_size_update = True
+
+        # Invalidate geometry cache
+        with self._geometry_cache_lock:
+            self._geometry_cache["last_thumbnail_size"] = 0
 
         # Przerenderuj galerię z nowymi rozmiarami
         self.update_gallery_view()
@@ -339,14 +497,14 @@ class GalleryManager:
             folder_path = special_folder.get_folder_path()
             is_virtual = special_folder.is_virtual
 
-            self.main_window.logger.critical(
-                f"DIAGNOSTYKA CREATE_FOLDER_WIDGET: Próba utworzenia widgetu dla {folder_path} (wirtualny: {is_virtual})"
+            self._log_diagnostic(
+                f"Próba utworzenia widgetu dla {folder_path} (wirtualny: {is_virtual})"
             )
 
             # Sprawdź, czy folder fizycznie istnieje, TYLKO jeśli nie jest wirtualny
             if not is_virtual and not os.path.exists(folder_path):
-                self.main_window.logger.error(
-                    f"DIAGNOSTYKA CREATE_FOLDER_WIDGET: Fizyczny folder specjalny nie istnieje i nie zostanie utworzony: {folder_path}"
+                self._log_diagnostic(
+                    f"Fizyczny folder specjalny nie istnieje i nie zostanie utworzony: {folder_path}"
                 )
                 return None
 
@@ -358,7 +516,10 @@ class GalleryManager:
             # Podłącz sygnał kliknięcia
             folder_widget.folder_clicked.connect(self._on_folder_clicked)
 
-            self.special_folder_widgets[folder_path] = folder_widget
+            # Thread-safe dodanie do słownika
+            with self._widgets_lock:
+                self.special_folder_widgets[folder_path] = folder_widget
+
             logging.debug(f"Utworzono widget folderu: {folder_name}")
             return folder_widget
         except Exception as e:
@@ -387,40 +548,25 @@ class GalleryManager:
         """
         Przygotowuje widgety dla folderów specjalnych przed aktualizacją widoku.
         """
-        self.main_window.logger.critical(
-            f"🔍 DIAGNOSTYKA PREPARE_SPECIAL_FOLDERS: Otrzymano {len(special_folders)} folderów: {special_folders}"
-        )
-
-        self.main_window.logger.critical(
-            f"🔍 DIAGNOSTYKA PREPARE_SPECIAL_FOLDERS: Przed czyszczeniem mamy {len(self.special_folder_widgets)} starych widgetów: {list(self.special_folder_widgets.keys())}"
-        )
+        self._log_diagnostic(f"Otrzymano {len(special_folders)} folderów")
 
         self.special_folders_list = special_folders
 
         # Wyczyść poprzednie widgety folderów
-        for folder_path in list(self.special_folder_widgets.keys()):
-            folder_widget = self.special_folder_widgets.pop(folder_path)
-            self.main_window.logger.critical(
-                f"🔍 DIAGNOSTYKA: Usuwam stary widget folderu: {folder_path}"
-            )
-            folder_widget.setParent(None)
-            folder_widget.deleteLater()
-        self.special_folder_widgets.clear()
+        with self._widgets_lock:
+            for folder_path in list(self.special_folder_widgets.keys()):
+                folder_widget = self.special_folder_widgets.pop(folder_path)
+                self._log_diagnostic(f"Usuwam stary widget folderu: {folder_path}")
+                folder_widget.setParent(None)
+                folder_widget.deleteLater()
+            self.special_folder_widgets.clear()
 
-        self.main_window.logger.critical(
-            f"🔍 DIAGNOSTYKA PREPARE_SPECIAL_FOLDERS: Po wyczyszczeniu mamy {len(self.special_folder_widgets)} widgetów"
-        )
-
-        # Utwórz nowe widgety dla folderów i zapisz je w słowniku
+        # Utwórz nowe widgety dla folderów
         for special_folder in special_folders:
             widget = self.create_folder_widget(special_folder)
-            self.main_window.logger.critical(
-                f"🔍 DIAGNOSTYKA: Utworzono nowy widget: {special_folder.get_folder_path()} -> {widget is not None}"
+            self._log_diagnostic(
+                f"Utworzono nowy widget: {special_folder.get_folder_path()} -> {widget is not None}"
             )
-
-        self.main_window.logger.critical(
-            f"🔍 DIAGNOSTYKA PREPARE_SPECIAL_FOLDERS: Po utworzeniu nowych mamy {len(self.special_folder_widgets)} widgetów: {list(self.special_folder_widgets.keys())}"
-        )
 
         logging.info(
             f"Przygotowano {len(self.special_folder_widgets)} widgetów folderów specjalnych."
@@ -448,6 +594,34 @@ class GalleryManager:
             logging.debug(
                 f"DEBUG: Widget folderu: {path} (widoczny: {widget.isVisible()})"
             )
+
+    def _ensure_widget_created(self, item, item_index):
+        """Zapewnia że widget jest utworzony i ma poprawny rozmiar."""
+        if isinstance(item, SpecialFolder):
+            path = item.get_folder_path()
+            widget = self.special_folder_widgets.get(path)
+            if not widget:
+                widget = self.create_folder_widget(item)
+                if not widget:
+                    return None
+
+            # Sprawdź czy widget ma aktualny rozmiar
+            if hasattr(self, "_pending_size_update") and self._pending_size_update:
+                widget.set_thumbnail_size(self._current_size_tuple)
+
+        else:  # FilePair
+            path = item.get_archive_path()
+            widget = self.gallery_tile_widgets.get(path)
+            if not widget:
+                widget = self.create_tile_widget_for_pair(item, self.tiles_container)
+                if not widget:
+                    return None
+
+            # Sprawdź czy widget ma aktualny rozmiar
+            if hasattr(self, "_pending_size_update") and self._pending_size_update:
+                widget.set_thumbnail_size(self._current_size_tuple)
+
+        return widget
 
     def _on_tile_double_clicked(self, file_pair):
         """Obsługuje podwójne kliknięcie na kafelek pary plików."""

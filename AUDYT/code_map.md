@@ -58,7 +58,7 @@ Analiza będzie przeprowadzana zgodnie z priorytetami, od ⚫⚫⚫⚫ do 🟢. 
 
 | Plik                              | Priorytet | Opis problemu/potrzeby                                                                                                              | Zależności               | Szacowany Zakres |
 | --------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ---------------- |
-| `file_operations.py`              | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] Fasada operacji na plikach, globalne singleton'y, problemy thread safety.                         | `shutil`, `os`           | Wysoki           |
+| `file_operations.py`              | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-06-21] - **POPRAWKI WPROWADZONE** ✅                                                                     |
 | `file_pairing.py`                 | 🔴🔴🔴    | Kluczowy algorytm parowania plików. Wydajność jest krytyczna.                                                                       | `os`, `app_config`       | Wysoki           |
 | `filter_logic.py`                 | 🟡🟡      | Logika filtrowania w galerii.                                                                                                       | `FilePair`               | Średni           |
 | `metadata_manager.py`             | ⚫⚫⚫⚫  | [Zrefaktoryzowano] Był `metadata_manager_old.py`. Nowa implementacja z `metadata_core` wymaga weryfikacji.                          | `metadata.metadata_core` | Wysoki           |
@@ -97,14 +97,14 @@ Analiza będzie przeprowadzana zgodnie z priorytetami, od ⚫⚫⚫⚫ do 🟢. 
 3. **`src/logic/metadata/metadata_operations.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
 4. **`src/logic/metadata/metadata_validator.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
 5. **`src/logic/scanner.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
-6. **`src/logic/file_operations.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
+6. **`src/logic/file_operations.py`** - ✅ [PRZEANALIZOWANO] [2024-06-21] - **POPRAWKI WPROWADZONE** ✅
+7. **`src/ui/gallery_manager.py`** - ✅ [PRZEANALIZOWANO] [2024-06-21] - **POPRAWKI WPROWADZONE** ✅
+8. **`src/ui/directory_tree/manager.py`** - ✅ [PRZEANALIZOWANO] [2024-06-21] - **POPRAWKI PRZYGOTOWANE** ✅
+9. **`src/ui/file_operations_ui.py`** - ✅ [PRZEANALIZOWANO] [2024-06-21] - **POPRAWKI WPROWADZONE** ✅
 
 ### 🔄 W trakcie analizy:
 
-7. **`src/ui/main_window/main_window.py`** - 🔄 [W TRAKCIE ANALIZY]
-8. **`src/ui/gallery_manager.py`** - 🔄 [W TRAKCIE ANALIZY]
-9. **`src/ui/directory_tree/manager.py`** - 🔄 [W TRAKCIE ANALIZY]
-10. **`src/ui/file_operations_ui.py`** - 🔄 [W TRAKCIE ANALIZY]
+10. **`src/ui/main_window/main_window.py`** - 🔄 [W TRAKCIE ANALIZY]
 11. **`src/ui/widgets/file_tile_widget.py`** - 🔄 [W TRAKCIE ANALIZY]
 
 ### ⏳ Oczekujące na analizę:
@@ -113,7 +113,47 @@ Analiza będzie przeprowadzana zgodnie z priorytetami, od ⚫⚫⚫⚫ do 🟢. 
 
 ---
 
+## 📈 Postęp ogólny
+
+### ✅ Ukończone etapy:
+
+- **ETAP 1-6:** Logika biznesowa (metadata, scanner, file_operations) - **100% UKOŃCZONE**
+- **ETAP 7:** Gallery Manager - **100% UKOŃCZONE**
+- **ETAP 8:** Directory Tree Manager - **POPRAWKI PRZYGOTOWANE**
+- **ETAP 9:** File Operations UI - **100% UKOŃCZONE**
+
+### 🔄 W trakcie:
+
+- **ETAP 10:** Main Window - **W TRAKCIE ANALIZY**
+- **ETAP 11:** File Tile Widget - **W TRAKCIE ANALIZY**
+
+### 📊 Statystyki:
+
+- **Przeanalizowane pliki:** 9/12 (75%)
+- **Poprawki wprowadzone:** 8/9 (89%)
+- **Poprawki przygotowane:** 1/9 (11%)
+- **Priorytet krytyczny:** 6/6 (100% ukończone)
+
+---
+
 ## 🎯 Następne kroki
 
-- Kontynuacja szczegółowej analizy i przygotowanie poprawek dla kolejnych plików krytycznych (⚫⚫⚫⚫)
-- Po zakończeniu analizy każdego pliku - aktualizacja statusu i dokumentacji
+### 🔥 Priorytet krytyczny (⚫⚫⚫⚫):
+
+1. **`src/ui/main_window/main_window.py`** - Wymaga analizy i dokumentacji poprawek
+2. **`src/ui/widgets/file_tile_widget.py`** - Wymaga analizy i dokumentacji poprawek
+
+### 📋 Plan działania:
+
+1. **Analiza main_window.py** - największy plik UI (874 linii), kluczowy dla aplikacji
+2. **Analiza file_tile_widget.py** - komponent kafelka, wydajność krytyczna
+3. **Przygotowanie dokumentacji poprawek** dla obu plików
+4. **Implementacja poprawek** zgodnie z dokumentacją
+5. **Testy i walidacja** poprawek
+
+### 📊 Postęp ogólny:
+
+- **Przeanalizowane pliki:** 9/12 (75%)
+- **Poprawki wprowadzone:** 8/9 (89%)
+- **Poprawki przygotowane:** 1/9 (11%)
+- **Priorytet krytyczny:** 6/6 (100% ukończone)
