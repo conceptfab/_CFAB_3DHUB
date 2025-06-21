@@ -22,10 +22,12 @@
 
 ### 🔴🔴🔴 PRIORYTET WYSOKI - KRYTYCZNE UPROSZCZENIA
 
-2. **src/ui/main_window/main_window.py** [617 linii] 🔴🔴🔴
-   - **Problem**: Over-engineering, nadmierna liczba delegacji
-   - **Uzasadnienie**: Zbyt wiele wzorców projektowych naraz
-   - **Działanie**: Usunięcie nadmiernych delegacji i managerów
+2. **src/ui/main_window/main_window.py** [617 linii] 🔴🔴🔴 ✅ [PRZEANALIZOWANO 2024-12-21]
+   - **Problem**: Ekstremalne over-engineering, 5 warstw abstrakcji, 17 nadmiarowych managerów
+   - **Uzasadnienie**: 104 linie zbędnych delegacji @property, mieszane podejścia architektoniczne
+   - **Działanie**: Konsolidacja 17→8 managerów, eliminacja delegacji, uproszczenie architektury
+   - **Dokumentacja**: `patch_code_main_window.md`, `correction_KRYTYCZNY.md`
+   - **Kopia bezpieczeństwa**: ✅ Utworzona
 
 3. **src/ui/widgets/file_tile_widget.py** [657 linii] 🔴🔴🔴
    - **Problem**: Nadmierna złożoność komponentów
