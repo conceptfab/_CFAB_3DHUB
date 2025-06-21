@@ -21,7 +21,11 @@
       "Bash(cp:*)",
       "Bash(source:*)",
       "Bash(pipx install:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(pylint:*)",
+      "Bash(flake8:*)",
+      "Bash(vulture:*)",
+      "Bash(radon:*)"
     ],
     "deny": []
   }

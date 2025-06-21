@@ -22,7 +22,6 @@ Kompleksowa analiza, optymalizacja i uproszczenie kodu aplikacji CFAB_3DHUB z na
 
 - **pipdeptree** - mapowanie zależności Python
 - **pydeps** - wizualizacja zależności między modułami
-- **snakefood** - analiza importów i zależności
 
 #### **ANALIZA WYDAJNOŚCI:**
 
