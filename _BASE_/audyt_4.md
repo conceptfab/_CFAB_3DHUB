@@ -200,7 +200,7 @@ Przeanalizuj **WSZYSTKIE PLIKI** pod kątem:
 
 ### 📝 STRUKTURA KAŻDEGO ETAPU ANALIZY
 
-```
+````
 ## ETAP [NUMER]: [NAZWA_PLIKU]
 
 ### 📋 Identyfikacja
@@ -223,23 +223,196 @@ Przeanalizuj **WSZYSTKIE PLIKI** pod kątem:
 4. **Logowanie:**
    - Weryfikacja logowania, podział na INFO, DEBUG
 
+### 🛠️ INSTRUKCJE REFAKTORYZACJI PLIKÓW
+
+**⚠️ KRYTYCZNE ZASADY REFAKTORYZACJI:**
+
+#### **1. BACKUP I BEZPIECZEŃSTWO** 🛡️
+- **OBOWIĄZKOWY BACKUP** - przed jakąkolwiek modyfikacją utwórz kopię bezpieczeństwa pliku
+- **NAZWA BACKUPU:** `[nazwa_pliku]_backup_[data].py` (np. `main_window_backup_2024-01-15.py`)
+- **LOKALIZACJA BACKUPU:** folder `AUDYT/backups/`
+- **WERYFIKACJA BACKUPU** - sprawdź czy kopia jest kompletna i czytelna
+
+#### **2. STRATEGIA REFAKTORYZACJI** 🎯
+- **INCREMENTAL APPROACH** - małe, weryfikowalne kroki zamiast wielkich przepisów
+- **JEDNA ZMIANA = JEDEN COMMIT** - każda logiczna zmiana w osobnym commit
+- **ZACHOWANIE FUNKCJONALNOŚCI** - 100% backward compatibility, zero breaking changes
+- **ROLLBACK PLAN** - możliwość cofnięcia każdej zmiany w razie problemów
+
+#### **3. PROCES REFAKTORYZACJI KROK PO KROKU** 📋
+
+**KROK 1: PRZYGOTOWANIE**
+- [ ] Utwórz backup pliku
+- [ ] Przeanalizuj wszystkie zależności (imports, calls)
+- [ ] Zidentyfikuj publiczne API (metody używane przez inne pliki)
+- [ ] Przygotuj plan refaktoryzacji z podziałem na etapy
+
+**KROK 2: IMPLEMENTACJA**
+- [ ] Implementuj JEDNĄ zmianę na raz
+- [ ] Zachowaj wszystkie publiczne metody i ich sygnatury
+- [ ] Dodaj deprecation warnings dla starych metod (jeśli trzeba)
+- [ ] Zachowaj kompatybilność wsteczną
+
+**KROK 3: WERYFIKACJA**
+- [ ] Uruchom testy automatyczne
+- [ ] Sprawdź czy aplikacja się uruchamia
+- [ ] Zweryfikuj czy wszystkie funkcje działają
+- [ ] Sprawdź czy nie ma błędów importów
+
+**KROK 4: INTEGRACJA**
+- [ ] Sprawdź czy inne pliki nadal działają
+- [ ] Zweryfikuj wszystkie zależności
+- [ ] Uruchom testy integracyjne
+- [ ] Sprawdź wydajność aplikacji
+
+#### **4. RODZAJE REFAKTORYZACJI** 🔧
+
+**A. PODZIAŁ DUŻYCH PLIKÓW:**
+- Utwórz nowe pliki w tym samym folderze
+- Przenieś logicznie powiązane funkcje
+- Zachowaj główny plik jako facade/orchestrator
+- Dodaj imports w głównym pliku do zachowania API
+
+**B. OPTYMALIZACJA KODU:**
+- Usuń duplikaty kodu
+- Uprość skomplikowane funkcje
+- Popraw wydajność algorytmów
+- Zoptymalizuj imports
+
+**C. REORGANIZACJA STRUKTURY:**
+- Grupuj powiązane metody
+- Przenieś utility functions do utils/
+- Oddziel configuration od logic
+- Wydziel constants do osobnych plików
+
+#### **5. CZERWONE LINIE - CZEGO NIE WOLNO ROBIĆ** 🚫
+
+- **NIE USUWAJ** publicznych metod bez deprecation
+- **NIE ZMIENIAJ** sygnatur publicznych metod
+- **NIE WPROWADZAJ** breaking changes
+- **NIE REFAKTORYZUJ** bez pełnego zrozumienia kodu
+- **NIE ŁĄCZ** wielu zmian w jednym commit
+- **NIE POMIJAJ** testów po każdej zmianie
+- **NIE USUWAJ** kodu bez pewności że jest nieużywany
+
+#### **6. WZORCE BEZPIECZNEJ REFAKTORYZACJI** ✅
+
+**EXTRACT METHOD:**
+```python
+# PRZED refaktoryzacją - zachowaj starą metodę
+def old_complex_method(self):
+    # stary kod
+    return self._new_extracted_method()
+
+# NOWA metoda
+def _new_extracted_method(self):
+    # wydzielona logika
+    pass
+````
+
+**EXTRACT CLASS:**
+
+```python
+# PRZED - zachowaj facade
+class OldClass:
+    def __init__(self):
+        self._new_component = NewExtractedClass()
+
+    def old_method(self):
+        return self._new_component.new_method()
+
+# NOWA klasa
+class NewExtractedClass:
+    def new_method(self):
+        pass
+```
+
+**MOVE METHOD:**
+
+```python
+# PRZED - dodaj deprecation warning
+def old_location_method(self):
+    warnings.warn("Use new_location.method instead", DeprecationWarning)
+    return self.new_location.method()
+```
+
+#### **7. TESTOWANIE REFAKTORYZACJI** 🧪
+
+**PRZED REFAKTORYZACJĄ:**
+
+- [ ] Uruchom wszystkie testy - zapisz wyniki jako baseline
+- [ ] Sprawdź wydajność - zapisz metryki jako baseline
+- [ ] Zweryfikuj funkcjonalność - utwórz checklistę
+
+**PO KAŻDYM KROKU REFAKTORYZACJI:**
+
+- [ ] Uruchom testy - porównaj z baseline
+- [ ] Sprawdź wydajność - nie może być gorsza o >5%
+- [ ] Zweryfikuj funkcjonalność - wszystkie punkty z checklisty
+- [ ] Sprawdź imports i zależności
+
+**PO CAŁEJ REFAKTORYZACJI:**
+
+- [ ] Pełne testy regresyjne
+- [ ] Testy integracyjne ze wszystkimi modułami
+- [ ] Testy wydajnościowe - porównanie z baseline
+- [ ] Testy użytkownika - sprawdzenie UX
+
+#### **8. DOKUMENTACJA REFAKTORYZACJI** 📚
+
+**W KAŻDYM PLIKU correction\_\*.md DODAJ SEKCJĘ:**
+
+```
+### 🛠️ PLAN REFAKTORYZACJI
+
+**Typ refaktoryzacji:** [Podział pliku/Optymalizacja/Reorganizacja]
+
+**Kroki refaktoryzacji:**
+1. Krok 1 - opis
+2. Krok 2 - opis
+3. Krok 3 - opis
+
+**Zachowanie kompatybilności:**
+- Lista publicznych metod do zachowania
+- Plan deprecation warnings (jeśli potrzebne)
+- Strategia migracji (jeśli potrzebna)
+
+**Punkty weryfikacji:**
+- [ ] Backup utworzony
+- [ ] Testy baseline zapisane
+- [ ] Refaktoryzacja krok 1 ukończona
+- [ ] Refaktoryzacja krok 2 ukończona
+- [ ] Refaktoryzacja krok 3 ukończona
+- [ ] Wszystkie testy PASS
+- [ ] Wydajność zachowana
+- [ ] Kompatybilność potwierdzona
+```
+
 ### 🧪 Plan testów automatycznych
+
 **Test funkcjonalności podstawowej:**
+
 - Opis testu 1
 - Opis testu 2
 
 **Test integracji:**
+
 - Opis testu integracji
 
 **Test wydajności:**
+
 - Opis testu wydajności
 
 ### 📊 Status tracking
-- [ ] Kod zaimplementowany
+
+- [ ] Backup utworzony
+- [ ] Plan refaktoryzacji przygotowany
+- [ ] Kod zaimplementowany (krok po kroku)
 - [ ] Testy podstawowe przeprowadzone
 - [ ] Testy integracji przeprowadzone
 - [ ] **WERYFIKACJA FUNKCJONALNOŚCI** - sprawdzenie czy wszystkie funkcje działają
 - [ ] **WERYFIKACJA ZALEŻNOŚCI** - sprawdzenie czy nie zepsuto innych modułów
+- [ ] **WERYFIKACJA WYDAJNOŚCI** - porównanie z baseline
 - [ ] **KONTROLA POSTĘPU** - raport ile etapów ukończono vs ile pozostało
 - [ ] Dokumentacja zaktualizowana
 - [ ] Gotowe do wdrożenia
@@ -249,6 +422,7 @@ Przeanalizuj **WSZYSTKIE PLIKI** pod kątem:
 ### 📈 OBOWIĄZKOWA KONTROLA POSTĘPU PO KAŻDYM ETAPIE
 
 **MODEL MUSI SPRAWDZIĆ I PODAĆ:**
+
 - **Etapów ukończonych:** X/Y
 - **Procent ukończenia:** X%
 - **Pozostałe etapy:** Lista nazw plików do analizy
@@ -256,6 +430,7 @@ Przeanalizuj **WSZYSTKIE PLIKI** pod kątem:
 - **Szacowany czas:** Ile etapów pozostało do końca
 
 **PRZYKŁAD RAPORTU POSTĘPU:**
+
 ```
 
 📊 POSTĘP AUDYTU:
@@ -274,21 +449,25 @@ Przeanalizuj **WSZYSTKIE PLIKI** pod kątem:
 ### 🧪 SZCZEGÓŁOWE WYMAGANIA TESTOWANIA
 
 #### **TEST FUNKCJONALNOŚCI PODSTAWOWEJ:**
+
 - Sprawdzenie czy poprawka działa zgodnie z oczekiwaniami
 - Testowanie wszystkich ścieżek wykonania (happy path + edge cases)
 - Weryfikacja że nie wprowadzono regresji
 
 #### **TEST INTEGRACJI:**
+
 - Sprawdzenie czy poprawka nie zepsuje innych części aplikacji
 - Testowanie interakcji z zależnymi modułami
 - Weryfikacja że API pozostaje kompatybilne
 
 #### **TEST WYDAJNOŚCI:**
+
 - Pomiar czasu wykonania przed i po poprawce
 - Sprawdzenie użycia pamięci
 - Weryfikacja że nie ma wycieków zasobów
 
 #### **KRYTERIA SUKCESU:**
+
 - **Wszystkie testy PASS** (0 FAIL)
 - **Pokrycie kodu >80%** dla nowych funkcji
 - **Brak regresji** w istniejących testach
@@ -473,7 +652,7 @@ Dla każdego pliku z poprawnkami:
 - Utwórz nowy plik `patch_code_[NAZWA_PLIKU].md`
 - Umieść wszystkie fragmenty kodu do poprawek
 - Dodaj numerację sekcji (1.1, 1.2, 1.3...)
-- W `correction_[PRIORYTET].md` odwołaj się do sekcji
+- W `audyt[PRIORYTET].md` odwołaj się do sekcji
 
 ```
 
@@ -489,7 +668,7 @@ Dla każdego pliku z poprawnkami:
 ```
 
 ETAP 1: Analiza src/ui/main_window.py ✅ [2024-01-15] UKOŃCZONY
-ETAP 2: Analiza src/controllers/main_window_controller.py ✅ [2024-01-15] UKOŃCZONY  
+ETAP 2: Analiza src/controllers/main_window_controller.py ✅ [2024-01-15] UKOŃCZONY
 ETAP 3: Analiza src/logic/metadata_manager.py 🔄 [W TRAKCIE]
 ETAP 4: Analiza src/config/config_core.py ⏳ [OCZEKUJE]
 
@@ -502,6 +681,7 @@ ETAP 4: Analiza src/config/config_core.py ⏳ [OCZEKUJE]
 #### **6. OBOWIĄZKOWE SPRAWDZENIE POSTĘPU**
 
 **PO KAŻDYM ETAPIE MODEL MUSI:**
+
 - Policzyć ile etapów ukończono
 - Policzyć ile etapów pozostało
 - Podać procent ukończenia
@@ -509,6 +689,7 @@ ETAP 4: Analiza src/config/config_core.py ⏳ [OCZEKUJE]
 - Sprawdzić czy wszystkie poprzednie etapy są ukończone
 
 **WZÓR RAPORTU:**
+
 ```
 
 📊 RAPORT POSTĘPU AUDYTU:
@@ -525,12 +706,14 @@ ETAP 4: Analiza src/config/config_core.py ⏳ [OCZEKUJE]
 **DOKUMENTACJA NIE JEST UZUPEŁNIANA W TRAKCIE PROCESU!**
 
 #### **ZASADY DOKUMENTACJI:**
+
 - **NIE UZUPEŁNIAJ** dokumentacji w trakcie analizy
 - **NIE TWÓRZ** commitów podczas pracy
 - **CZEKAJ** na wyraźne polecenie użytkownika
 - **DOKUMENTUJ** tylko po pozytywnych testach użytkownika
 
 #### **PROCES DOKUMENTACJI:**
+
 ```
 
 1. Przeprowadź analizę pliku
@@ -545,12 +728,14 @@ ETAP 4: Analiza src/config/config_core.py ⏳ [OCZEKUJE]
 ```
 
 #### **WYMAGANIA PRZED DOKUMENTACJĄ:**
+
 - ✅ **Testy automatyczne PASS** (0 FAIL)
 - ✅ **Testy użytkownika POTWIERDZONE** pozytywne
 - ✅ **Funkcjonalność ZWERYFIKOWANA** przez użytkownika
 - ✅ **Wydajność ZATWIERDZONA** przez użytkownika
 
 #### **FORMAT COMMITÓW:**
+
 ```
 
 git commit -m "ETAP [NUMER]: [NAZWA_PLIKU] - [OPIS] - ZAKOŃCZONY"
@@ -559,6 +744,7 @@ Przykład: "ETAP 1: main_window.py - Optymalizacja wydajności - ZAKOŃCZONY"
 ```
 
 #### **STATUS DOKUMENTACJI:**
+
 - 🔄 **W TRAKCIE** - analiza i implementacja
 - ⏳ **OCZEKUJE NA TESTY** - czeka na testy użytkownika
 - ✅ **ZAKOŃCZONY** - testy pozytywne, dokumentacja uzupełniona, commit wykonany
@@ -574,4 +760,163 @@ Przykład: "ETAP 1: main_window.py - Optymalizacja wydajności - ZAKOŃCZONY"
 ## 🚀 ROZPOCZĘCIE
 
 **Czekam na Twój pierwszy wynik: zawartość pliku `code_map.md`.**
+
+---
+
+## 📋 SZABLON INSTRUKCJI REFAKTORYZACJI DO KOPIOWANIA
+
+**⚠️ OBOWIĄZKOWE: Poniższy szablon MUSI być dodany do KAŻDEGO pliku `correction_*.md` w sekcji każdego etapu!**
+
+### 🛠️ INSTRUKCJE REFAKTORYZACJI - SZABLON DO KOPIOWANIA
+
+````markdown
+### 🛠️ PLAN REFAKTORYZACJI
+
+**Typ refaktoryzacji:** [Podział pliku/Optymalizacja kodu/Reorganizacja struktury/Usunięcie duplikatów]
+
+#### **KROK 1: PRZYGOTOWANIE** 🛡️
+
+- [ ] **BACKUP UTWORZONY:** `[nazwa_pliku]_backup_[data].py` w folderze `AUDYT/backups/`
+- [ ] **ANALIZA ZALEŻNOŚCI:** Sprawdzenie wszystkich imports i wywołań
+- [ ] **IDENTYFIKACJA API:** Lista publicznych metod używanych przez inne pliki
+- [ ] **PLAN ETAPOWY:** Podział refaktoryzacji na małe, weryfikowalne kroki
+
+#### **KROK 2: IMPLEMENTACJA** 🔧
+
+- [ ] **ZMIANA 1:** [Opis pierwszej zmiany] - JEDNA zmiana na raz
+- [ ] **ZMIANA 2:** [Opis drugiej zmiany] - JEDNA zmiana na raz
+- [ ] **ZMIANA 3:** [Opis trzeciej zmiany] - JEDNA zmiana na raz
+- [ ] **ZACHOWANIE API:** Wszystkie publiczne metody zachowane lub z deprecation warnings
+- [ ] **BACKWARD COMPATIBILITY:** 100% kompatybilność wsteczna zachowana
+
+#### **KROK 3: WERYFIKACJA PO KAŻDEJ ZMIANIE** 🧪
+
+- [ ] **TESTY AUTOMATYCZNE:** Uruchomienie testów po każdej zmianie
+- [ ] **URUCHOMIENIE APLIKACJI:** Sprawdzenie czy aplikacja się uruchamia
+- [ ] **WERYFIKACJA FUNKCJONALNOŚCI:** Sprawdzenie czy wszystkie funkcje działają
+- [ ] **SPRAWDZENIE IMPORTÓW:** Brak błędów importów
+
+#### **KROK 4: INTEGRACJA FINALNA** 🔗
+
+- [ ] **TESTY INNYCH PLIKÓW:** Sprawdzenie czy inne moduły nadal działają
+- [ ] **WERYFIKACJA ZALEŻNOŚCI:** Wszystkie zależności działają poprawnie
+- [ ] **TESTY INTEGRACYJNE:** Pełne testy integracji z całą aplikacją
+- [ ] **TESTY WYDAJNOŚCIOWE:** Wydajność nie pogorszona o więcej niż 5%
+
+#### **CZERWONE LINIE - ZAKAZY** 🚫
+
+- ❌ **NIE USUWAJ** publicznych metod bez deprecation warnings
+- ❌ **NIE ZMIENIAJ** sygnatur publicznych metod
+- ❌ **NIE WPROWADZAJ** breaking changes
+- ❌ **NIE ŁĄCZ** wielu zmian w jednym commit
+- ❌ **NIE POMIJAJ** testów po każdej zmianie
+- ❌ **NIE REFAKTORYZUJ** bez pełnego zrozumienia kodu
+
+#### **WZORCE BEZPIECZNEJ REFAKTORYZACJI** ✅
+
+**Jeśli dzielisz duży plik:**
+
+```python
+# GŁÓWNY PLIK - zachowaj jako facade
+from .new_component import NewComponent
+
+class MainClass:
+    def __init__(self):
+        self._component = NewComponent()
+
+    def old_method(self):  # Zachowaj publiczne API
+        return self._component.new_method()
 ```
+````
+
+**Jeśli optymalizujesz kod:**
+
+```python
+# PRZED - zachowaj starą metodę z deprecation
+def old_inefficient_method(self):
+    warnings.warn("Use optimized_method instead", DeprecationWarning)
+    return self.optimized_method()
+
+def optimized_method(self):
+    # Nowa, zoptymalizowana implementacja
+    pass
+```
+
+**Jeśli reorganizujesz strukturę:**
+
+```python
+# PRZED - dodaj alias dla kompatybilności
+OldClassName = NewClassName  # Backward compatibility alias
+```
+
+#### **KRYTERIA SUKCESU REFAKTORYZACJI** ✅
+
+- [ ] **WSZYSTKIE TESTY PASS** - 100% testów przechodzi
+- [ ] **APLIKACJA URUCHAMIA SIĘ** - bez błędów startowych
+- [ ] **FUNKCJONALNOŚĆ ZACHOWANA** - wszystkie funkcje działają jak wcześniej
+- [ ] **WYDAJNOŚĆ ZACHOWANA** - nie pogorszona o więcej niż 5%
+- [ ] **KOMPATYBILNOŚĆ WSTECZNA** - 100% backward compatibility
+- [ ] **BRAK BREAKING CHANGES** - żadne istniejące API nie zostało zepsute
+- [ ] **DOKUMENTACJA AKTUALNA** - wszystkie zmiany udokumentowane
+
+#### **PLAN ROLLBACK** 🔄
+
+**W przypadku problemów:**
+
+1. Przywróć plik z backupu: `cp AUDYT/backups/[nazwa_pliku]_backup_[data].py src/[ścieżka]/[nazwa_pliku].py`
+2. Uruchom testy weryfikacyjne
+3. Przeanalizuj przyczynę problemów
+4. Popraw błędy w kodzie refaktoryzacji
+5. Powtórz proces refaktoryzacji
+
+#### **DOKUMENTACJA ZMIAN** 📚
+
+**Każda zmiana musi być udokumentowana:**
+
+- **CO ZOSTAŁO ZMIENIONE:** Dokładny opis modyfikacji
+- **DLACZEGO:** Uzasadnienie potrzeby zmiany
+- **JAK:** Sposób implementacji
+- **WPŁYW:** Jakie części aplikacji są dotknięte
+- **TESTY:** Jakie testy zostały przeprowadzone
+- **REZULTAT:** Czy zmiana osiągnęła zamierzony cel
+
+````
+
+#### **🚨 OBOWIĄZKOWE UŻYCIE SZABLONU:**
+
+**W KAŻDYM PLIKU `correction_*.md` MUSISZ:**
+
+1. **SKOPIOWAĆ** powyższy szablon do sekcji każdego etapu
+2. **WYPEŁNIĆ** konkretne wartości zamiast [placeholderów]
+3. **ZAZNACZYĆ** checkboxy w miarę postępu
+4. **UDOKUMENTOWAĆ** każdą zmianę
+5. **ZWERYFIKOWAĆ** wszystkie kryteria sukcesu
+
+**PRZYKŁAD UŻYCIA:**
+```markdown
+## ETAP 5: src/ui/main_window.py
+
+### 📋 Identyfikacja
+- **Plik główny:** `src/ui/main_window.py`
+- **Priorytet:** 🔴🔴🔴
+- **Zależności:** main_window_controller.py, gallery_manager.py
+
+### 🛠️ PLAN REFAKTORYZACJI
+
+**Typ refaktoryzacji:** Podział pliku
+
+#### **KROK 1: PRZYGOTOWANIE** 🛡️
+- [x] **BACKUP UTWORZONY:** `main_window_backup_2024-01-15.py` w folderze `AUDYT/backups/`
+- [x] **ANALIZA ZALEŻNOŚCI:** 15 plików importuje MainWindow
+- [x] **IDENTYFIKACJA API:** 23 publiczne metody zidentyfikowane
+- [x] **PLAN ETAPOWY:** Podział na 3 komponenty: UI, Events, Data
+
+#### **KROK 2: IMPLEMENTACJA** 🔧
+- [x] **ZMIANA 1:** Wydzielenie MainWindowUI do osobnego pliku
+- [ ] **ZMIANA 2:** Wydzielenie MainWindowEvents do osobnego pliku
+- [ ] **ZMIANA 3:** Wydzielenie MainWindowData do osobnego pliku
+- [x] **ZACHOWANIE API:** Wszystkie 23 metody zachowane w głównej klasie
+- [x] **BACKWARD COMPATIBILITY:** Facade pattern zachowuje kompatybilność
+````
+
+**⚠️ PAMIĘTAJ:** Bez wypełnionego szablonu refaktoryzacji ŻADEN etap nie może być uznany za ukończony!
