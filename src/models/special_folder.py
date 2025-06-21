@@ -9,10 +9,13 @@ from typing import List, Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPixmap
 
-from src.config import AppConfig
+from src import app_config
+from src.utils.image_utils import create_placeholder_pixmap
 from src.utils.path_utils import normalize_path
 
 logger = logging.getLogger(__name__)
+
+AppConfig = app_config.AppConfig
 
 
 class SpecialFolder:

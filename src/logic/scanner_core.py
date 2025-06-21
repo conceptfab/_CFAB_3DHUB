@@ -9,7 +9,8 @@ import logging
 import os
 import time
 from collections import defaultdict
-from typing import Callable, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from src import app_config
 from src.config import AppConfig
@@ -44,6 +45,264 @@ IGNORED_FOLDERS = {
 }
 
 
+@dataclass
+class ScanConfig:
+    """Konfiguracja skanowania - zastępuje 8 parametrów funkcji."""
+
+    directory: str
+    max_depth: int = -1
+    use_cache: bool = True
+    pair_strategy: str = "first_match"
+    interrupt_check: Optional[Callable[[], bool]] = None
+    force_refresh_cache: bool = False
+    progress_callback: Optional[Callable[[int, str], None]] = None
+
+    def __post_init__(self):
+        """Walidacja i normalizacja konfiguracji."""
+        self.directory = normalize_path(self.directory)
+
+
+class ScanCacheManager:
+    """Zarządza operacjami cache podczas skanowania."""
+
+    @staticmethod
+    def get_cached_result(
+        config: ScanConfig,
+    ) -> Optional[Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]]:
+        """Pobiera wynik z cache jeśli dostępny."""
+        if config.use_cache and not config.force_refresh_cache:
+            cached_result = cache.get_scan_result(
+                config.directory, config.pair_strategy
+            )
+            if cached_result:
+                logger.debug(
+                    f"CACHE HIT: Zwracam pełny zbuforowany wynik dla {config.directory}"
+                )
+                if config.progress_callback:
+                    config.progress_callback(
+                        100, f"Używam cache dla {config.directory}"
+                    )
+                return cached_result
+        return None
+
+    @staticmethod
+    def save_result(
+        config: ScanConfig,
+        result: Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]],
+    ):
+        """Zapisuje wynik w cache."""
+        if config.use_cache:
+            cache.set_scan_result(config.directory, config.pair_strategy, result)
+
+
+class ScanProgressManager:
+    """Zarządza raportowaniem postępu skanowania."""
+
+    def __init__(self, config: ScanConfig):
+        self.config = config
+
+    def report_progress(self, percent: int, message: str):
+        """Raportuje postęp jeśli callback jest dostępny."""
+        if self.config.progress_callback:
+            self.config.progress_callback(percent, message)
+
+    def create_scaled_progress_callback(
+        self, scale_factor: float = 0.5
+    ) -> Optional[Callable]:
+        """Tworzy callback ze skalowaniem postępu."""
+        if not self.config.progress_callback:
+            return None
+
+        def scaled_progress(percent, message):
+            scaled_percent = int(percent * scale_factor)
+            self.config.progress_callback(scaled_percent, message)
+
+        return scaled_progress
+
+
+class SpecialFoldersManager:
+    """Zarządza wykrywaniem i tworzeniem folderów specjalnych."""
+
+    @staticmethod
+    def find_special_folders(directory: str) -> List[SpecialFolder]:
+        """Znajduje foldery specjalne na dysku."""
+        # USUNIĘTA FUNKCJA - Foldery specjalne są teraz pobierane z metadanych.
+        logger.debug("find_special_folders: Funkcja zastąpiona przez metadane")
+        return []
+
+    @staticmethod
+    def handle_virtual_folders(
+        directory: str, special_folders: List[SpecialFolder]
+    ) -> List[SpecialFolder]:
+        """Obsługuje tworzenie wirtualnych folderów na podstawie metadanych."""
+        metadata_manager = MetadataManager.get_instance(directory)
+        metadata = metadata_manager.io.load_metadata_from_file()
+
+        if metadata and metadata.get("has_special_folders") and not special_folders:
+            logger.info(
+                f"Metadane dla '{directory}' wskazują na istnienie folderów "
+                f"specjalnych, ale nie znaleziono ich na dysku. "
+                f"Tworzę folder wirtualny."
+            )
+
+            virtual_folder = SpecialFoldersManager._create_virtual_folder(
+                directory, metadata
+            )
+            if virtual_folder:
+                special_folders.append(virtual_folder)
+                logger.info(
+                    f"Utworzono wirtualny folder: {virtual_folder.get_folder_path()}"
+                )
+
+        return special_folders
+
+    @staticmethod
+    def _create_virtual_folder(
+        directory: str, metadata: dict
+    ) -> Optional[SpecialFolder]:
+        """Tworzy wirtualny folder na podstawie metadanych."""
+        # Użyj nazwy z metadanych, jeśli jest dostępna
+        special_folders_from_meta = metadata.get("special_folders")
+        if special_folders_from_meta:
+            virtual_folder_name = special_folders_from_meta[0]
+            logger.debug(
+                f"Używam nazwy folderu wirtualnego z metadanych: '{virtual_folder_name}'"
+            )
+        else:
+            # Fallback na starą logikę
+            logger.warning(
+                f"Brak zdefiniowanych nazw folderów specjalnych w metadanych "
+                f"dla '{directory}'. Używam domyślnej nazwy z konfiguracji."
+            )
+            special_folders_config = AppConfig.get_instance().special_folders
+            if special_folders_config:
+                virtual_folder_name = special_folders_config[0]
+            else:
+                logger.error("Brak domyślnych folderów specjalnych w konfiguracji!")
+                virtual_folder_name = "special_folder"  # Ostateczny fallback
+
+        virtual_folder_path = os.path.join(directory, virtual_folder_name)
+        return SpecialFolder(
+            folder_name=virtual_folder_name,
+            folder_path=virtual_folder_path,
+            is_virtual=True,
+        )
+
+
+class ScanOrchestrator:
+    """Koordynuje cały proces skanowania."""
+
+    def __init__(self, config: ScanConfig):
+        self.config = config
+        self.progress_manager = ScanProgressManager(config)
+        self.cache_manager = ScanCacheManager()
+        self.special_folders_manager = SpecialFoldersManager()
+
+    def execute_scan(
+        self,
+    ) -> Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]:
+        """Wykonuje pełny proces skanowania."""
+        # 1. Sprawdź cache
+        cached_result = self.cache_manager.get_cached_result(self.config)
+        if cached_result:
+            return cached_result
+
+        # 2. Waliduj katalog
+        if not self._validate_directory():
+            return [], [], [], []
+
+        # 3. Zbierz pliki
+        file_map = self._collect_files()
+
+        # 4. Utwórz pary plików
+        file_pairs, processed_files = self._create_file_pairs(file_map)
+
+        # 5. Identyfikuj nieparowane pliki
+        unpaired_archives, unpaired_previews = self._identify_unpaired_files(
+            file_map, file_pairs
+        )
+
+        # 6. Znajdź foldery specjalne
+        special_folders = self._handle_special_folders()
+
+        # 7. Zapisz w cache i zwróć wynik
+        result = (file_pairs, unpaired_archives, unpaired_previews, special_folders)
+        self.cache_manager.save_result(self.config, result)
+
+        logger.info(
+            f"Skanowanie zakończone dla {self.config.directory}. Znaleziono {len(file_pairs)} par."
+        )
+        self.progress_manager.report_progress(
+            100, f"Skanowanie zakończone: {len(file_pairs)} par"
+        )
+
+        return result
+
+    def _validate_directory(self) -> bool:
+        """Waliduje katalog do skanowania."""
+        if not path_exists(self.config.directory) or not os.path.isdir(
+            self.config.directory
+        ):
+            logger.warning(
+                f"Katalog {self.config.directory} nie istnieje lub nie jest katalogiem. "
+                f"Zwracam pusty wynik."
+            )
+            return False
+        return True
+
+    def _collect_files(self) -> Dict[str, List[str]]:
+        """Zbiera pliki z katalogu."""
+        scaled_progress = self.progress_manager.create_scaled_progress_callback(0.5)
+
+        return collect_files_streaming(
+            self.config.directory,
+            self.config.max_depth,
+            self.config.interrupt_check,
+            self.config.force_refresh_cache,
+            scaled_progress,
+        )
+
+    def _create_file_pairs(
+        self, file_map: Dict[str, List[str]]
+    ) -> Tuple[List[FilePair], Set[str]]:
+        """Tworzy pary plików."""
+        self.progress_manager.report_progress(55, "Tworzenie par plików...")
+
+        return create_file_pairs(
+            file_map,
+            base_directory=self.config.directory,
+            pair_strategy=self.config.pair_strategy,
+        )
+
+    def _identify_unpaired_files(
+        self, file_map: Dict[str, List[str]], file_pairs: List[FilePair]
+    ) -> Tuple[List[str], List[str]]:
+        """Identyfikuje nieparowane pliki."""
+        self.progress_manager.report_progress(
+            80, "Identyfikacja nieparowanych plików..."
+        )
+
+        # Zbierz wszystkie przetworzone pliki z par
+        processed_files = set()
+        for pair in file_pairs:
+            processed_files.add(pair.get_archive_path())
+            if pair.get_preview_path():
+                processed_files.add(pair.get_preview_path())
+
+        return identify_unpaired_files(file_map, processed_files)
+
+    def _handle_special_folders(self) -> List[SpecialFolder]:
+        """Obsługuje foldery specjalne."""
+        self.progress_manager.report_progress(95, "Szukanie folderów specjalnych...")
+
+        special_folders = self.special_folders_manager.find_special_folders(
+            self.config.directory
+        )
+        return self.special_folders_manager.handle_virtual_folders(
+            self.config.directory, special_folders
+        )
+
+
 def should_ignore_folder(folder_name: str) -> bool:
     """
     Sprawdza czy folder powinien być ignorowany podczas skanowania.
@@ -58,7 +317,7 @@ def should_ignore_folder(folder_name: str) -> bool:
 
 
 class ScanningInterrupted(Exception):
-    """Wyjątek rzucany, gdy skanowanie zostało przerwane przez użytkownika."""
+    """Wyjątek rzucany gdy skanowanie zostało przerwane przez użytkownika."""
 
     pass
 
@@ -274,125 +533,33 @@ def scan_folder_for_pairs(
 ) -> Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]:
     """
     Skanuje folder, tworzy pary i identyfikuje nieparowane pliki.
+
+    REFAKTORYZACJA: Funkcja została uproszczona poprzez wydzielenie ScanOrchestrator.
+
+    Args:
+        directory: Ścieżka do katalogu do przeskanowania
+        max_depth: Maksymalna głębokość skanowania (-1 = bez limitu)
+        use_cache: Czy używać cache
+        pair_strategy: Strategia parowania plików
+        interrupt_check: Funkcja sprawdzająca przerwanie
+        force_refresh_cache: Czy wymusić odświeżenie cache
+        progress_callback: Callback postępu
+
+    Returns:
+        Tuple zawierający pary, niesparowane archiwa, niesparowane podglądy, foldery specjalne
     """
-    normalized_dir = normalize_path(directory)
-
-    # 1. Sprawdź cache dla pełnego wyniku skanowania
-    if use_cache and not force_refresh_cache:
-        cached_result = cache.get_scan_result(normalized_dir, pair_strategy)
-        if cached_result:
-            logger.debug(
-                f"CACHE HIT: Zwracam pełny zbuforowany wynik dla {normalized_dir}"
-            )
-            if progress_callback:
-                progress_callback(100, f"Używam cache dla {normalized_dir}")
-            return cached_result
-
-    # Jeśli katalog nie istnieje, zwróć puste listy
-    if not path_exists(normalized_dir) or not os.path.isdir(normalized_dir):
-        logger.warning(
-            f"Katalog {normalized_dir} nie istnieje lub nie jest katalogiem. Zwracam pusty wynik."
-        )
-        return [], [], [], []
-
-    # Definicja funkcji do skalowania postępu
-    def scaled_progress(percent, message):
-        if progress_callback:
-            # Skaluj postęp z collect_files do zakresu 0-50%
-            scaled_percent = int(percent * 0.5)
-            progress_callback(scaled_percent, message)
-
-    # 2. Zbierz wszystkie pliki (z użyciem cache dla mapy plików)
-    file_map = collect_files_streaming(
-        normalized_dir, max_depth, interrupt_check, force_refresh_cache, scaled_progress
-    )
-
-    # 3. Utwórz pary plików
-    if progress_callback:
-        progress_callback(55, "Tworzenie par plików...")
-    file_pairs, processed_files = create_file_pairs(
-        file_map,
-        base_directory=normalized_dir,
+    config = ScanConfig(
+        directory=directory,
+        max_depth=max_depth,
+        use_cache=use_cache,
         pair_strategy=pair_strategy,
+        interrupt_check=interrupt_check,
+        force_refresh_cache=force_refresh_cache,
+        progress_callback=progress_callback,
     )
 
-    # 4. Identyfikuj nieparowane pliki
-    if progress_callback:
-        progress_callback(80, "Identyfikacja nieparowanych plików...")
-
-    # Zbierz wszystkie przetworzone pliki z par
-    processed_files = set()
-    for pair in file_pairs:
-        processed_files.add(pair.get_archive_path())
-        if pair.get_preview_path():
-            processed_files.add(pair.get_preview_path())
-
-    unpaired_archives, unpaired_previews = identify_unpaired_files(
-        file_map, processed_files
-    )
-
-    # 5. Znajdź specjalne foldery (tex, textures) na dysku
-    if progress_callback:
-        progress_callback(95, "Szukanie folderów specjalnych...")
-    special_folders = find_special_folders(normalized_dir)
-
-    # 6. KRYTYCZNA NAPRAWKA: Sprawdź metadane i utwórz wirtualny folder
-    metadata_manager = MetadataManager.get_instance(normalized_dir)
-    metadata = metadata_manager.io.load_metadata_from_file()
-    if metadata and metadata.get("has_special_folders"):
-        # Jeśli metadane mówią, że są foldery, a skanowanie ich nie znalazło
-        if not special_folders:
-            logger.info(
-                f"Metadane dla '{normalized_dir}' wskazują na istnienie folderów "
-                f"specjalnych, ale nie znaleziono ich na dysku. "
-                f"Tworzę folder wirtualny."
-            )
-
-            # Użyj nazwy z metadanych, jeśli jest dostępna
-            special_folders_from_meta = metadata.get("special_folders")
-            if special_folders_from_meta:
-                virtual_folder_name = special_folders_from_meta[0]
-                logger.debug(
-                    f"Używam nazwy folderu wirtualnego z metadanych: "
-                    f"'{virtual_folder_name}'"
-                )
-            else:
-                # Fallback na starą logikę, jeśli w metadanych nie ma nazwy
-                logger.warning(
-                    f"Brak zdefiniowanych nazw folderów specjalnych w metadanych "
-                    f"dla '{normalized_dir}'. Używam domyślnej nazwy z konfiguracji."
-                )
-                special_folders_config = AppConfig.get_instance().special_folders
-                if special_folders_config:
-                    virtual_folder_name = special_folders_config[0]
-                else:
-                    logger.error("Brak domyślnych folderów specjalnych w konfiguracji!")
-                    virtual_folder_name = "special_folder"  # Ostateczny fallback
-
-            virtual_folder_path = os.path.join(normalized_dir, virtual_folder_name)
-            virtual_folder = SpecialFolder(
-                folder_name=virtual_folder_name,
-                folder_path=virtual_folder_path,
-                is_virtual=True,
-            )
-            special_folders.append(virtual_folder)
-            logger.info(f"Utworzono wirtualny folder: {virtual_folder_path}")
-
-    # 7. Zapisz wynik w cache
-    if use_cache:
-        cache.set_scan_result(
-            normalized_dir,
-            pair_strategy,
-            (file_pairs, unpaired_archives, unpaired_previews, special_folders),
-        )
-
-    logger.info(
-        f"Skanowanie zakończone dla {normalized_dir}. Znaleziono {len(file_pairs)} par."
-    )
-    if progress_callback:
-        progress_callback(100, f"Skanowanie zakończone: {len(file_pairs)} par")
-
-    return file_pairs, unpaired_archives, unpaired_previews, special_folders
+    orchestrator = ScanOrchestrator(config)
+    return orchestrator.execute_scan()
 
 
 def get_scan_statistics() -> Dict[str, float]:

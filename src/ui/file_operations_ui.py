@@ -5,17 +5,17 @@ Manager operacji na plikach w interfejsie użytkownika.
 import logging
 from typing import List
 
-from PyQt6.QtWidgets import QListWidget, QProgressDialog, QWidget
+from PyQt6.QtWidgets import QListWidget, QMessageBox, QProgressDialog, QWidget
 
 from src.controllers.file_operations_controller import FileOperationsController
 from src.models.file_pair import FilePair
-from src.ui.file_operations.progress_dialog_factory import ProgressDialogFactory
-from src.ui.file_operations.worker_coordinator import WorkerCoordinator
+from src.ui.file_operations.basic_file_operations import BasicFileOperations
 from src.ui.file_operations.context_menu_manager import ContextMenuManager
 from src.ui.file_operations.detailed_reporting import DetailedReporting
-from src.ui.file_operations.basic_file_operations import BasicFileOperations
 from src.ui.file_operations.drag_drop_handler import DragDropHandler
 from src.ui.file_operations.manual_pairing_manager import ManualPairingManager
+from src.ui.file_operations.progress_dialog_factory import ProgressDialogFactory
+from src.ui.file_operations.worker_coordinator import WorkerCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class FileOperationsUI:
     def __init__(self, parent_window):
         self.parent_window = parent_window
         self.controller = FileOperationsController()
-        
+
         # ETAP 1: Progress Dialog Factory
         self.progress_factory = ProgressDialogFactory(parent_window)
         # ETAP 2: Worker Coordinator
@@ -37,18 +37,27 @@ class FileOperationsUI:
         self.context_menu_manager = ContextMenuManager(parent_window)
         # ETAP 7: Detailed Reporting
         self.detailed_reporting = DetailedReporting(parent_window)
-        
+
         # ETAP 5: Basic File Operations
         self.basic_operations = BasicFileOperations(
-            parent_window, self.progress_factory, self.worker_coordinator, self.controller
+            parent_window,
+            self.progress_factory,
+            self.worker_coordinator,
+            self.controller,
         )
         # ETAP 4: Drag & Drop Handler
         self.drag_drop_handler = DragDropHandler(
-            parent_window, self.progress_factory, self.worker_coordinator, self.detailed_reporting
+            parent_window,
+            self.progress_factory,
+            self.worker_coordinator,
+            self.detailed_reporting,
         )
         # ETAP 6: Manual Pairing Manager
         self.pairing_manager = ManualPairingManager(
-            parent_window, self.progress_factory, self.worker_coordinator, self.controller
+            parent_window,
+            self.progress_factory,
+            self.worker_coordinator,
+            self.controller,
         )
 
     # Wspólne metody obsługi sygnałów workerów (podobne do DirectoryTreeManager)
@@ -99,30 +108,22 @@ class FileOperationsUI:
             widget=widget,
             position=position,
             rename_callback=self.basic_operations.rename_file_pair,
-            delete_callback=self.basic_operations.delete_file_pair
+            delete_callback=self.basic_operations.delete_file_pair,
         )
 
-    def rename_file_pair(
-        self, file_pair: FilePair, widget: QWidget
-    ) -> None:
+    def rename_file_pair(self, file_pair: FilePair, widget: QWidget) -> None:
         """
         Deleguje operację rename do BasicFileOperations (ETAP 5).
         """
         # ETAP 5: Delegacja do BasicFileOperations
         self.basic_operations.rename_file_pair(file_pair, widget)
 
-
-
-    def delete_file_pair(
-        self, file_pair: FilePair, widget: QWidget
-    ) -> None:
+    def delete_file_pair(self, file_pair: FilePair, widget: QWidget) -> None:
         """
         Deleguje operację delete do BasicFileOperations (ETAP 5).
         """
         # ETAP 5: Delegacja do BasicFileOperations
         self.basic_operations.delete_file_pair(file_pair, widget)
-
-
 
     def handle_manual_pairing(
         self,
@@ -137,8 +138,6 @@ class FileOperationsUI:
         self.pairing_manager.handle_manual_pairing(
             unpaired_archives_list, unpaired_previews_list, current_working_directory
         )
-
-
 
     def handle_drop_on_folder(self, urls: List, target_folder_path: str):
         """
@@ -155,9 +154,7 @@ class FileOperationsUI:
         """
         # ETAP 3: Użycie ContextMenuManager
         self.context_menu_manager.show_unpaired_context_menu(
-            position=position,
-            list_widget=list_widget,
-            list_type=list_type
+            position=position, list_widget=list_widget, list_type=list_type
         )
 
     def move_file_pair_ui(
@@ -168,7 +165,3 @@ class FileOperationsUI:
         """
         # ETAP 5: Delegacja do BasicFileOperations
         self.basic_operations.move_file_pair_ui(file_pair_to_move, target_folder_path)
-
-
-
-

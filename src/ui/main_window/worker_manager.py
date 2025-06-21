@@ -316,7 +316,17 @@ class WorkerManager:
 
     def start_bulk_delete_worker(self, pairs_to_delete):
         """Uruchamia worker do usuwania wielu par plików."""
-        # Połączenia dla ManuallyPairFilesWorker
+        from src.ui.delegates.workers.bulk_workers import BulkDeleteWorker
+
+        # Uruchom worker do usuwania
+        worker = self.run_worker(
+            BulkDeleteWorker,
+            pairs_to_delete=pairs_to_delete,
+            show_progress=True,
+            on_finished=self.main_window._on_bulk_delete_finished,
+        )
+
+        # Połączenia dla ManuallyPairFilesWorker (jeśli worker to ten typ)
         if isinstance(worker, ManuallyPairFilesWorker):
             worker.pairing_finished.connect(
                 self.main_window.file_operations_coordinator.handle_manual_pairing_finished

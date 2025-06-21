@@ -7,7 +7,7 @@ import os
 import time
 from typing import List, Tuple
 
-from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QThreadPool, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QPixmap
 
 from src.logic.metadata.metadata_core import MetadataManager

@@ -4,7 +4,7 @@ Główne okno aplikacji - zrefaktoryzowana wersja.
 """
 
 from PyQt6.QtCore import QThreadPool, QTimer
-from PyQt6.QtWidgets import QHBoxLayout, QMainWindow, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
 from src import app_config
 from src.models.file_pair import FilePair
