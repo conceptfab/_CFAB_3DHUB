@@ -69,7 +69,7 @@ Analiza będzie przeprowadzana zgodnie z priorytetami, od ⚫⚫⚫⚫ do 🟢. 
 | `metadata/metadata_core.py`       | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅ Rdzeń systemu metadanych. Thread safety, memory leaks, performance. | `threading`, `weakref`   | Bardzo Wysoki    |
 | `metadata/metadata_io.py`         | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅ Operacje I/O metadanych, atomic write, walidacja.                   | `filelock`, `json`       | Bardzo Wysoki    |
 | `metadata/metadata_operations.py` | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅ Operacje biznesowe na metadanych, batch, path logic.                | `os`, `path_utils`       | Bardzo Wysoki    |
-| `metadata/metadata_validator.py`  | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] Walidacja metadanych, brak walidacji zakresów, nadmierne logowanie.                               | `logging`, `typing`      | Bardzo Wysoki    |
+| `metadata/metadata_validator.py`  | ⚫⚫⚫⚫  | ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅ Walidacja metadanych, brak walidacji zakresów, nadmierne logowanie. | `logging`, `typing`      | Bardzo Wysoki    |
 
 ### 📁 `src/ui/` (Interfejs użytkownika)
 
@@ -95,7 +95,7 @@ Analiza będzie przeprowadzana zgodnie z priorytetami, od ⚫⚫⚫⚫ do 🟢. 
 1. **`src/logic/metadata/metadata_core.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
 2. **`src/logic/metadata/metadata_io.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
 3. **`src/logic/metadata/metadata_operations.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
-4. **`src/logic/metadata/metadata_validator.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
+4. **`src/logic/metadata/metadata_validator.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15] - **POPRAWKI WPROWADZONE** ✅
 5. **`src/logic/scanner.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
 6. **`src/logic/file_operations.py`** - ✅ [PRZEANALIZOWANO] [2024-01-15]
 
