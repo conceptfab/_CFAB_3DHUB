@@ -1,3 +1,5 @@
+**⚠️ KRYTYCZNE: Przed rozpoczęciem pracy zapoznaj się z ogólnymi zasadami refaktoryzacji, poprawek i testowania opisanymi w pliku [refactoring_rules.md](../refactoring_rules.md).**
+
 # 🔍 ANALIZA LOGIKI BIZNESOWEJ: gallery_tab.py
 
 > **Plik:** `src/ui/widgets/gallery_tab.py`  

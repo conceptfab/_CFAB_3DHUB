@@ -329,7 +329,7 @@ class MainWindow(QMainWindow):
     def _force_immediate_metadata_save(self):
         """Wymusza natychmiastowe zapisanie metadanych - direct implementation."""
         if hasattr(self, "current_directory") and self.current_directory:
-            from src.logic.metadata.metadata_core import MetadataManager
+            from src.logic.metadata_manager import MetadataManager
 
             metadata_manager = MetadataManager.get_instance(self.current_directory)
             metadata_manager.force_save()
