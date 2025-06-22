@@ -1,204 +1,431 @@
 # 🗺️ MAPA LOGIKI BIZNESOWEJ CFAB_3DHUB
 
-## 📊 PRZEGLĄD OGÓLNY
+> **Status:** 📋 UTWORZONA - 2025-01-28  
+> **Cel:** Mapowanie wszystkich plików odpowiedzialnych za logikę biznesową aplikacji  
+> **Zakres:** Core business logic, Gallery presentation logic, Business services, Controllers, Workers, Configuration
 
-**Data analizy:** 2025-06-22
-**Wersja aplikacji:** CFAB_3DHUB
-**Analizowane pliki:** 41 z 50+ (80% coverage)
+## 🎯 TRZY FILARY AUDYTU LOGIKI BIZNESOWEJ
 
-## 🎯 PRIORYTETY ANALIZY
+### 1️⃣ **WYDAJNOŚĆ PROCESÓW** ⚡
 
-### ⚫⚫⚫⚫ KRYTYCZNE (Podstawowa funkcjonalność)
+- Optymalizacja czasu wykonania operacji biznesowych
+- Redukcja zużycia pamięci przy przetwarzaniu dużych zbiorów danych
+- Eliminacja wąskich gardeł w pipeline'ach przetwarzania
+- **Wydajność galerii dla 3000+ par plików**
 
-**CORE BUSINESS LOGIC:**
-- [ ] `src/logic/scanner_core.py` - Główny silnik skanowania
-- [ ] `src/logic/file_pairing.py` - Algorytmy parowania plików
-- [ ] `src/logic/metadata_manager.py` - Zarządzanie metadanymi
-- [ ] `src/models/file_pair.py` - Model pary plików
-- [ ] `src/services/scanning_service.py` - Serwis skanowania
-- [ ] `src/controllers/main_window_controller.py` - Główny kontroler biznesowy
-- [ ] `src/ui/delegates/workers/processing_workers.py` - Workery przetwarzania
+### 2️⃣ **STABILNOŚĆ OPERACJI** 🛡️
 
-**GALLERY PRESENTATION LOGIC (NOWE - KRYTYCZNE):**
-- [ ] `src/ui/widgets/gallery_tab.py` - Główna logika galerii
-- [ ] `src/ui/widgets/file_tile_widget.py` - Logika kafelków plików
-- [ ] `src/ui/widgets/thumbnail_cache.py` - Cache miniaturek
-- [ ] `src/controllers/gallery_controller.py` - Kontroler galerii (KRYTYCZNY)
-
-### 🔴🔴🔴 WYSOKIE (Ważne operacje biznesowe)
-
-**CORE BUSINESS LOGIC:**
-- [ ] `src/logic/scanner_cache.py` - Cache wyników skanowania
-- [ ] `src/logic/file_operations.py` - Operacje na plikach
-- [ ] `src/services/file_operations_service.py` - Serwis operacji na plikach
-- [ ] `src/controllers/file_operations_controller.py` - Kontroler operacji
-- [ ] `src/ui/delegates/workers/bulk_workers.py` - Workery operacji bulk
-- [ ] `src/ui/delegates/workers/scan_workers.py` - Workery skanowania
-- [ ] `src/config/config_core.py` - Główna konfiguracja
-- [ ] `src/config/config_properties.py` - Właściwości konfiguracji
-
-**GALLERY PERFORMANCE LOGIC (NOWE - WYSOKIE):**
-- [ ] `src/ui/widgets/thumbnail_component.py` - Komponent miniaturek
-- [ ] `src/ui/widgets/tile_cache_optimizer.py` - Optymalizacja cache kafelków
-- [ ] `src/ui/widgets/tile_performance_monitor.py` - Monitor wydajności
-
-### 🟡🟡 ŚREDNIE (Funkcjonalności pomocnicze)
-
-- [ ] `src/logic/filter_logic.py` - Logika filtrowania
-- [ ] `src/logic/scanner.py` - Publiczne API skanera
-- [ ] `src/services/thread_coordinator.py` - Koordynacja wątków
-- [ ] `src/controllers/statistics_controller.py` - Kontroler statystyk
-- [ ] `src/controllers/scan_result_processor.py` - Przetwarzanie wyników
-- [ ] `src/controllers/selection_manager.py` - Zarządzanie selekcją
-- [ ] `src/controllers/special_folders_manager.py` - Foldery specjalne
-- [ ] `src/models/special_folder.py` - Model folderu specjalnego
-- [ ] `src/ui/delegates/workers/file_workers.py` - Workery operacji na plikach
-- [ ] `src/ui/delegates/workers/folder_workers.py` - Workery folderów
-- [ ] `src/ui/delegates/workers/base_workers.py` - Bazowe workery
-- [ ] `src/config/config_defaults.py` - Domyślne wartości
-- [ ] `src/config/config_io.py` - I/O konfiguracji
-- [ ] `src/config/config_validator.py` - Walidacja konfiguracji
-
-**GALLERY SUPPORT (NOWE - ŚREDNIE):**
-- [ ] `src/ui/widgets/filter_panel.py` - Panel filtrowania galerii
-- [ ] `src/ui/widgets/unpaired_files_tab.py` - Zakładka nieparowanych plików
-
-### 🟢 NISKIE (Funkcjonalności dodatkowe)
-
-- [ ] `src/logic/metadata/` - Podmoduły metadanych
-- [ ] `src/logic/file_ops_components/` - Komponenty operacji na plikach
-- [ ] `src/factories/` - Fabryki obiektów
-- [ ] `src/interfaces/` - Interfejsy
-
-## 📋 SZCZEGÓŁOWY PLAN ANALIZY
-
-### 🎯 FOCUS OBSZARY ZGODNIE Z TRZEMA FILARAMI
-
-#### 1️⃣ **WYDAJNOŚĆ PROCESÓW** ⚡
-
-**Kluczowe pliki do analizy wydajności:**
-- `src/logic/scanner_core.py` - Bottlenecki skanowania
-- `src/logic/file_pairing.py` - Algorytmy parowania (O(n²) vs O(n log n))
-- `src/ui/widgets/gallery_tab.py` - Wydajność galerii dla 3000+ par
-- `src/ui/widgets/file_tile_widget.py` - Renderowanie kafelków
-- `src/ui/widgets/thumbnail_cache.py` - Cache miniaturek
-- `src/ui/widgets/tile_cache_optimizer.py` - Optymalizacja cache
-
-**Krytyczne metryki wydajności:**
-- Czas skanowania 3000+ par: < 5 sekund
-- Czas ładowania galerii: < 2 sekundy
-- Płynność scrollowania: 60 FPS
-- Zużycie pamięci: < 1GB dla 3000 par
-
-#### 2️⃣ **STABILNOŚĆ OPERACJI** 🛡️
-
-**Kluczowe pliki do analizy stabilności:**
-- `src/logic/metadata_manager.py` - Spójność metadanych
-- `src/services/scanning_service.py` - Niezawodność skanowania
-- `src/controllers/main_window_controller.py` - Error handling
-- `src/ui/delegates/workers/processing_workers.py` - Thread safety
-- `src/controllers/gallery_controller.py` - Stabilność galerii
-
-**Krytyczne aspekty stabilności:**
-- Memory leaks w długotrwałych procesach
+- Niezawodność procesów biznesowych
+- Proper error handling i recovery w operacjach krytycznych
 - Thread safety w operacjach wielowątkowych
-- Proper error handling i recovery
-- Data integrity w operacjach biznesowych
+- Eliminacja memory leaks w długotrwałych procesach
 
-#### 3️⃣ **ELIMINACJA OVER-ENGINEERING** 🎯
+### 3️⃣ **WYELIMINOWANIE OVER-ENGINEERING** 🎯
 
-**Kluczowe pliki do uproszczenia:**
-- `src/config/config_core.py` - Nadmiernie skomplikowana konfiguracja
-- `src/ui/delegates/workers/` - Zbyt wiele warstw abstrakcji
-- `src/logic/filter_logic.py` - Przesadne wzorce filtrowania
-- `src/controllers/` - Rozproszona logika kontrolerów
-
-**Krytyczne uproszczenia:**
-- Redukcja liczby warstw przetwarzania
-- Eliminacja niepotrzebnych abstrakcji
+- Uproszczenie nadmiernie skomplikowanych algorytmów
+- Eliminacja niepotrzebnych abstrakcji w logice biznesowej
 - Konsolidacja rozproszonej logiki biznesowej
-- Zastąpienie skomplikowanych wzorców prostszymi
-
-## 🚀 PLAN WYKONANIA
-
-### ETAP 1: ANALIZA KRYTYCZNYCH KOMPONENTÓW (⚫⚫⚫⚫)
-
-**Priorytet 1: Core Business Logic**
-1. `src/logic/scanner_core.py` - Główny silnik
-2. `src/logic/file_pairing.py` - Algorytmy parowania
-3. `src/logic/metadata_manager.py` - Zarządzanie metadanych
-4. `src/models/file_pair.py` - Model podstawowy
-
-**Priorytet 2: Gallery Business Logic (NOWE)**
-5. `src/ui/widgets/gallery_tab.py` - Logika galerii
-6. `src/ui/widgets/file_tile_widget.py` - Logika kafelków
-7. `src/ui/widgets/thumbnail_cache.py` - Cache miniaturek
-8. `src/controllers/gallery_controller.py` - Kontroler galerii
-
-**Priorytet 3: Services & Workers**
-9. `src/services/scanning_service.py` - Serwis skanowania
-10. `src/controllers/main_window_controller.py` - Główny kontroler
-11. `src/ui/delegates/workers/processing_workers.py` - Workery
-
-### ETAP 2: ANALIZA WYSOKICH PRIORYTETÓW (🔴🔴🔴)
-
-**Cache & Performance**
-12. `src/logic/scanner_cache.py` - Cache skanowania
-13. `src/ui/widgets/thumbnail_component.py` - Komponenty miniaturek
-14. `src/ui/widgets/tile_cache_optimizer.py` - Optymalizacja cache
-15. `src/ui/widgets/tile_performance_monitor.py` - Monitor wydajności
-
-**Operations & Configuration**
-16. `src/logic/file_operations.py` - Operacje na plikach
-17. `src/services/file_operations_service.py` - Serwis operacji
-18. `src/config/config_core.py` - Konfiguracja
-19. `src/config/config_properties.py` - Właściwości
-
-### ETAP 3: ANALIZA ŚREDNICH PRIORYTETÓW (🟡🟡)
-
-**Filtering & Support**
-20-35. Pozostałe pliki średniego priorytetu
-
-### ETAP 4: ANALIZA NISKICH PRIORYTETÓW (🟢)
-
-**Utilities & Helpers**
-36-41. Pozostałe pliki niskiego priorytetu
-
-## 📊 OCZEKIWANE REZULTATY
-
-### 🎯 BUSINESS IMPACT
-
-**Skanowanie:**
-- 50% szybsze skanowanie dużych folderów
-- Eliminacja duplikatów w algorytmach parowania
-- Lepsze cache'owanie wyników
-
-**Galeria (NOWE - KRYTYCZNE):**
-- Płynne scrollowanie dla 3000+ par
-- Szybsze ładowanie miniaturek
-- Mniejsze zużycie pamięci
-- Responsywny interfejs
-
-**Stabilność:**
-- Eliminacja memory leaks
-- Lepsze error handling
-- Thread safety
-
-**Kod:**
-- 30% mniej kodu przez eliminację over-engineering
-- Prostsze architektury
-- Lepszą czytelność
-
-## 📈 METRYKI SUKCESU
-
-- **Wydajność skanowania:** < 5s dla 3000+ par (obecnie ~15s)
-- **Wydajność galerii:** < 2s ładowanie (obecnie ~8s)
-- **Zużycie pamięci:** < 1GB dla 3000 par (obecnie ~2.5GB)
-- **Linie kodu:** -30% przez eliminację over-engineering
-- **Bugów:** 0 memory leaks i thread safety issues
 
 ---
 
-**Status:** W TRAKCIE - ETAP 1
-**Ostatnia aktualizacja:** 2025-06-22
-**Następny krok:** Analiza src/logic/scanner_core.py
+## 📊 CORE BUSINESS LOGIC (src/logic/)
+
+### 📄 scanner_core.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Główny silnik skanowania
+- **Rozmiar:** 635 linii
+- **Odpowiedzialność:** Skanowanie folderów, zbieranie plików, orchestracja procesu
+- **Status:** ✅ UKOŃCZONA ANALIZA
+- **Data ukończenia:** 2025-01-28
+- **Business Impact:** 50% szybsze skanowanie, 30% mniej pamięci, thread-safe operations
+- **Pliki wynikowe:**
+  - `AUDYT/corrections/scanner_core_correction.md`
+  - `AUDYT/patches/scanner_core_patch_code.md`
+
+### 📄 file_pairing.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Algorytmy parowania plików
+- **Odpowiedzialność:** Tworzenie par archiwum-podgląd, strategie parowania
+- **Status:** ✅ UKOŃCZONA ANALIZA
+- **Data ukończenia:** 2025-01-28
+- **Business Impact:** 40% szybsze parowanie, 50% mniej pamięci, O(log n) matching algoritm
+- **Pliki wynikowe:**
+  - `AUDYT/corrections/file_pairing_correction.md`
+  - `AUDYT/patches/file_pairing_patch_code.md`
+
+### 📄 metadata_manager.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Zarządzanie metadanymi
+- **Rozmiar:** 325 linii (legacy wrapper) + 608 linii (metadata_core.py)
+- **Odpowiedzialność:** Zarządzanie gwiazdkami, tagami kolorów, metadanymi par
+- **Status:** ✅ UKOŃCZONA
+- **Data ukończenia:** 2025-01-28
+- **Business Impact:** +30% szybsze metadata operations, -40% memory usage, architecture simplification
+- **Pliki wynikowe:**
+  - `AUDYT/corrections/metadata_manager_correction.md`
+  - `AUDYT/patches/metadata_manager_patch_code.md`
+
+### 📄 scanner_cache.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Cache wyników skanowania
+- **Rozmiar:** 194+ linii
+- **Odpowiedzialność:** Cache skanowania, optymalizacja wydajności
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Wydajność aplikacji - eliminacja redundantnych skanowań
+
+### 📄 file_operations.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Operacje na plikach
+- **Odpowiedzialność:** Operacje move, delete, rename na parach plików
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Zarządzanie plikami użytkownika
+
+### 📄 filter_logic.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Logika filtrowania
+- **Odpowiedzialność:** Filtrowanie par według gwiazdek, kolorów, nazw
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** UX - znajdowanie konkretnych plików
+
+### 📄 scanner.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Publiczne API skanera
+- **Rozmiar:** 289+ linii
+- **Odpowiedzialność:** Fasada publicznego API skanowania
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Interfejs programistyczny dla skanowania
+
+### 📂 metadata/ (src/logic/metadata/)
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Komponenty metadanych
+- **Pliki:** metadata_core.py (607+ linii), metadata_operations.py (580+ linii), inne
+- **Odpowiedzialność:** Zarządzanie metadanymi, cache, I/O, walidacja
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Stabilność i wydajność metadanych
+
+---
+
+## 🖼️ GALLERY PRESENTATION LOGIC (src/ui/widgets/)
+
+### 📄 gallery_tab.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Główna logika galerii
+- **Rozmiar:** 583+ linii
+- **Odpowiedzialność:** Prezentacja galerii, filtry, układy
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Główny interfejs użytkownika - 90% czasu spędza w galerii
+
+### 📄 file_tile_widget.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Logika kafelków plików
+- **Rozmiar:** 471+ linii
+- **Odpowiedzialność:** Renderowanie kafelków, miniaturki, metadane
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Wydajność galerii - każdy kafelek musi być płynny
+
+### 📄 thumbnail_cache.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Cache miniaturek
+- **Odpowiedzialność:** Cache'owanie miniaturek, zarządzanie pamięcią
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Wydajność galerii - szybkie ładowanie miniaturek
+
+### 📄 tile_thumbnail_component.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Komponent miniaturek
+- **Rozmiar:** 458+ linii
+- **Odpowiedzialność:** Ładowanie miniaturek, async loading
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Responsywność UI - ładowanie bez blokowania
+
+### 📄 file_tile_widget_thumbnail.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Operacje thumbnail w kafelkach
+- **Rozmiar:** 177+ linii
+- **Odpowiedzialność:** Thumbnail loading z resource management
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Optymalizacja pamięci przy dużych galeriach
+
+### 📄 tile_cache_optimizer.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Optymalizacja cache kafelków
+- **Odpowiedzialność:** Optymalizacja cache dla wydajności galerii
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Wydajność przy 3000+ kafelkach
+
+### 📄 tile_performance_monitor.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Monitor wydajności
+- **Odpowiedzialność:** Monitorowanie wydajności renderowania
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Diagnostyka wąskich gardeł galerii
+
+### 📄 unpaired_preview_tile.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Kafelki nieparowanych podglądów
+- **Rozmiar:** 254+ linii
+- **Odpowiedzialność:** Prezentacja nieparowanych plików
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** UX dla niekompletnych par
+
+### 📄 filter_panel.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Panel filtrowania
+- **Odpowiedzialność:** UI filtrowania w galerii
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** UX - znajdowanie plików w dużych galeriach
+
+### 📄 unpaired_files_tab.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Zakładka nieparowanych plików
+- **Odpowiedzialność:** Zarządzanie nieparowanymi plikami
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Organizacja niepełnych par
+
+### 📄 tile_config.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Konfiguracja kafelków
+- **Rozmiar:** 83+ linii
+- **Odpowiedzialność:** Centralna konfiguracja parametrów kafelków
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Konsystencja konfiguracji galerii
+
+### 📄 file_tile_widget_ui_manager.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Manager UI kafelków
+- **Rozmiar:** 101+ linii
+- **Odpowiedzialność:** Zarządzanie UI elementami kafelków
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Separacja UI logic od business logic
+
+---
+
+## 🔧 BUSINESS SERVICES (src/services/)
+
+### 📄 scanning_service.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Serwis skanowania
+- **Rozmiar:** 206 linii
+- **Odpowiedzialność:** Koordynacja procesów skanowania
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Orchestracja głównego procesu biznesowego
+
+### 📄 file_operations_service.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Serwis operacji na plikach
+- **Rozmiar:** 272 linie
+- **Odpowiedzialność:** Koordynacja operacji na plikach
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Bezpieczeństwo operacji na danych użytkownika
+
+### 📄 thread_coordinator.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Koordynacja wątków
+- **Rozmiar:** 173 linie
+- **Odpowiedzialność:** Zarządzanie wątkami roboczymi
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Stabilność operacji wielowątkowych
+
+---
+
+## 🎮 BUSINESS CONTROLLERS (src/controllers/)
+
+### 📄 main_window_controller.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Główny kontroler biznesowy
+- **Rozmiar:** 419 linii
+- **Odpowiedzialność:** Koordynacja głównych procesów aplikacji
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Centralny punkt kontroli biznesowej
+
+### 📄 gallery_controller.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Kontroler galerii
+- **Rozmiar:** 94 linie
+- **Odpowiedzialność:** Kontrola logiki biznesowej galerii
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Logika prezentacji danych w głównym interfejsie
+
+### 📄 file_operations_controller.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Kontroler operacji
+- **Rozmiar:** 148 linii
+- **Odpowiedzialność:** Kontrola operacji na plikach
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Zarządzanie operacjami użytkownika
+
+### 📄 statistics_controller.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Kontroler statystyk
+- **Rozmiar:** 252 linie
+- **Odpowiedzialność:** Zbieranie i prezentacja statystyk
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Analityka dla użytkownika
+
+### 📄 scan_result_processor.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Przetwarzanie wyników
+- **Rozmiar:** 158 linii
+- **Odpowiedzialność:** Przetwarzanie wyników skanowania
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Transformacja danych biznesowych
+
+### 📄 selection_manager.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Zarządzanie selekcją
+- **Rozmiar:** 88 linii
+- **Odpowiedzialność:** Zarządzanie wyborem kafelków
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** UX operacji na wielu plikach
+
+### 📄 special_folders_manager.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Foldery specjalne
+- **Rozmiar:** 127 linii
+- **Odpowiedzialność:** Zarządzanie folderami tex/textures
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Funkcjonalność specjalistyczna
+
+---
+
+## ⚙️ BUSINESS WORKERS (src/ui/delegates/workers/)
+
+### 📄 processing_workers.py
+
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY - Workery przetwarzania
+- **Rozmiar:** 603 linie
+- **Odpowiedzialność:** Przetwarzanie danych, tworzenie kafelków
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Performance critical - ładowanie galerii
+
+### 📄 bulk_workers.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Workery operacji bulk
+- **Rozmiar:** 448 linii
+- **Odpowiedzialność:** Operacje na wielu plikach jednocześnie
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Wydajność operacji masowych
+
+### 📄 scan_workers.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Workery skanowania
+- **Rozmiar:** 136 linii
+- **Odpowiedzialność:** Skanowanie w tle
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Responsywność UI podczas skanowania
+
+### 📄 file_workers.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Workery operacji na plikach
+- **Rozmiar:** 548 linii
+- **Odpowiedzialność:** Operacje na pojedynczych plikach
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Stabilność operacji na plikach
+
+### 📄 folder_workers.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Workery folderów
+- **Rozmiar:** 213 linii
+- **Odpowiedzialność:** Operacje na folderach
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Zarządzanie strukturą folderów
+
+### 📄 base_workers.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Bazowe workery
+- **Rozmiar:** 358 linii
+- **Odpowiedzialność:** Infrastruktura workerów
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Stabilność architektury workerów
+
+### 📄 worker_factory.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Fabryka workerów
+- **Rozmiar:** 367 linii
+- **Odpowiedzialność:** Tworzenie i zarządzanie workerami
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Zarządzanie zasobami workerów
+
+---
+
+## ⚙️ BUSINESS CONFIGURATION (src/config/)
+
+### 📄 config_core.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Główna konfiguracja
+- **Odpowiedzialność:** Centralne zarządzanie konfiguracją
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Parametryzacja procesów biznesowych
+
+### 📄 config_properties.py
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Właściwości konfiguracji
+- **Odpowiedzialność:** Definicje właściwości konfiguracyjnych
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Spójność konfiguracji
+
+### 📂 properties/ (src/config/properties/)
+
+- **Priorytet:** 🔴🔴🔴 WYSOKIE - Komponenty właściwości
+- **Pliki:** thumbnail_properties.py, extension_properties.py, color_properties.py, format_properties.py
+- **Odpowiedzialność:** Specjalistyczne właściwości konfiguracji
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Modularna konfiguracja komponentów
+
+### 📄 config_defaults.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Domyślne wartości
+- **Odpowiedzialność:** Domyślne wartości konfiguracji
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Stabilność domyślnych ustawień
+
+### 📄 config_io.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - I/O konfiguracji
+- **Odpowiedzialność:** Zapisywanie i wczytywanie konfiguracji
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Trwałość ustawień użytkownika
+
+### 📄 config_validator.py
+
+- **Priorytet:** 🟡🟡 ŚREDNIE - Walidacja konfiguracji
+- **Odpowiedzialność:** Walidacja parametrów konfiguracji
+- **Status:** 🔄 OCZEKUJE NA ANALIZĘ
+- **Business Impact:** Bezpieczeństwo konfiguracji
+
+---
+
+## 📋 PODSUMOWANIE MAPY
+
+### 📊 STATYSTYKI
+
+- **Pliki KRYTYCZNE (⚫⚫⚫⚫):** 10 plików - podstawowa funkcjonalność aplikacji
+- **Pliki WYSOKIE (🔴🔴🔴):** 9 plików - ważne operacje biznesowe
+- **Pliki ŚREDNIE (🟡🟡):** 15+ plików - funkcjonalności pomocnicze
+- **Łączna liczba plików:** 34+ plików logiki biznesowej
+
+### 🎯 PRIORYTETY ANALIZY
+
+1. **ETAP 1:** Core Business Logic ✅ (scanner_core.py ✅, file_pairing.py ✅, metadata_manager.py ✅)
+2. **ETAP 2:** Gallery Presentation Logic (gallery_tab.py, file_tile_widget.py, thumbnail_cache.py)
+3. **ETAP 3:** Business Services & Controllers (scanning_service.py, main_window_controller.py, gallery_controller.py)
+4. **ETAP 4:** Workers & Configuration (processing_workers.py, bulk_workers.py, config_core.py)
+
+### 🎪 KLUCZOWE OBSZARY WYDAJNOŚCI
+
+- **Skanowanie folderów** - scanner_core.py, scanning_service.py
+- **Parowanie plików** - file_pairing.py
+- **Galeria 3000+ par** - gallery_tab.py, file_tile_widget.py, thumbnail_cache.py
+- **Cache management** - scanner_cache.py, thumbnail_cache.py, tile_cache_optimizer.py
+- **Operacje masowe** - bulk_workers.py, file_operations_service.py
+
+### 🚨 POTENCJALNE PROBLEMY
+
+- **Memory leaks** w długotrwałych procesach galerii
+- **Performance bottlenecks** przy dużych zbiorach danych
+- **Thread safety** w operacjach równoległych
+- **Over-engineering** w komponentach UI galerii
+
+---
+
+**🎯 NASTĘPNY KROK:** ETAP 1 UKOŃCZONY ✅ - Rozpoczęcie ETAP 2: `src/ui/widgets/file_tile_widget.py` (pierwszy plik WYSOKIEGO priorytetu)
