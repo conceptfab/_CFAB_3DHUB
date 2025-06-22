@@ -10,7 +10,7 @@ from typing import List, Tuple
 from PyQt6.QtCore import QObject, QThreadPool, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QPixmap
 
-from src.logic.metadata.metadata_core import MetadataManager
+from src.logic.metadata_manager import MetadataManager
 from src.models.file_pair import FilePair
 from src.utils.image_utils import create_thumbnail_from_file
 
@@ -451,7 +451,7 @@ class DataProcessingWorker(QObject):
     def _load_metadata_sync(self):
         """Wczytuje metadane synchronicznie PRZED tworzeniem UI."""
         try:
-            from src.logic.metadata.metadata_core import MetadataManager
+            from src.logic.metadata_manager import MetadataManager
 
             metadata_manager = MetadataManager.get_instance(self.working_directory)
 
@@ -560,7 +560,7 @@ class SaveMetadataWorker(AsyncUnifiedBaseWorker):
 
             # Zapisz metadane z resource protection + FORCE SAVE
             def save_metadata():
-                from src.logic.metadata.metadata_core import MetadataManager
+                from src.logic.metadata_manager import MetadataManager
 
                 metadata_manager = MetadataManager.get_instance(self.working_directory)
 

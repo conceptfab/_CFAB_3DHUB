@@ -126,7 +126,7 @@ class SpecialFoldersManager:
     ) -> List[SpecialFolder]:
         """Obsługuje tworzenie wirtualnych folderów na podstawie metadanych."""
         metadata_manager = MetadataManager.get_instance(directory)
-        metadata = metadata_manager.io.load_metadata_from_file()
+        metadata = metadata_manager.load_metadata()
 
         if metadata and metadata.get("has_special_folders") and not special_folders:
             logger.info(
@@ -498,7 +498,7 @@ def _save_scan_result(
 def _handle_special_folders_simple(directory: str) -> List[SpecialFolder]:
     """Simplified special folders handling."""
     metadata_manager = MetadataManager.get_instance(directory)
-    metadata = metadata_manager.io.load_metadata_from_file()
+    metadata = metadata_manager.load_metadata()
 
     special_folders = []
     if metadata and metadata.get("has_special_folders"):

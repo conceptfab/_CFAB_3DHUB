@@ -7,7 +7,7 @@ import logging
 import os
 from typing import List
 
-from src.logic.metadata.metadata_core import MetadataManager
+from src.logic.metadata_manager import MetadataManager
 from src.models.special_folder import SpecialFolder
 
 
