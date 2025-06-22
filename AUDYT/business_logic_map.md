@@ -57,6 +57,7 @@ src/controllers/
 src/ui/widgets/
 ├── gallery_tab.py ⚫⚫⚫⚫ - Główny interface galerii (apply_filters_and_update_view, update_gallery_view)
 ├── file_tile_widget.py ⚫⚫⚫⚫ - Podstawowy element UI galerii z component architecture
+    ✅ UKOŃCZONA ANALIZA - Data: 2025-01-28 - Pliki: corrections/file_tile_widget_correction.md, patches/file_tile_widget_patch_code.md
 ├── thumbnail_cache.py ⚫⚫⚫⚫ - LRU cache miniatur z thread-safe cleanup i memory management
 ├── filter_panel.py 🔴🔴🔴 - Panel filtrów z walidacją kryteriów
 ├── metadata_controls_widget.py 🔴🔴🔴 - Kontrolki metadanych (gwiazdki, tagi kolorów)
@@ -164,8 +165,8 @@ src/ui/directory_tree/
 - **`src/controllers/scan_result_processor.py`** - Procesor wyników
 - **`src/controllers/selection_manager.py`** - Manager selekcji
 - **`src/controllers/special_folders_manager.py`** - Manager folderów specjalnych
-- **Komponenty kafelków** - tile_*_component.py (konfiguracja, eventy, monitoring)
-- **UI managery** - *_ui_manager.py (zarządzanie UI komponentów)
+- **Komponenty kafelków** - tile\_\*\_component.py (konfiguracja, eventy, monitoring)
+- **UI managery** - \*\_ui_manager.py (zarządzanie UI komponentów)
 - **Dialogi** - preview_dialog.py, preferences_dialog.py, favorite_folders_dialog.py
 
 #### **🟢 NISKIE** - Funkcjonalności dodatkowe
@@ -192,31 +193,37 @@ src/ui/directory_tree/
 ## 🏗️ ARCHITEKTURA LOGIKI BIZNESOWEJ
 
 ### **WARSTWA 1: LOGIKA BIZNESOWA CZYSTA** (`src/logic/`)
+
 - Czyste algorytmy bez zależności UI
 - Parowanie plików, skanowanie, cache, filtrowanie
 - Testowalna niezależnie od UI
 
 ### **WARSTWA 2: SERWISY BIZNESOWE** (`src/services/`)
+
 - Orchestracja logiki biznesowej
 - Separacja od UI, koordynacja operacji
 - Async operations, thread coordination
 
 ### **WARSTWA 3: KONTROLERY** (`src/controllers/`)
+
 - Koordynacja między UI a logiką
 - Gallery controller, operations controller
 - Statystyki i rezultaty
 
 ### **WARSTWA 4: UI Z LOGIKĄ** (`src/ui/widgets/`)
+
 - Komponenty UI z embedded business logic
 - Galeria, kafelki, cache miniatur
 - Krytyczne dla UX i wydajności
 
 ### **WARSTWA 5: WORKERY ASYNCHRONICZNE** (`src/ui/delegates/workers/`)
+
 - Przetwarzanie w tle
 - Generowanie miniatur, skanowanie
 - Thread safety, progress reporting
 
 ### **WARSTWA 6: KOMPONENTY ZARZĄDZANIA** (`src/ui/directory_tree/`)
+
 - Zarządzanie strukturą danych
 - Drzewo katalogów, drag&drop
 - Cache i optymalizacje UI
@@ -232,21 +239,25 @@ src/ui/directory_tree/
 ## 🔍 OBSZARY KRYTYCZNE DLA AUDYTU
 
 ### **WYDAJNOŚĆ ALGORYTMÓW**
+
 - `file_pairing.py` - Optymalizacje Trie-based matching
 - `scanner_core.py` - Smart pre-filtering, memory cleanup
 - `processing_workers.py` - Adaptive batch size
 
 ### **THREAD SAFETY**
+
 - `thumbnail_cache.py` - Thread-safe cleanup
 - `metadata_manager.py` - Singleton thread safety
 - `processing_workers.py` - Resource protection
 
 ### **MEMORY MANAGEMENT**
+
 - `thumbnail_cache.py` - LRU cleanup, compression estimation
 - `scanner_cache.py` - OrderedDict LRU
 - `file_tile_widget.py` - Resource manager, cleanup
 
 ### **UI RESPONSIVENESS**
+
 - `gallery_tab.py` - Non-blocking UI updates
 - `file_tile_widget.py` - Component architecture
 - `processing_workers.py` - Progress reporting
@@ -256,8 +267,8 @@ src/ui/directory_tree/
 ✅ **Etap 1 ukończony:** MAPOWANIE LOGIKI BIZNESOWEJ (100%)
 ✅ **Etap 2 ukończony:** ANALIZA file_pairing.py (100%)
 ✅ **Etap 3 ukończony:** ANALIZA scanner_core.py (100%)
-🔄 **Aktualny etap:** Analiza file_tile_widget.py (UI krytyczny)
-⏳ **Pozostałe etapy:** 4 pliki krytyczne + 35 plików wysokie/średnie
+🔄 **Aktualny etap:** Analiza thumbnail_cache.py (cache miniatur krytyczny)
+⏳ **Pozostałe etapy:** 3 pliki krytyczne + 35 plików wysokie/średnie
 💼 **Business impact:** Ukończono analizę głównych algorytmów - parowanie i skanowanie (podstawa funkcjonalności)
 
 ## 📋 UKOŃCZONE ANALIZY KRYTYCZNYCH PLIKÓW
@@ -270,6 +281,15 @@ src/ui/directory_tree/
 - **Pliki wynikowe:**
   - `AUDYT/corrections/file_pairing_correction.md`
   - `AUDYT/patches/file_pairing_patch_code.md`
+- **Podsumowanie refaktoryzacji 2025-01-28:**
+  - Usunięto duplikaty funkcji kategoryzacji plików (pozostawiono tylko zoptymalizowaną wersję)
+  - Dodano pełny thread safety do SimpleTrie (RLock, atomic operations)
+  - Wprowadzono limity rozmiaru i metody cleanup w Trie (memory management)
+  - Zoptymalizowano find_prefix_matches (sortowanie kluczy, O(log k))
+  - Dodano performance monitoring (logi czasu działania kategoryzacji, budowy Trie, parowania)
+  - Standaryzacja logowania: DEBUG dla niekrytycznych, ERROR tylko dla wyjątków
+  - 100% kompatybilność API (wszystkie publiczne metody zachowane)
+  - Testy importu i uruchomienia OK
 
 ### 📄 SCANNER_CORE.PY
 
@@ -279,3 +299,12 @@ src/ui/directory_tree/
 - **Pliki wynikowe:**
   - `AUDYT/corrections/scanner_core_correction.md`
   - `AUDYT/patches/scanner_core_patch_code.md`
+
+### 📄 FILE_TILE_WIDGET.PY
+
+- **Status:** ✅ UKOŃCZONA ANALIZA
+- **Data ukończenia:** 2025-01-28
+- **Business impact:** Podstawowy element UI galerii - bezpośredni wpływ na user experience. Zidentyfikowano potrzeby uproszczenia component architecture, enhanced thread safety, comprehensive memory management i optimized event handling. Krytyczne dla wydajności 1000+ kafelków w galerii bez lagów.
+- **Pliki wynikowe:**
+  - `AUDYT/corrections/file_tile_widget_correction.md`
+  - `AUDYT/patches/file_tile_widget_patch_code.md`

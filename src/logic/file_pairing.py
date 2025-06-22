@@ -7,6 +7,8 @@ oraz identyfikowania niesparowanych plików.
 
 import logging
 import os
+import threading
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
@@ -43,6 +45,8 @@ def _categorize_files_optimized(files_list: List[str]) -> Tuple[List[str], List[
     if not files_list:
         return [], []
 
+    start_time = time.time()
+
     # Pre-compute file info once - O(n) instead of O(2n)
     file_infos = [FileInfo(f) for f in files_list]
 
@@ -50,44 +54,86 @@ def _categorize_files_optimized(files_list: List[str]) -> Tuple[List[str], List[
     archive_files = [fi.path for fi in file_infos if fi.is_archive]
     preview_files = [fi.path for fi in file_infos if fi.is_preview]
 
+    elapsed = (time.time() - start_time) * 1000
+    logger.debug(
+        f"File categorization completed: {len(archive_files)} archives, "
+        f"{len(preview_files)} previews in {elapsed:.2f}ms"
+    )
+
     return archive_files, preview_files
 
 
 class SimpleTrie:
-    """Simple Trie dla fast prefix matching."""
+    """Thread-safe Simple Trie dla fast prefix matching."""
 
-    def __init__(self):
+    def __init__(self, max_size: int = 10000):
         self.root = {}
         self.files = {}  # Maps prefix -> list of files
+        self._lock = threading.RLock()
+        self._max_size = max_size
+        self._size = 0
 
     def add(self, key: str, file_path: str):
-        """Adds file with its prefix key."""
-        node = self.root
-        for char in key:
-            if char not in node:
-                node[char] = {}
-            node = node[char]
+        """Thread-safe addition of file with its prefix key."""
+        with self._lock:
+            if self._size >= self._max_size:
+                logger.warning(
+                    f"Trie size limit reached ({self._max_size}), "
+                    f"skipping addition of {key}"
+                )
+                return
 
-        if key not in self.files:
-            self.files[key] = []
-        self.files[key].append(file_path)
+            node = self.root
+            for char in key:
+                if char not in node:
+                    node[char] = {}
+                node = node[char]
+
+            if key not in self.files:
+                self.files[key] = []
+                self._size += 1
+            self.files[key].append(file_path)
 
     def find_prefix_matches(self, prefix: str, max_results: int = 20) -> List[str]:
-        """Finds all keys that match the prefix."""
-        matches = []
+        """Thread-safe prefix matching with sorted keys for O(log k) complexity."""
+        with self._lock:
+            matches = []
 
-        # Exact match first (highest priority)
-        if prefix in self.files:
-            matches.extend(self.files[prefix])
+            # Exact match first (highest priority)
+            if prefix in self.files:
+                matches.extend(self.files[prefix])
 
-        # Prefix matches
-        for key in self.files:
-            if len(matches) >= max_results:
-                break
-            if key != prefix and (key.startswith(prefix) or prefix.startswith(key)):
-                matches.extend(self.files[key])
+            # Use sorted keys for O(log k) complexity
+            sorted_keys = sorted(self.files.keys())
 
-        return matches[:max_results]
+            # Binary search-like approach for prefix matches
+            for key in sorted_keys:
+                if len(matches) >= max_results:
+                    break
+                if key != prefix and (key.startswith(prefix) or prefix.startswith(key)):
+                    matches.extend(self.files[key])
+
+            return matches[:max_results]
+
+    def cleanup(self):
+        """Thread-safe cleanup of Trie data structures."""
+        with self._lock:
+            self.root.clear()
+            self.files.clear()
+            self._size = 0
+
+    def get_size(self) -> int:
+        """Thread-safe size query."""
+        with self._lock:
+            return self._size
+
+    def get_memory_usage(self) -> int:
+        """Estimate memory usage in bytes."""
+        with self._lock:
+            # Rough estimation: each key ~50 bytes, each file path ~100 bytes
+            total_keys = len(self.files)
+            total_files = sum(len(files) for files in self.files.values())
+            return total_keys * 50 + total_files * 100
 
 
 class PairingStrategy(ABC):
@@ -155,6 +201,7 @@ class OptimizedBestMatchStrategy(PairingStrategy):
         self, archive_files: List[str], preview_files: List[str], base_directory: str
     ) -> Tuple[List[FilePair], Set[str]]:
         """Optimized pairing z Trie-based matching."""
+        start_time = time.time()
         pairs = []
         processed = set()
 
@@ -162,9 +209,15 @@ class OptimizedBestMatchStrategy(PairingStrategy):
             return pairs, processed
 
         # Build optimized Trie index - O(m log m)
+        trie_start = time.time()
         preview_trie = self._build_preview_trie(preview_files)
+        trie_elapsed = (time.time() - trie_start) * 1000
+        logger.debug(
+            f"Trie built for {len(preview_files)} previews in {trie_elapsed:.2f}ms"
+        )
 
         # Match archives to previews - O(n log m) instead of O(n*m)
+        matching_start = time.time()
         for archive in archive_files:
             if archive in processed:
                 continue
@@ -178,9 +231,20 @@ class OptimizedBestMatchStrategy(PairingStrategy):
                     processed.add(archive)
                     processed.add(best_preview)
                 except ValueError as e:
-                    logger.warning(
+                    logger.debug(
                         f"Skipping invalid pair {archive} + {best_preview}: {e}"
                     )
+
+        matching_elapsed = (time.time() - matching_start) * 1000
+        total_elapsed = (time.time() - start_time) * 1000
+
+        logger.debug(
+            f"Best match pairing completed: {len(pairs)} pairs in "
+            f"{total_elapsed:.2f}ms (matching: {matching_elapsed:.2f}ms)"
+        )
+
+        # Cleanup Trie to free memory
+        preview_trie.cleanup()
 
         return pairs, processed
 
@@ -280,25 +344,6 @@ class OptimizedPairingStrategyFactory:
         return list(cls._strategies.keys())
 
 
-def _categorize_files(files_list: List[str]) -> Tuple[List[str], List[str]]:
-    """
-    Kategoryzuje pliki na archiwa i podglądy.
-
-    Args:
-        files_list: Lista plików do kategoryzacji
-
-    Returns:
-        Tuple zawierający listy archiwów i podglądów
-    """
-    # Pre-compute rozszerzeń dla optymalizacji
-    files_with_ext = [(f, os.path.splitext(f)[1].lower()) for f in files_list]
-
-    archive_files = [f for f, ext in files_with_ext if ext in ARCHIVE_EXTENSIONS]
-    preview_files = [f for f, ext in files_with_ext if ext in PREVIEW_EXTENSIONS]
-
-    return archive_files, preview_files
-
-
 def create_file_pairs(
     file_map: Dict[str, List[str]],
     base_directory: str,
@@ -317,6 +362,7 @@ def create_file_pairs(
     Returns:
         Krotka zawierająca listę utworzonych par oraz zbiór przetworzonych plików
     """
+    start_time = time.time()
     found_pairs: List[FilePair] = []
     processed_files: Set[str] = set()
 
@@ -326,6 +372,12 @@ def create_file_pairs(
     except ValueError as e:
         logger.error(str(e))
         return found_pairs, processed_files
+
+    total_files = sum(len(files) for files in file_map.values())
+    logger.debug(
+        f"Starting file pairing with {len(file_map)} directories, "
+        f"{total_files} total files using '{pair_strategy}' strategy"
+    )
 
     for base_path, files_list in file_map.items():
         # Kategoryzuj pliki na archiwa i podglądy - używaj optimized version
@@ -341,6 +393,12 @@ def create_file_pairs(
 
         found_pairs.extend(pairs)
         processed_files.update(processed)
+
+    elapsed = (time.time() - start_time) * 1000
+    logger.debug(
+        f"File pairing completed: {len(found_pairs)} pairs from "
+        f"{len(processed_files)} files in {elapsed:.2f}ms"
+    )
 
     return found_pairs, processed_files
 
