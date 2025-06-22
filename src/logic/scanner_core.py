@@ -9,8 +9,8 @@ import logging
 import os
 import time
 from collections import defaultdict
-from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from threading import RLock
+from typing import Callable, Dict, List, Optional, Tuple
 
 from src import app_config
 from src.config import AppConfig
@@ -47,78 +47,65 @@ IGNORED_FOLDERS = {
 # Pre-computed set for O(1) lookup optimization
 IGNORED_FOLDERS_SET = frozenset(IGNORED_FOLDERS)
 
-
-@dataclass
-class ScanConfig:
-    """Konfiguracja skanowania - zastępuje 8 parametrów funkcji."""
-
-    directory: str
-    max_depth: int = -1
-    use_cache: bool = True
-    pair_strategy: str = "first_match"
-    interrupt_check: Optional[Callable[[], bool]] = None
-    force_refresh_cache: bool = False
-    progress_callback: Optional[Callable[[int, str], None]] = None
-
-    def __post_init__(self):
-        """Walidacja i normalizacja konfiguracji."""
-        self.directory = normalize_path(self.directory)
+# OPTYMALIZACJA PATCH 1: Pre-computed frozenset dla O(1) lookup
+SUPPORTED_EXTENSIONS = frozenset(
+    ext.lower() for ext in set(ARCHIVE_EXTENSIONS) | set(PREVIEW_EXTENSIONS)
+)
 
 
-class ScanCacheManager:
-    """Zarządza operacjami cache podczas skanowania."""
+# ELIMINATED: ScanConfig dataclass - over-engineered wrapper dla parametrów funkcji
 
-    @staticmethod
-    def get_cached_result(
-        config: ScanConfig,
-    ) -> Optional[Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]]:
-        """Pobiera wynik z cache jeśli dostępny."""
-        if config.use_cache and not config.force_refresh_cache:
-            cached_result = cache.get_scan_result(
-                config.directory, config.pair_strategy
-            )
-            if cached_result:
-                logger.debug(
-                    f"CACHE HIT: Zwracam pełny zbuforowany wynik dla {config.directory}"
-                )
-                if config.progress_callback:
-                    config.progress_callback(
-                        100, f"Używam cache dla {config.directory}"
-                    )
-                return cached_result
-        return None
 
-    @staticmethod
-    def save_result(
-        config: ScanConfig,
-        result: Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]],
+# ELIMINATED: ScanCacheManager - niepotrzebna abstrakcja, replaced by helper functions
+
+
+class ThreadSafeProgressManager:
+    """Thread-safe progress reporting z rate limiting."""
+
+    def __init__(
+        self, progress_callback: Optional[Callable], throttle_interval: float = 0.1
     ):
-        """Zapisuje wynik w cache."""
-        if config.use_cache:
-            cache.set_scan_result(config.directory, config.pair_strategy, result)
+        self.progress_callback = progress_callback
+        self.throttle_interval = throttle_interval
+        self._lock = RLock()
+        self._last_progress_time = 0.0
+        self._last_percent = -1
 
+    def report_progress(self, percent: int, message: str, force: bool = False):
+        """Thread-safe progress reporting z throttling."""
+        if not self.progress_callback:
+            return
 
-class ScanProgressManager:
-    """Zarządza raportowaniem postępu skanowania."""
+        current_time = time.time()
 
-    def __init__(self, config: ScanConfig):
-        self.config = config
+        with self._lock:
+            # Throttling - raportuj tylko jeśli minął wystarczający czas
+            if (
+                not force
+                and current_time - self._last_progress_time < self.throttle_interval
+                and abs(percent - self._last_percent) < 5
+            ):
+                return
 
-    def report_progress(self, percent: int, message: str):
-        """Raportuje postęp jeśli callback jest dostępny."""
-        if self.config.progress_callback:
-            self.config.progress_callback(percent, message)
+            self._last_progress_time = current_time
+            self._last_percent = percent
+
+        # Callback poza lockiem aby uniknąć deadlock
+        try:
+            self.progress_callback(percent, message)
+        except Exception as e:
+            logger.warning(f"Progress callback error: {e}")
 
     def create_scaled_progress_callback(
         self, scale_factor: float = 0.5
     ) -> Optional[Callable]:
         """Tworzy callback ze skalowaniem postępu."""
-        if not self.config.progress_callback:
+        if not self.progress_callback:
             return None
 
         def scaled_progress(percent, message):
             scaled_percent = int(percent * scale_factor)
-            self.config.progress_callback(scaled_percent, message)
+            self.report_progress(scaled_percent, message)
 
         return scaled_progress
 
@@ -192,118 +179,7 @@ class SpecialFoldersManager:
         )
 
 
-class ScanOrchestrator:
-    """Koordynuje cały proces skanowania."""
-
-    def __init__(self, config: ScanConfig):
-        self.config = config
-        self.progress_manager = ScanProgressManager(config)
-        self.cache_manager = ScanCacheManager()
-        self.special_folders_manager = SpecialFoldersManager()
-
-    def execute_scan(
-        self,
-    ) -> Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]:
-        """Wykonuje pełny proces skanowania."""
-        # 1. Sprawdź cache
-        cached_result = self.cache_manager.get_cached_result(self.config)
-        if cached_result:
-            return cached_result
-
-        # 2. Waliduj katalog
-        if not self._validate_directory():
-            return [], [], [], []
-
-        # 3. Zbierz pliki
-        file_map = self._collect_files()
-
-        # 4. Utwórz pary plików
-        file_pairs, processed_files = self._create_file_pairs(file_map)
-
-        # 5. Identyfikuj nieparowane pliki
-        unpaired_archives, unpaired_previews = self._identify_unpaired_files(
-            file_map, file_pairs
-        )
-
-        # 6. Znajdź foldery specjalne
-        special_folders = self._handle_special_folders()
-
-        # 7. Zapisz w cache i zwróć wynik
-        result = (file_pairs, unpaired_archives, unpaired_previews, special_folders)
-        self.cache_manager.save_result(self.config, result)
-
-        logger.info(
-            f"Skanowanie zakończone dla {self.config.directory}. Znaleziono {len(file_pairs)} par."
-        )
-        self.progress_manager.report_progress(
-            100, f"Skanowanie zakończone: {len(file_pairs)} par"
-        )
-
-        return result
-
-    def _validate_directory(self) -> bool:
-        """Waliduje katalog do skanowania."""
-        if not path_exists(self.config.directory) or not os.path.isdir(
-            self.config.directory
-        ):
-            logger.warning(
-                f"Katalog {self.config.directory} nie istnieje lub nie jest katalogiem. "
-                f"Zwracam pusty wynik."
-            )
-            return False
-        return True
-
-    def _collect_files(self) -> Dict[str, List[str]]:
-        """Zbiera pliki z katalogu."""
-        scaled_progress = self.progress_manager.create_scaled_progress_callback(0.5)
-
-        return collect_files_streaming(
-            self.config.directory,
-            self.config.max_depth,
-            self.config.interrupt_check,
-            self.config.force_refresh_cache,
-            scaled_progress,
-        )
-
-    def _create_file_pairs(
-        self, file_map: Dict[str, List[str]]
-    ) -> Tuple[List[FilePair], Set[str]]:
-        """Tworzy pary plików."""
-        self.progress_manager.report_progress(55, "Tworzenie par plików...")
-
-        return create_file_pairs(
-            file_map,
-            base_directory=self.config.directory,
-            pair_strategy=self.config.pair_strategy,
-        )
-
-    def _identify_unpaired_files(
-        self, file_map: Dict[str, List[str]], file_pairs: List[FilePair]
-    ) -> Tuple[List[str], List[str]]:
-        """Identyfikuje nieparowane pliki."""
-        self.progress_manager.report_progress(
-            80, "Identyfikacja nieparowanych plików..."
-        )
-
-        # Zbierz wszystkie przetworzone pliki z par
-        processed_files = set()
-        for pair in file_pairs:
-            processed_files.add(pair.get_archive_path())
-            if pair.get_preview_path():
-                processed_files.add(pair.get_preview_path())
-
-        return identify_unpaired_files(file_map, processed_files)
-
-    def _handle_special_folders(self) -> List[SpecialFolder]:
-        """Obsługuje foldery specjalne."""
-        self.progress_manager.report_progress(95, "Szukanie folderów specjalnych...")
-
-        special_folders = self.special_folders_manager.find_special_folders(
-            self.config.directory
-        )
-        return self.special_folders_manager.handle_virtual_folders(
-            self.config.directory, special_folders
-        )
+# ELIMINATED: ScanOrchestrator - over-engineered pattern, replaced by simplified scan_folder_for_pairs()
 
 
 def should_ignore_folder(folder_name: str) -> bool:
@@ -334,7 +210,9 @@ def collect_files_streaming(
     progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> Dict[str, List[str]]:
     """
-    Zbiera wszystkie pliki w katalogu z streaming progress.
+    Zbiera wszystkie pliki w katalogu z thread-safe streaming progress.
+
+    OPTYMALIZACJE: Pre-computed frozenset, smart folder filtering, thread-safe progress.
 
     Args:
         directory: Ścieżka do katalogu do przeskanowania
@@ -352,13 +230,17 @@ def collect_files_streaming(
     """
     normalized_dir = normalize_path(directory)
 
-    # Sprawdź cache
+    # THREAD-SAFE progress manager
+    progress_manager = ThreadSafeProgressManager(progress_callback)
+
+    # Cache check
     if not force_refresh:
         cached_file_map = cache.get_file_map(normalized_dir)
         if cached_file_map is not None:
             logger.debug(f"CACHE HIT: używam buforowanych plików dla {normalized_dir}")
-            if progress_callback:
-                progress_callback(100, f"Używam cache dla {normalized_dir}")
+            progress_manager.report_progress(
+                100, f"Używam cache dla {normalized_dir}", force=True
+            )
             return cached_file_map
 
     # Jeśli katalog nie istnieje lub nie jest katalogiem, zwróć pusty słownik
@@ -431,51 +313,62 @@ def collect_files_streaming(
             total_folders_scanned += 1
             entries = list(os.scandir(current_dir))
 
-            # Sprawdzenie przerwania po liście folderów
-            if interrupt_check and interrupt_check():
-                logger.warning(
-                    "Skanowanie przerwane podczas odczytu zawartości folderu"
-                )
-                raise ScanningInterrupted(
-                    "Skanowanie przerwane podczas odczytu zawartości folderu"
-                )
+            # SMART PRE-FILTERING - sprawdź czy folder ma relevant files
+            relevant_files = []
+            has_relevant_subdirs = False
 
-            # Najpierw przetwarzamy pliki
-            files_processed_in_folder = 0
             for entry in entries:
                 if entry.is_file():
-                    total_files_found += 1
-                    files_processed_in_folder += 1
+                    _, ext = os.path.splitext(entry.name)
+                    # OPTYMALIZACJA O(1) lookup zamiast O(n)
+                    if ext.lower() in SUPPORTED_EXTENSIONS:
+                        relevant_files.append(entry)
+                elif entry.is_dir() and not should_ignore_folder(entry.name):
+                    has_relevant_subdirs = True
 
-                    # Sprawdzenie co 100 plików w folderze (batch processing)
-                    if (
-                        files_processed_in_folder % 100 == 0
-                        and interrupt_check
-                        and interrupt_check()
-                    ):
-                        msg = (
-                            "Skanowanie przerwane podczas przetwarzania "
-                            f"plików w {current_dir}"
-                        )
-                        logger.warning(msg)
-                        raise ScanningInterrupted(msg)
+            # Skip processing jeśli brak relevant files i subdirs
+            if not relevant_files and not has_relevant_subdirs:
+                logger.debug(f"Pomijam folder bez relevant files: {current_dir}")
+                return
 
-                    name = entry.name
-                    base_name, ext = os.path.splitext(name)
-                    ext_lower = ext.lower()
+            # Sprawdzenie przerwania po smart filtering
+            if interrupt_check and interrupt_check():
+                logger.warning("Skanowanie przerwane podczas smart filtering")
+                raise ScanningInterrupted(
+                    "Skanowanie przerwane podczas smart filtering"
+                )
 
-                    if (
-                        ext_lower in ARCHIVE_EXTENSIONS
-                        or ext_lower in PREVIEW_EXTENSIONS
-                    ):
-                        # Optimized key generation - use pre-computed normalized path
-                        map_key = os.path.join(
-                            normalized_current_dir, base_name.lower()
-                        )
-                        full_file_path = os.path.join(normalized_current_dir, name)
-                        file_map[map_key].append(full_file_path)
+            # Przetwarzamy TYLKO relevant files
+            files_processed_in_folder = 0
+            for entry in relevant_files:
+                total_files_found += 1
+                files_processed_in_folder += 1
 
-            should_scan_subfolders = files_processed_in_folder > 0
+                # ULEPSZONE batch processing - co 50 plików zamiast 100
+                if (
+                    files_processed_in_folder % 50 == 0
+                    and interrupt_check
+                    and interrupt_check()
+                ):
+                    msg = f"Skanowanie przerwane podczas przetwarzania plików w {current_dir}"
+                    logger.warning(msg)
+                    raise ScanningInterrupted(msg)
+
+                name = entry.name
+                base_name, ext = os.path.splitext(name)
+
+                # OPTYMALIZOWANY key generation
+                map_key = os.path.join(normalized_current_dir, base_name.lower())
+                full_file_path = os.path.join(normalized_current_dir, name)
+                file_map[map_key].append(full_file_path)
+
+                # MEMORY CLEANUP co 1000 plików
+                if total_files_found % 1000 == 0:
+                    import gc
+
+                    gc.collect()
+
+            should_scan_subfolders = has_relevant_subdirs
 
             logger.debug(
                 f"Skanowanie: {current_dir} -> {files_processed_in_folder} plików"
@@ -569,6 +462,62 @@ def collect_files_streaming(
     return file_map
 
 
+# UPROSZCZONE HELPER FUNCTIONS zgodnie z PATCH 5
+
+
+def _get_cached_scan_result(
+    directory: str,
+    pair_strategy: str,
+    use_cache: bool,
+    force_refresh: bool,
+    progress_manager: ThreadSafeProgressManager,
+) -> Optional[Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]]:
+    """Simplified cache retrieval."""
+    if use_cache and not force_refresh:
+        cached_result = cache.get_scan_result(directory, pair_strategy)
+        if cached_result:
+            logger.debug(f"CACHE HIT: Zwracam zbuforowany wynik dla {directory}")
+            progress_manager.report_progress(
+                100, f"Używam cache dla {directory}", force=True
+            )
+            return cached_result
+    return None
+
+
+def _save_scan_result(
+    directory: str,
+    pair_strategy: str,
+    result: Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]],
+    use_cache: bool,
+):
+    """Simplified cache saving."""
+    if use_cache:
+        cache.set_scan_result(directory, pair_strategy, result)
+
+
+def _handle_special_folders_simple(directory: str) -> List[SpecialFolder]:
+    """Simplified special folders handling."""
+    metadata_manager = MetadataManager.get_instance(directory)
+    metadata = metadata_manager.io.load_metadata_from_file()
+
+    special_folders = []
+    if metadata and metadata.get("has_special_folders"):
+        # Create virtual folder based on metadata
+        special_folders_from_meta = metadata.get("special_folders", [])
+        if special_folders_from_meta:
+            virtual_folder_name = special_folders_from_meta[0]
+            virtual_folder_path = os.path.join(directory, virtual_folder_name)
+            virtual_folder = SpecialFolder(
+                folder_name=virtual_folder_name,
+                folder_path=virtual_folder_path,
+                is_virtual=True,
+            )
+            special_folders.append(virtual_folder)
+            logger.info(f"Utworzono wirtualny folder: {virtual_folder_path}")
+
+    return special_folders
+
+
 def scan_folder_for_pairs(
     directory: str,
     max_depth: int = -1,
@@ -579,34 +528,61 @@ def scan_folder_for_pairs(
     progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]:
     """
-    Skanuje folder, tworzy pary i identyfikuje nieparowane pliki.
-
-    REFAKTORYZACJA: Funkcja została uproszczona poprzez wydzielenie ScanOrchestrator.
-
-    Args:
-        directory: Ścieżka do katalogu do przeskanowania
-        max_depth: Maksymalna głębokość skanowania (-1 = bez limitu)
-        use_cache: Czy używać cache
-        pair_strategy: Strategia parowania plików
-        interrupt_check: Funkcja sprawdzająca przerwanie
-        force_refresh_cache: Czy wymusić odświeżenie cache
-        progress_callback: Callback postępu
-
-    Returns:
-        Tuple zawierający pary, niesparowane archiwa, niesparowane podglądy, foldery specjalne
+    SIMPLIFIED: Skanuje folder bez over-engineered orchestrator pattern.
     """
-    config = ScanConfig(
-        directory=directory,
-        max_depth=max_depth,
-        use_cache=use_cache,
-        pair_strategy=pair_strategy,
-        interrupt_check=interrupt_check,
-        force_refresh_cache=force_refresh_cache,
-        progress_callback=progress_callback,
+    normalized_dir = normalize_path(directory)
+    progress_manager = ThreadSafeProgressManager(progress_callback)
+
+    # 1. Check cache
+    cached_result = _get_cached_scan_result(
+        normalized_dir, pair_strategy, use_cache, force_refresh_cache, progress_manager
+    )
+    if cached_result:
+        return cached_result
+
+    # 2. Validate directory
+    if not path_exists(normalized_dir) or not os.path.isdir(normalized_dir):
+        logger.warning(f"Katalog {normalized_dir} nie istnieje lub nie jest katalogiem")
+        return [], [], [], []
+
+    # 3. Collect files with optimized scanning
+    progress_manager.report_progress(5, "Rozpoczynam skanowanie plików...")
+    file_map = collect_files_streaming(
+        normalized_dir,
+        max_depth,
+        interrupt_check,
+        force_refresh_cache,
+        lambda p, m: progress_manager.report_progress(5 + int(p * 0.4), m),  # 5-45%
     )
 
-    orchestrator = ScanOrchestrator(config)
-    return orchestrator.execute_scan()
+    # 4. Create file pairs
+    progress_manager.report_progress(50, "Tworzenie par plików...")
+    file_pairs, processed_files = create_file_pairs(
+        file_map, base_directory=normalized_dir, pair_strategy=pair_strategy
+    )
+
+    # 5. Identify unpaired files
+    progress_manager.report_progress(70, "Identyfikacja nieparowanych plików...")
+    unpaired_archives, unpaired_previews = identify_unpaired_files(
+        file_map, processed_files
+    )
+
+    # 6. Handle special folders
+    progress_manager.report_progress(85, "Obsługa folderów specjalnych...")
+    special_folders = _handle_special_folders_simple(normalized_dir)
+
+    # 7. Save to cache and return
+    result = (file_pairs, unpaired_archives, unpaired_previews, special_folders)
+    _save_scan_result(normalized_dir, pair_strategy, result, use_cache)
+
+    progress_manager.report_progress(
+        100, f"Skanowanie zakończone: {len(file_pairs)} par", force=True
+    )
+    logger.info(
+        f"Skanowanie zakończone dla {normalized_dir}. Znaleziono {len(file_pairs)} par."
+    )
+
+    return result
 
 
 def get_scan_statistics() -> Dict[str, float]:
@@ -619,16 +595,6 @@ def get_scan_statistics() -> Dict[str, float]:
     return cache.get_statistics()
 
 
-def find_special_folders(folder_path: str) -> List[SpecialFolder]:
-    """
-    USUNIĘTA FUNKCJA - Foldery specjalne są teraz pobierane z metadanych.
-    Ta funkcja pozostaje jako zaślepka dla kompatybilności wstecznej.
-
-    Args:
-        folder_path: Ścieżka do folderu
-
-    Returns:
-        Pusta lista specjalnych folderów
-    """
-    logger.debug("find_special_folders: Funkcja zastąpiona przez metadane")
-    return []
+# DEAD CODE REMOVED zgodnie z PATCH 6
+# Note: find_special_folders() function has been removed as special folders
+# are now handled through metadata system. Use _handle_special_folders_simple() instead.
