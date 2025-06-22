@@ -32,6 +32,34 @@ Ten audyt opiera się na trzech kluczowych filarach, które stanowią najwyższe
 - Konsolidacja rozproszonej logiki biznesowej
 - Zastąpienie skomplikowanych wzorców prostszymi rozwiązaniami
 
+### 🖼️ **KRYTYCZNY PROCES PREZENTACJI DANYCH W GALERII**
+
+**WAŻNE: Proces prezentacji danych w galerii jest RÓWNIE WAŻNY jak parowanie plików!**
+
+#### 🎯 **Dlaczego Galeria to Logika Biznesowa**
+
+- **Główny interfejs użytkownika** - 90% czasu użytkownik spędza w galerii
+- **Wydajność krytyczna** - foldery z 3000+ parami muszą być wyświetlane płynnie
+- **Algorytmy biznesowe** - zarządzanie danymi, cache'owanie, filtrowanie, sortowanie
+- **User Experience** - responsywność galerii decyduje o użyteczności aplikacji
+
+#### 📊 **Wymagania Wydajnościowe Galerii**
+
+- **Duże zbiory danych**: 3000+ par plików w jednym folderze
+- **Czas ładowania**: <2 sekundy dla 1000 par, <5 sekund dla 3000+ par
+- **Płynne przewijanie**: 60 FPS bez lagów przy scrollowaniu
+- **Responsywność UI**: brak blokowania interfejsu podczas ładowania
+- **Memory efficiency**: optymalne zarządzanie pamięcią dla dużych galerii
+
+#### 🔧 **Kluczowe Komponenty Logiki Prezentacji**
+
+- **Thumbnail generation** - generowanie miniaturek w tle
+- **Lazy loading** - ładowanie kafelków na żądanie
+- **Virtual scrolling** - renderowanie tylko widocznych elementów
+- **Cache management** - inteligentne cache'owanie miniaturek i danych
+- **Filtering & sorting** - wydajne filtrowanie i sortowanie dużych zbiorów
+- **Batch processing** - przetwarzanie wsadowe dla wydajności
+
 ### 📜 ZASADY I PROCEDURY
 
 **Wszystkie szczegółowe zasady, procedury i checklisty zostały zebrane w pliku `_BASE_/refactoring_rules.md`. Należy się z nim zapoznać przed rozpoczęciem pracy.**
@@ -57,6 +85,20 @@ src/logic/
 └── scanner.py               🟡🟡 - Publiczne API skanera
 ```
 
+#### **GALLERY PRESENTATION LOGIC** (src/ui/widgets/)
+
+```
+src/ui/widgets/
+├── gallery_tab.py           ⚫⚫⚫⚫ - Główna logika galerii
+├── file_tile_widget.py      ⚫⚫⚫⚫ - Logika kafelków plików
+├── thumbnail_cache.py       ⚫⚫⚫⚫ - Cache miniaturek
+├── thumbnail_component.py   🔴🔴🔴 - Komponent miniaturek
+├── tile_cache_optimizer.py  🔴🔴🔴 - Optymalizacja cache kafelków
+├── tile_performance_monitor.py 🔴🔴🔴 - Monitor wydajności
+├── filter_panel.py          🟡🟡 - Panel filtrowania
+└── unpaired_files_tab.py    🟡🟡 - Zakładka nieparowanych plików
+```
+
 #### **BUSINESS SERVICES** (src/services/)
 
 ```
@@ -71,7 +113,7 @@ src/services/
 ```
 src/controllers/
 ├── main_window_controller.py ⚫⚫⚫⚫ - Główny kontroler biznesowy
-├── gallery_controller.py    🔴🔴🔴 - Kontroler galerii
+├── gallery_controller.py    ⚫⚫⚫⚫ - Kontroler galerii (KRYTYCZNY)
 ├── file_operations_controller.py 🔴🔴🔴 - Kontroler operacji
 ├── statistics_controller.py 🟡🟡 - Kontroler statystyk
 ├── scan_result_processor.py 🟡🟡 - Przetwarzanie wyników
@@ -115,6 +157,8 @@ src/config/
 **⚫⚫⚫⚫ KRYTYCZNE** - Podstawowa funkcjonalność aplikacji
 
 - Skanowanie i parowanie plików
+- **Prezentacja danych w galerii** (NOWE)
+- **Wydajność galerii dla dużych zbiorów** (NOWE)
 - Zarządzanie metadanymi
 - Model danych FilePair
 - Workery przetwarzania
@@ -122,6 +166,8 @@ src/config/
 **🔴🔴🔴 WYSOKIE** - Ważne operacje biznesowe
 
 - Cache skanowania
+- **Cache miniaturek i kafelków** (NOWE)
+- **Optymalizacja renderowania galerii** (NOWE)
 - Operacje na plikach
 - Serwisy biznesowe
 - Konfiguracja aplikacji
@@ -129,6 +175,7 @@ src/config/
 **🟡🟡 ŚREDNIE** - Funkcjonalności pomocnicze
 
 - Filtrowanie
+- **Filtrowanie w galerii** (NOWE)
 - Statystyki
 - Workery pomocnicze
 - Walidacja
@@ -160,13 +207,18 @@ Przeanalizuj **WSZYSTKIE** pliki logiki biznesowej pod kątem:
 ## ⚡ Wydajność Procesów (praktyczna)
 
 - **Bottlenecks w algorytmach** - Wolne algorytmy parowania, skanowania
+- **Bottlenecks w galerii** - Wolne ładowanie kafelków, miniaturek (NOWE)
 - **Memory usage** - Zużycie pamięci przy dużych zbiorach danych
+- **Gallery memory** - Zużycie pamięci przy 3000+ kafelkach (NOWE)
 - **I/O operations** - Optymalizacja operacji na plikach
+- **Thumbnail I/O** - Optymalizacja generowania miniaturek (NOWE)
 - **Cache efficiency** - Efektywność cache'owania wyników
+- **Gallery cache** - Efektywność cache'owania kafelków (NOWE)
 
 ## 🏗️ Architektura Logiki (keep it simple)
 
 - **Zależności biznesowe** - Jak procesy biznesowe się łączą
+- **Gallery dependencies** - Zależności między galerią a logiką biznesową (NOWE)
 - **Single Responsibility** - Czy każdy moduł ma jedną odpowiedzialność
 - **Separation of Concerns** - Rozdzielenie logiki biznesowej od UI
 - **Dependency Injection** - Czy zależności są wstrzykiwane
@@ -181,7 +233,9 @@ Przeanalizuj **WSZYSTKIE** pliki logiki biznesowej pod kątem:
 ## 📊 Logowanie Biznesowe
 
 - **Business events** - Logowanie kluczowych zdarzeń biznesowych
+- **Gallery events** - Logowanie wydarzeń galerii (ładowanie, cache) (NOWE)
 - **Performance metrics** - Metryki wydajności procesów
+- **Gallery performance** - Metryki wydajności galerii (NOWE)
 - **Error tracking** - Śledzenie błędów w logice biznesowej
 - **Audit trail** - Ślad audytowy operacji biznesowych
 
@@ -190,11 +244,13 @@ Przeanalizuj **WSZYSTKIE** pliki logiki biznesowej pod kątem:
 - **Unit tests** - Testy jednostkowe logiki biznesowej
 - **Integration tests** - Testy integracyjne procesów
 - **Performance tests** - Testy wydajnościowe
+- **Gallery performance tests** - Testy wydajności galerii (NOWE)
 - **Data validation tests** - Testy walidacji danych
 
 ## 📋 Stan i Działania
 
 - **Stan obecny** - Co faktycznie nie działa w procesach biznesowych
+- **Gallery state** - Stan wydajności galerii dla dużych zbiorów (NOWE)
 - **Priorytet poprawek** - Critical/Fix Now/Can Wait/Nice to Have
 - **Business impact** - Wpływ na funkcjonalność biznesową
 - **Quick wins** - Co można poprawić w <2h pracy
@@ -211,8 +267,10 @@ Przeanalizuj **WSZYSTKIE** pliki logiki biznesowej pod kątem:
 
 - ✅ Rzeczywistych problemach w procesach biznesowych
 - ✅ Bugach w algorytmach parowania i skanowania
+- ✅ **Bugach w wydajności galerii** (NOWE)
 - ✅ Oczywistych code smells w logice biznesowej
 - ✅ Rzeczach które faktycznie spowalniają procesy biznesowe
+- ✅ **Rzeczach które spowalniają galerię** (NOWE)
 - ✅ Bezpieczeństwie danych użytkowników
 
 ## 🎯 Pytania Kontrolne
@@ -221,6 +279,7 @@ Przeanalizuj **WSZYSTKIE** pliki logiki biznesowej pod kątem:
 - **Czy użytkownicy to odczują?** - Priorytet dla UX procesów
 - **Ile czasu zajmie vs korzyść biznesowa?** - ROI każdej zmiany
 - **Czy można to rozwiązać prościej?** - KISS principle w logice
+- **Czy galeria będzie płynna dla 3000+ par?** - Krytyczne dla UX (NOWE)
 
 ### 📁 STRUKTURA PLIKÓW WYNIKOWYCH I UŻYCIE SZABLONÓW
 
