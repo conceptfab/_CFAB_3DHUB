@@ -44,9 +44,6 @@ IGNORED_FOLDERS = {
     ".alg_meta",
 }
 
-# Pre-computed set for O(1) lookup optimization
-IGNORED_FOLDERS_SET = frozenset(IGNORED_FOLDERS)
-
 
 @dataclass
 class ScanConfig:
@@ -309,7 +306,6 @@ class ScanOrchestrator:
 def should_ignore_folder(folder_name: str) -> bool:
     """
     Sprawdza czy folder powinien być ignorowany podczas skanowania.
-    OPTYMALIZACJA: Używa frozenset dla O(1) lookup zamiast O(n).
 
     Args:
         folder_name: Nazwa folderu do sprawdzenia
@@ -317,7 +313,7 @@ def should_ignore_folder(folder_name: str) -> bool:
     Returns:
         True jeśli folder powinien być ignorowany
     """
-    return folder_name in IGNORED_FOLDERS_SET or folder_name.startswith(".")
+    return folder_name in IGNORED_FOLDERS or folder_name.startswith(".")
 
 
 class ScanningInterrupted(Exception):
@@ -377,32 +373,11 @@ def collect_files_streaming(
     total_files_found = 0
     start_time = time.time()
 
-    # Throttled progress reporting variables
-    last_progress_time = time.time()
-    PROGRESS_THROTTLE_INTERVAL = 0.1  # Minimum 100ms between progress updates
-
     # Zestaw odwiedzonych katalogów (do obsługi pętli symbolicznych)
     visited_dirs = set()
 
     def _walk_directory_streaming(current_dir: str, depth: int = 0):
-        nonlocal total_folders_scanned, total_files_found, last_progress_time
-
-        # Pre-compute normalized current directory (cache optimization)
-        normalized_current_dir = normalize_path(current_dir)
-
-        # Throttled progress reporting to prevent UI freeze
-        current_time = time.time()
-        if (
-            progress_callback
-            and (current_time - last_progress_time) >= PROGRESS_THROTTLE_INTERVAL
-        ):
-            progress = min(95, total_folders_scanned * 2)  # Aproksymacja progressu
-            progress_callback(
-                progress,
-                f"Skanowanie: {os.path.basename(current_dir)} "
-                f"({total_files_found} plików, {total_folders_scanned} folderów)",
-            )
-            last_progress_time = current_time
+        nonlocal total_folders_scanned, total_files_found
 
         # Sprawdzenie czy należy przerwać skanowanie
         if interrupt_check and interrupt_check():
@@ -420,11 +395,23 @@ def collect_files_streaming(
         if max_depth >= 0 and depth > max_depth:
             return
 
+        # Streaming progress - raportowanie w czasie rzeczywistym
+        if progress_callback:
+            # Progress oparty na liczbie przeskanowanych folderów (rosnąco)
+            # Skaluje od 0 do 95% w miarę zwiększania się liczby folderów
+            progress = min(95, total_folders_scanned * 2)  # Aproksymacja progressu
+            progress_callback(
+                progress,
+                f"Skanowanie: {os.path.basename(current_dir)} "
+                f"({total_files_found} plików, {total_folders_scanned} folderów)",
+            )
+
         # Zabezpieczenie przed zapętleniem (symlinki)
-        if normalized_current_dir in visited_dirs:
-            logger.warning(f"Wykryto pętlę w katalogach: {normalized_current_dir}")
+        normalized_current = os.path.realpath(current_dir)
+        if normalized_current in visited_dirs:
+            logger.warning(f"Wykryto pętlę w katalogach: {normalized_current}")
             return
-        visited_dirs.add(normalized_current_dir)
+        visited_dirs.add(normalized_current)
 
         # Skanowanie folderu
         try:
@@ -447,9 +434,9 @@ def collect_files_streaming(
                     total_files_found += 1
                     files_processed_in_folder += 1
 
-                    # Sprawdzenie co 100 plików w folderze (batch processing)
+                    # Sprawdzenie co 10 plików w folderze
                     if (
-                        files_processed_in_folder % 100 == 0
+                        files_processed_in_folder % 10 == 0
                         and interrupt_check
                         and interrupt_check()
                     ):
@@ -468,11 +455,10 @@ def collect_files_streaming(
                         ext_lower in ARCHIVE_EXTENSIONS
                         or ext_lower in PREVIEW_EXTENSIONS
                     ):
-                        # Optimized key generation - use pre-computed normalized path
                         map_key = os.path.join(
-                            normalized_current_dir, base_name.lower()
+                            normalize_path(current_dir), base_name.lower()
                         )
-                        full_file_path = os.path.join(normalized_current_dir, name)
+                        full_file_path = normalize_path(os.path.join(current_dir, name))
                         file_map[map_key].append(full_file_path)
 
             should_scan_subfolders = files_processed_in_folder > 0
@@ -492,9 +478,9 @@ def collect_files_streaming(
 
                         subfolders_processed += 1
 
-                        # Sprawdzenie co 20 podfolderów (batch processing)
+                        # Sprawdzenie co 5 podfolderów
                         if (
-                            subfolders_processed % 20 == 0
+                            subfolders_processed % 5 == 0
                             and interrupt_check
                             and interrupt_check()
                         ):
@@ -510,54 +496,21 @@ def collect_files_streaming(
             else:
                 logger.debug(f"Pomijam podfoldery: {current_dir} (brak plików)")
 
-        except PermissionError as e:
-            logger.warning(f"Brak uprawnień do katalogu {current_dir}: {e}")
-            # Continue scanning other directories
-        except FileNotFoundError as e:
-            logger.warning(f"Katalog usunięty podczas skanowania {current_dir}: {e}")
-            # Directory was deleted during scanning - continue
-        except OSError as e:
-            logger.error(f"Błąd I/O podczas dostępu do {current_dir}: {e}")
-            # Try to continue with other directories
-        except MemoryError as e:
-            logger.critical(f"Brak pamięci podczas skanowania {current_dir}: {e}")
-            # Critical error - should probably stop scanning
-            raise
+        except (PermissionError, OSError) as e:
+            logger.warning(f"Błąd dostępu do katalogu {current_dir}: {e}")
         except ScanningInterrupted:
             # Przepuszczamy wyjątek przerwania wyżej
             raise
-        except Exception as e:
-            logger.error(f"Nieoczekiwany błąd w katalogu {current_dir}: {e}")
-            # Log unexpected errors but continue scanning
 
     try:
         _walk_directory_streaming(normalized_dir)
     except ScanningInterrupted:
         raise
-    finally:
-        # Cleanup to prevent memory leaks on repeated scans
-        visited_dirs.clear()
-        logger.debug(f"Cleaned up visited_dirs cache ({len(visited_dirs)} entries)")
 
     elapsed_time = time.time() - start_time
-
-    # Business metrics logging
-    files_per_second = total_files_found / elapsed_time if elapsed_time > 0 else 0
-    folders_per_second = total_folders_scanned / elapsed_time if elapsed_time > 0 else 0
-
     logger.info(
-        f"SCAN_COMPLETED: {normalized_dir} | "
-        f"files={total_files_found} | folders={total_folders_scanned} | "
-        f"time={elapsed_time:.2f}s | "
-        f"rate={files_per_second:.1f}files/s, {folders_per_second:.1f}folders/s"
+        f"Zakończono streaming zbieranie plików w {elapsed_time:.2f}s. Znaleziono {total_files_found} plików w {total_folders_scanned} folderach."
     )
-
-    # Performance warning for slow scans
-    if files_per_second < 100 and total_files_found > 500:
-        logger.warning(
-            f"SLOW_SCAN_DETECTED: {normalized_dir} | "
-            f"rate={files_per_second:.1f}files/s (expected >100files/s for large folders)"
-        )
 
     # Zapisz mapę plików w cache
     if not force_refresh:

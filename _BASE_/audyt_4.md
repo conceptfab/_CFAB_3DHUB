@@ -1,5 +1,7 @@
 # 📋 AUDYT I REFAKTORYZACJA PROJEKTU CFAB_3DHUB
 
+> **WAŻNE! Wszystkie pliki wynikowe audytu (np. `code_map.md`, `*_corrections.md`, `*_patch_code.md`, pliki z analizami i poprawkami) MUSZĄ być zapisywane wyłącznie w katalogu `AUDYT`. Tylko tam należy ich szukać!**
+
 ## 🎯 CEL
 
 Kompleksowa analiza, optymalizacja i uproszczenie kodu aplikacji z naciskiem na eliminację over-engineering i minimalizację złożoności.
