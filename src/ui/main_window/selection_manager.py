@@ -20,6 +20,7 @@ class SelectionManager:
         """
         self.main_window = main_window
         self.logger = logging.getLogger(__name__)
+        self.selected_tiles = set()  # Lokalny set dla zaznaczonych kafelków
 
     def handle_tile_selection_changed(self, file_pair: FilePair, is_selected: bool):
         """Obsługuje zmianę selekcji kafelka."""
@@ -32,16 +33,20 @@ class SelectionManager:
         """
         Updates visibility of bulk operations controls based on selection count.
         """
-        has_selection = len(self.main_window.controller.selection_manager.selected_tiles) > 0
+        has_selection = len(self.selected_tiles) > 0
         if hasattr(self.main_window, "bulk_operations_panel"):
             self.main_window.bulk_operations_panel.setVisible(has_selection)
             if hasattr(self.main_window, "selected_count_label"):
-                count = len(self.main_window.controller.selection_manager.selected_tiles)
+                count = len(self.selected_tiles)
                 self.main_window.selected_count_label.setText(f"Zaznaczone: {count}")
 
     def clear_all_selections(self):
         """Clears all tile selections."""
-        self.main_window.controller.selection_manager.selected_tiles.clear()
+        # Synchronizuj z controller
+        if hasattr(self.main_window, "controller") and self.main_window.controller:
+            self.main_window.controller.selection_manager.selected_tiles.clear()
+
+        self.selected_tiles.clear()
 
         # Update all visible tiles to reflect cleared selection
         if (
@@ -63,14 +68,21 @@ class SelectionManager:
         ):
             for tile_widget in self.main_window.gallery_manager.get_all_tile_widgets():
                 if hasattr(tile_widget, "file_pair") and tile_widget.file_pair:
-                    self.main_window.controller.selection_manager.selected_tiles.add(
-                        tile_widget.file_pair
-                    )
+                    # Synchronizuj z controller
+                    if (
+                        hasattr(self.main_window, "controller")
+                        and self.main_window.controller
+                    ):
+                        self.main_window.controller.selection_manager.selected_tiles.add(
+                            tile_widget.file_pair
+                        )
+
+                    self.selected_tiles.add(tile_widget.file_pair)
                     if hasattr(tile_widget, "metadata_controls"):
                         tile_widget.metadata_controls.update_selection_display(True)
 
             self.update_bulk_operations_visibility()
-            selected_count = len(self.main_window.controller.selection_manager.selected_tiles)
+            selected_count = len(self.selected_tiles)
             logging.debug(f"Selected all {selected_count} visible tiles")
 
     def update_bulk_operations_visibility_with_count(self, selected_count: int):

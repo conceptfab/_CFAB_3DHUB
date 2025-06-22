@@ -11,11 +11,8 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 # --- Koniec modyfikacji sys.path ---
 
-from src.utils.arg_parser import (
-    get_app_version,
-    parse_args,  # noqa: E402
-    setup_logging_from_args,
-)
+from src.utils.arg_parser import parse_args  # noqa: E402
+from src.utils.arg_parser import get_app_version, setup_logging_from_args
 from src.utils.style_loader import get_style_path, load_styles  # noqa: E402
 
 # Stałe kodów wyjścia
@@ -44,16 +41,13 @@ def _load_application_styles(args: argparse.Namespace, project_root: str) -> str
     try:
         style_path = get_style_path(project_root, args.style)
         if args.style:
-            logger.info("Niestandardowy styl: %s", args.style)
-            logger.debug("Argumenty stylów: %s", vars(args))
+            logger.info("Używanie niestandardowego stylu: %s", args.style)
 
-        logger.info("Wczytywanie stylów z: %s", style_path)
-        logger.debug("Sprawdzanie istnienia pliku stylów: %s", os.path.exists(style_path))
-        return load_styles(style_path, verbose=True)
+        return load_styles(style_path, verbose=False)
 
     except Exception as e:
-        logger.warning(f"Błąd podczas ładowania stylów: {str(e)}")
-        logger.warning("Aplikacja zostanie uruchomiona bez stylów.")
+        logger.warning("Błąd ładowania stylów: %s", str(e))
+        logger.info("Uruchamianie bez stylów")
         return ""
 
 
@@ -64,6 +58,8 @@ def run() -> int:
     Returns:
         int: Kod wyjścia (0 - sukces, >0 - błąd)
     """
+    logger = None  # Lazy initialization
+
     try:
         # Szybkie sprawdzenie opcji --version dla optymalizacji startu
         if "--version" in sys.argv:
@@ -86,21 +82,24 @@ def run() -> int:
         # Uruchomienie głównej funkcji aplikacji (z opóźnionym importem)
         from src.main import main
 
-        try:
-            return main(style_sheet=style_sheet or "")
-        except Exception as e:
-            logger.critical("Błąd przy uruchamianiu: %s", str(e))
-            logger.debug("Szczegóły błędu:", exc_info=True)
-            return EXIT_GENERAL_ERROR
+        return main(style_sheet=style_sheet)
 
     except KeyboardInterrupt:
         print("\nPrzerwano uruchamianie aplikacji.")
         return EXIT_KEYBOARD_INTERRUPT
+
     except Exception as e:
-        # W tym miejscu logger może nie być jeszcze skonfigurowany
-        print(f"KRYTYCZNY BŁĄD: Błąd inicjalizacji: {str(e)}")
-        traceback.print_exc()
-        return EXIT_INITIALIZATION_ERROR
+        # Smart error handling z lazy logger
+        if logger:
+            logger.critical("Błąd aplikacji: %s", str(e))
+            if __debug__:  # Tylko w debug mode
+                logger.debug("Szczegóły błędu:", exc_info=True)
+        else:
+            print(f"KRYTYCZNY BŁĄD: {str(e)}")
+            if __debug__:
+                traceback.print_exc()
+
+        return EXIT_GENERAL_ERROR
 
 
 if __name__ == "__main__":

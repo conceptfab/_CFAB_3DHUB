@@ -125,18 +125,25 @@ class EventHandler:
             file_pair: Para plików
             is_selected: Czy kafelek jest zaznaczony
         """
+        # Synchronizuj z oboma managerami
         if is_selected:
-            self.main_window.controller.selection_manager.selected_tiles.add(file_pair)
+            self.main_window.selection_manager.selected_tiles.add(file_pair)
+            if hasattr(self.main_window, "controller") and self.main_window.controller:
+                self.main_window.controller.selection_manager.selected_tiles.add(
+                    file_pair
+                )
         else:
-            self.main_window.controller.selection_manager.selected_tiles.discard(
-                file_pair
-            )
+            self.main_window.selection_manager.selected_tiles.discard(file_pair)
+            if hasattr(self.main_window, "controller") and self.main_window.controller:
+                self.main_window.controller.selection_manager.selected_tiles.discard(
+                    file_pair
+                )
 
         # Aktualizuj widoczność operacji bulk
         self.main_window._update_bulk_operations_visibility()
 
         self.logger.debug(
-            f"Selekcja zmieniona: {len(self.main_window.controller.selection_manager.selected_tiles)} zaznaczonych"
+            f"Selekcja zmieniona: {len(self.main_window.selection_manager.selected_tiles)} zaznaczonych"
         )
 
     def handle_stars_changed(self, file_pair: FilePair, new_star_count: int):

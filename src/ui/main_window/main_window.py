@@ -149,6 +149,16 @@ class MainWindow(QMainWindow):
         """Delegacja do ManagerRegistry."""
         return self._manager_registry_new.get_manager("file_operations_coordinator")
 
+    @property
+    def controller(self):
+        """Delegacja do kontrolera głównego okna."""
+        return getattr(self, "_controller", None)
+
+    @controller.setter
+    def controller(self, value):
+        """Setter dla kontrolera głównego okna."""
+        self._controller = value
+
     def show_preferences(self):
         """Wyświetla okno preferencji - direct implementation."""
         from src.ui.widgets.preferences_dialog import PreferencesDialog
@@ -349,17 +359,13 @@ class MainWindow(QMainWindow):
 
     def _clear_all_selections(self):
         """Czyści wszystkie selekcje - direct implementation."""
-        if hasattr(self, "controller") and hasattr(
-            self.controller, "selection_manager"
-        ):
-            self.controller.selection_manager.selected_tiles.clear()
-        if hasattr(self, "gallery_manager"):
-            self.gallery_manager.clear_all_selections()
+        if hasattr(self, "selection_manager"):
+            self.selection_manager.clear_all_selections()
 
     def _select_all_tiles(self):
         """Zaznacza wszystkie kafelki - direct implementation."""
-        if hasattr(self, "gallery_manager"):
-            self.gallery_manager.select_all_tiles()
+        if hasattr(self, "selection_manager"):
+            self.selection_manager.select_all_tiles()
 
     def _perform_bulk_delete(self):
         """Wykonuje masowe usuwanie - direct implementation."""

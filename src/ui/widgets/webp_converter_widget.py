@@ -245,25 +245,24 @@ class WebPConverterDialog(QDialog):
 
     def _start_conversion(self):
         """Rozpoczyna proces konwersji."""
-        if not self.files_to_convert:
-            self._update_log("Nie wybrano plików do konwersji.")
-            return
+        try:
+            # Utwórz i uruchom worker
+            self.worker = WebPConverterWorker(self.folder_path)
 
-        if not hasattr(self.main_window, "worker_manager"):
-            self.logger.error("Brak dostępu do WorkerManagera.")
-            QMessageBox.critical(self, "Błąd", "Brak dostępu do menedżera zadań.")
-            return
+            # Podłącz sygnały
+            self.worker.progress_updated.connect(self._on_conversion_progress)
+            self.worker.finished.connect(self._on_conversion_finished)
+            self.worker.error_occurred.connect(self._on_error_occurred)
 
-        self._set_ui_for_conversion(True)
+            # Uruchom worker
+            self.worker.start()
 
-        self.main_window.worker_manager.run_worker(
-            WebPConverterWorker,
-            files_to_convert=self.files_to_convert,
-            output_folder=self.output_folder,
-            delete_original=self.delete_original_checkbox.isChecked(),
-            resize_enabled=self.resize_checkbox.isChecked(),
-            resize_value=self.resize_value_spinbox.value(),
-        )
+            self._log("🔄 Rozpoczęto konwersję plików na WebP...")
+
+        except Exception as e:
+            error_msg = f"Błąd podczas uruchamiania konwersji: {e}"
+            logging.error(error_msg)
+            QMessageBox.critical(self, "Błąd", error_msg)
 
     def _on_conversion_progress(self, progress, message):
         """Aktualizuje postęp konwersji."""

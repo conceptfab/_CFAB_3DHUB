@@ -84,19 +84,6 @@ def global_exception_handler(
         print(f"BŁĄD KRYTYCZNY: {exception_str}")
 
 
-def _get_application_version() -> str:
-    """
-    Pobiera wersję aplikacji z konfiguracji z fallback na domyślną.
-    """
-    try:
-        from src.app_config import AppConfig
-
-        config = AppConfig()
-        return getattr(config, "application_version", "1.0.0")
-    except (ImportError, AttributeError):
-        return "1.0.0"
-
-
 def _setup_logging_safe() -> None:
     """
     Bezpieczna konfiguracja logowania z obsługą błędów.
@@ -108,8 +95,9 @@ def _setup_logging_safe() -> None:
         from src.utils.logging_config import setup_logging
 
         setup_logging()
-        logging.info("System logowania skonfigurowany")
+        logging.info("System logowania skonfigurowany pomyślnie")
     except (OSError, PermissionError) as e:
+        # Problemy z plikami logów
         print(f"BŁĄD: Nie można skonfigurować logowania: {e}")
         raise RuntimeError(f"Błąd konfiguracji logowania: {e}")
     except Exception as e:
@@ -125,16 +113,19 @@ def _setup_worker_factory_safe() -> None:
         RuntimeError: Jeśli nie można skonfigurować worker factory
     """
     try:
+        logging.debug("Inicjalizacja worker factory...")
         from src.factories.worker_factory import UIWorkerFactory
         from src.logic.file_ops_components import configure_worker_factory
 
         ui_factory = UIWorkerFactory()
         configure_worker_factory(ui_factory)
+        logging.debug("Worker factory skonfigurowana pomyślnie")
     except ImportError as e:
         logging.critical("Błąd importu worker factory: %s", e)
         raise RuntimeError(f"Nie można zaimportować worker factory: {e}")
     except Exception as e:
-        logging.critical("Błąd konfiguracji worker factory: %s", e, exc_info=True)
+        log_msg = f"Błąd konfiguracji worker factory: {e}"
+        logging.critical(log_msg, exc_info=True)
         raise RuntimeError(f"Błąd worker factory: {e}")
 
 
@@ -153,16 +144,26 @@ def _create_qt_application(style_sheet: str = "") -> "QApplication":
     """
     try:
         app = QApplication(sys.argv)
+
+        # Ustawienie podstawowych właściwości aplikacji
         app.setApplicationName("CFAB_3DHUB")
-        app.setApplicationVersion(_get_application_version())
+        app.setApplicationVersion("1.0.0")  # TODO: pobierać z config
+
         if style_sheet:
-            logging.info("Stosowanie stylów (%d znaków)", len(style_sheet))
+            log_msg = f"Stosowanie stylów (długość: {len(style_sheet)} znaków)"
+            logging.info(log_msg)
             app.setStyleSheet(style_sheet)
         else:
             logging.debug("Uruchamianie bez niestandardowych stylów")
+
         return app
+
+    except (OSError, RuntimeError) as e:
+        # Problemy systemowe z Qt
+        raise RuntimeError(f"Błąd systemu przy tworzeniu aplikacji Qt: {e}")
     except Exception as e:
-        logging.error("Błąd tworzenia aplikacji Qt: %s", e, exc_info=True)
+        # Inne nieoczekiwane błędy
+        logging.error("Nieoczekiwany błąd Qt: %s", e, exc_info=True)
         raise RuntimeError(f"Błąd tworzenia aplikacji Qt: {e}")
 
 
@@ -201,15 +202,21 @@ def _create_and_show_main_window(
         RuntimeError: Jeśli nie można utworzyć aplikacji lub okna
     """
     try:
-        app = _create_qt_application(style_sheet)
+        logging.debug("Tworzenie aplikacji Qt...")
+        app = _create_qt_application(style_sheet)  # Przekazanie style_sheet
+        logging.debug("Aplikacja Qt utworzona pomyślnie")
+
         window = _create_main_window()
         window.show()
-        logging.info("Aplikacja gotowa")
+        logging.info("Główne okno aplikacji utworzone i wyświetlone")
+
         return app, window
+
     except RuntimeError:
         raise
     except Exception as e:
-        logging.critical(f"Błąd tworzenia interfejsu: {e}", exc_info=True)
+        log_msg = f"Nieoczekiwany błąd tworzenia UI: {e}"
+        logging.critical(log_msg, exc_info=True)
         raise RuntimeError(f"Błąd tworzenia interfejsu: {e}")
 
 
@@ -241,14 +248,11 @@ def main(style_sheet: str = "") -> int:
     # 3. Tworzenie i uruchomienie aplikacji Qt
     try:
         app, window = _create_and_show_main_window(style_sheet)
-        try:
-            logging.info("Uruchamianie głównej pętli aplikacji")
-            return app.exec()
-        except Exception as e:
-            logging.error("Błąd w głównej pętli aplikacji: %s", e)
-            if window:
-                window.close()
-            raise
+
+        # Uruchomienie głównej pętli aplikacji
+        logging.info("Uruchamianie głównej pętli aplikacji")
+        return app.exec()
+
     except RuntimeError as e:
         logging.critical(str(e))
         _show_error_dialog("Błąd krytyczny", "Błąd startu aplikacji.", str(e))
