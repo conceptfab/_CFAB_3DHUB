@@ -632,7 +632,7 @@ def add_special_folder(directory_path: str, folder_name: str) -> bool:
 def remove_special_folder(directory_path: str, folder_name: str) -> bool:
     """Legacy function - removes special folder from list."""
     try:
-    manager = MetadataManager.get_instance(directory_path)
+        manager = MetadataManager.get_instance(directory_path)
         current_folders = manager.get_special_folders()
 
         if folder_name in current_folders:
