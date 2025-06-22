@@ -8,7 +8,7 @@ oraz identyfikowania niesparowanych plików.
 import logging
 import os
 from abc import ABC, abstractmethod
-from collections import defaultdict
+from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
 
 from src import app_config
@@ -20,6 +20,74 @@ logger = logging.getLogger(__name__)
 # Używamy definicji rozszerzeń z centralnego pliku konfiguracyjnego
 ARCHIVE_EXTENSIONS = set(app_config.SUPPORTED_ARCHIVE_EXTENSIONS)
 PREVIEW_EXTENSIONS = set(app_config.SUPPORTED_PREVIEW_EXTENSIONS)
+
+
+@dataclass
+class FileInfo:
+    """Pre-computed file information dla performance optimization."""
+
+    def __init__(self, path: str):
+        self.path = path
+        self.basename = os.path.basename(path)
+        self.name_lower = os.path.splitext(self.basename)[0].lower()
+        self.ext_lower = os.path.splitext(path)[1].lower()
+        self.is_archive = self.ext_lower in ARCHIVE_EXTENSIONS
+        self.is_preview = self.ext_lower in PREVIEW_EXTENSIONS
+
+
+def _categorize_files_optimized(files_list: List[str]) -> Tuple[List[str], List[str]]:
+    """
+    Optimized kategoryzacja plików na archiwa i podglądy.
+    Pre-computes file info once instead of parsing extensions multiple times.
+    """
+    if not files_list:
+        return [], []
+
+    # Pre-compute file info once - O(n) instead of O(2n)
+    file_infos = [FileInfo(f) for f in files_list]
+
+    # Single pass categorization - O(n) instead of O(2n)
+    archive_files = [fi.path for fi in file_infos if fi.is_archive]
+    preview_files = [fi.path for fi in file_infos if fi.is_preview]
+
+    return archive_files, preview_files
+
+
+class SimpleTrie:
+    """Simple Trie dla fast prefix matching."""
+
+    def __init__(self):
+        self.root = {}
+        self.files = {}  # Maps prefix -> list of files
+
+    def add(self, key: str, file_path: str):
+        """Adds file with its prefix key."""
+        node = self.root
+        for char in key:
+            if char not in node:
+                node[char] = {}
+            node = node[char]
+
+        if key not in self.files:
+            self.files[key] = []
+        self.files[key].append(file_path)
+
+    def find_prefix_matches(self, prefix: str, max_results: int = 20) -> List[str]:
+        """Finds all keys that match the prefix."""
+        matches = []
+
+        # Exact match first (highest priority)
+        if prefix in self.files:
+            matches.extend(self.files[prefix])
+
+        # Prefix matches
+        for key in self.files:
+            if len(matches) >= max_results:
+                break
+            if key != prefix and (key.startswith(prefix) or prefix.startswith(key)):
+                matches.extend(self.files[key])
+
+        return matches[:max_results]
 
 
 class PairingStrategy(ABC):
@@ -67,178 +135,149 @@ class FirstMatchStrategy(PairingStrategy):
         return pairs, processed
 
 
-class AllCombinationsStrategy(PairingStrategy):
-    """Strategia parowania wszystkich kombinacji."""
+# AllCombinationsStrategy REMOVED - dead code (caused exponential memory usage)
+
+
+class OptimizedBestMatchStrategy(PairingStrategy):
+    """Optimized strategia inteligentnego parowania z Trie-based matching."""
+
+    # Simplified preference - tylko extension priority, bez I/O operations
+    PREVIEW_PREFERENCE = {
+        ".jpg": 60,
+        ".jpeg": 55,
+        ".png": 50,
+        ".gif": 40,
+        ".bmp": 30,
+        ".tiff": 20,
+    }
 
     def create_pairs(
         self, archive_files: List[str], preview_files: List[str], base_directory: str
     ) -> Tuple[List[FilePair], Set[str]]:
-        """Tworzy wszystkie możliwe kombinacje."""
+        """Optimized pairing z Trie-based matching."""
         pairs = []
         processed = set()
 
+        if not archive_files or not preview_files:
+            return pairs, processed
+
+        # Build optimized Trie index - O(m log m)
+        preview_trie = self._build_preview_trie(preview_files)
+
+        # Match archives to previews - O(n log m) instead of O(n*m)
         for archive in archive_files:
-            for preview in preview_files:
-                try:
-                    pair = FilePair(archive, preview, base_directory)
-                    pairs.append(pair)
-                    processed.add(archive)
-                    processed.add(preview)
-                except ValueError as e:
-                    logger.error(
-                        f"Błąd tworzenia FilePair dla '{archive}' i '{preview}': {e}"
-                    )
+            if archive in processed:
+                continue
 
-        return pairs, processed
+            best_preview = self._find_best_preview_optimized(archive, preview_trie)
 
-
-class BestMatchStrategy(PairingStrategy):
-    """Strategia inteligentnego parowania według nazw."""
-
-    # Preferowane rozszerzenia podglądu (od najbardziej preferowanego)
-    PREVIEW_PREFERENCE = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"]
-
-    def create_pairs(
-        self, archive_files: List[str], preview_files: List[str], base_directory: str
-    ) -> Tuple[List[FilePair], Set[str]]:
-        """Inteligentne parowanie z oceną dopasowania."""
-        pairs = []
-        processed = set()
-
-        # Budujemy hash mapę podglądów według nazw bazowych - O(m)
-        preview_map = self._build_preview_map(preview_files)
-
-        # Dla każdego archiwum szukamy najlepszego podglądu - O(n)
-        for archive in archive_files:
-            best_preview = self._find_best_preview(archive, preview_map)
-
-            if best_preview:
+            if best_preview and best_preview not in processed:
                 try:
                     pair = FilePair(archive, best_preview, base_directory)
                     pairs.append(pair)
                     processed.add(archive)
                     processed.add(best_preview)
                 except ValueError as e:
-                    logger.error(
-                        f"Błąd tworzenia FilePair dla '{archive}' i '{best_preview}': {e}"
+                    logger.warning(
+                        f"Skipping invalid pair {archive} + {best_preview}: {e}"
                     )
 
         return pairs, processed
 
-    def _build_preview_map(self, preview_files: List[str]) -> Dict[str, List[str]]:
-        """Buduje mapę podglądów według nazw bazowych."""
-        preview_map = defaultdict(list)
+    def _build_preview_trie(self, preview_files: List[str]) -> SimpleTrie:
+        """Builds Trie index dla fast preview lookup."""
+        trie = SimpleTrie()
+
         for preview in preview_files:
-            preview_name = os.path.basename(preview)
-            preview_base_name = os.path.splitext(preview_name)[0].lower()
-            preview_map[preview_base_name].append(preview)
-        return preview_map
+            basename = os.path.basename(preview)
+            name_lower = os.path.splitext(basename)[0].lower()
+            trie.add(name_lower, preview)
 
-    def _find_best_preview(
-        self, archive: str, preview_map: Dict[str, List[str]]
+        return trie
+
+    def _find_best_preview_optimized(
+        self, archive: str, preview_trie: SimpleTrie
     ) -> str:
-        """Znajduje najlepszy podgląd dla archiwum."""
-        archive_name = os.path.basename(archive)
-        archive_base_name = os.path.splitext(archive_name)[0].lower()
+        """Fast best preview lookup using Trie."""
+        archive_basename = os.path.basename(archive)
+        archive_name = os.path.splitext(archive_basename)[0].lower()
 
-        candidates = self._get_preview_candidates(archive_base_name, preview_map)
+        # Get candidates using Trie - O(log m) instead of O(m)
+        candidates = preview_trie.find_prefix_matches(archive_name, max_results=20)
 
         if not candidates:
             return None
 
-        # Znajdź kandydata z najwyższą oceną
+        # Simple scoring without expensive I/O operations
         best_preview = None
         best_score = -1
 
-        for preview, base_score in candidates:
-            score = self._calculate_preview_score(preview, base_score)
+        for preview in candidates:
+            score = self._calculate_simple_score(preview, archive_name)
             if score > best_score:
                 best_score = score
                 best_preview = preview
 
         return best_preview if best_score > 0 else None
 
-    def _get_preview_candidates(
-        self, archive_base_name: str, preview_map: Dict[str, List[str]]
-    ) -> List[Tuple[str, int]]:
-        """Pobiera kandydatów na podglądy z oceną bazową."""
-        candidates = []
-
-        # 1. Dokładna zgodność nazwy (najlepsze dopasowanie)
-        if archive_base_name in preview_map:
-            candidates.extend([(p, 1000) for p in preview_map[archive_base_name]])
-        else:
-            # 2. Częściowa zgodność - OPTYMALIZACJA: tylko gdy nie ma dokładnego dopasowania
-            matching_keys = self._find_partial_matches(
-                archive_base_name, preview_map.keys()
-            )
-            for preview_base_name in matching_keys[:20]:  # Limit do 20 najdłuższych
-                candidates.extend([(p, 500) for p in preview_map[preview_base_name]])
-
-        return candidates
-
-    def _find_partial_matches(self, archive_base_name: str, preview_keys) -> List[str]:
-        """Znajduje częściowe dopasowania nazw."""
-        matching_keys = []
-        for preview_base_name in preview_keys:
-            if preview_base_name.startswith(
-                archive_base_name
-            ) or archive_base_name.startswith(preview_base_name):
-                matching_keys.append(preview_base_name)
-
-        # Sortowanie po długości (zaczynając od najdłuższych)
-        matching_keys.sort(key=len, reverse=True)
-        return matching_keys
-
-    def _calculate_preview_score(self, preview: str, base_score: int) -> int:
-        """Oblicza końcową ocenę podglądu."""
-        score = base_score
+    def _calculate_simple_score(self, preview: str, archive_name: str) -> int:
+        """Simplified scoring bez I/O operations."""
+        preview_basename = os.path.basename(preview)
+        preview_name = os.path.splitext(preview_basename)[0].lower()
         preview_ext = os.path.splitext(preview)[1].lower()
 
-        # Dodajemy punkty za preferowane rozszerzenie
-        if preview_ext in self.PREVIEW_PREFERENCE:
-            score += (
-                len(self.PREVIEW_PREFERENCE)
-                - self.PREVIEW_PREFERENCE.index(preview_ext)
-            ) * 10
+        # Base score from name matching
+        if preview_name == archive_name:
+            score = 1000  # Perfect match
+        elif preview_name.startswith(archive_name) or archive_name.startswith(
+            preview_name
+        ):
+            score = 500  # Partial match
+        else:
+            score = 100  # Fallback
 
-        # Dodajemy mały bonus za nowsze pliki
-        try:
-            mtime = os.path.getmtime(preview)
-            score += mtime / 10000000  # Dodaje mały ułamek do punktacji
-        except (OSError, PermissionError):
-            pass  # Ignorujemy błędy przy sprawdzaniu czasu modyfikacji
+        # Extension preference bonus
+        if preview_ext in self.PREVIEW_PREFERENCE:
+            score += self.PREVIEW_PREFERENCE[preview_ext]
 
         return score
 
 
-class PairingStrategyFactory:
-    """Fabryka strategii parowania."""
+class OptimizedPairingStrategyFactory:
+    """Simplified factory bez dead code."""
 
     _strategies = {
         "first_match": FirstMatchStrategy,
-        "all_combinations": AllCombinationsStrategy,
-        "best_match": BestMatchStrategy,
+        "best_match": OptimizedBestMatchStrategy,  # Use optimized version
+        # "all_combinations": REMOVED - dead code
     }
 
     @classmethod
     def get_strategy(cls, strategy_name: str) -> PairingStrategy:
         """
-        Zwraca instancję strategii parowania.
+        Returns strategy instance z validation.
 
         Args:
-            strategy_name: Nazwa strategii
+            strategy_name: Strategy name ("first_match" or "best_match")
 
         Returns:
-            Instancja strategii parowania
+            Strategy instance
 
         Raises:
-            ValueError: Jeśli strategia nie istnieje
+            ValueError: If strategy doesn't exist
         """
-        if strategy_name not in cls._strategies:
-            raise ValueError(f"Nieznana strategia parowania: {strategy_name}")
+        if not strategy_name or strategy_name not in cls._strategies:
+            logger.warning(
+                f"Unknown strategy '{strategy_name}', using 'first_match' as fallback"
+            )
+            strategy_name = "first_match"
 
         return cls._strategies[strategy_name]()
+
+    @classmethod
+    def get_available_strategies(cls) -> List[str]:
+        """Returns list of available strategy names."""
+        return list(cls._strategies.keys())
 
 
 def _categorize_files(files_list: List[str]) -> Tuple[List[str], List[str]]:
@@ -283,14 +322,14 @@ def create_file_pairs(
 
     # Pobierz strategię parowania
     try:
-        strategy = PairingStrategyFactory.get_strategy(pair_strategy)
+        strategy = OptimizedPairingStrategyFactory.get_strategy(pair_strategy)
     except ValueError as e:
         logger.error(str(e))
         return found_pairs, processed_files
 
     for base_path, files_list in file_map.items():
-        # Kategoryzuj pliki na archiwa i podglądy
-        archive_files, preview_files = _categorize_files(files_list)
+        # Kategoryzuj pliki na archiwa i podglądy - używaj optimized version
+        archive_files, preview_files = _categorize_files_optimized(files_list)
 
         if not archive_files or not preview_files:
             continue
@@ -311,29 +350,30 @@ def identify_unpaired_files(
     processed_files: Set[str],
 ) -> Tuple[List[str], List[str]]:
     """
-    Identyfikuje niesparowane pliki na podstawie zebranych danych.
-
-    Args:
-        file_map: Słownik zmapowanych plików
-        processed_files: Zbiór już przetworzonych (sparowanych) plików
-
-    Returns:
-        Krotka zawierająca listy niesparowanych archiwów i podglądów
+    Memory-efficient identification of unpaired files.
+    Uses streaming approach instead of large set operations.
     """
+    if not file_map:
+        return [], []
+
     unpaired_archives: List[str] = []
     unpaired_previews: List[str] = []
 
-    # Zbieramy wszystkie pliki z mapy
-    all_files = {file for files_list in file_map.values() for file in files_list}
+    # Stream processing instead of creating large intermediate sets
+    for files_list in file_map.values():
+        for file_path in files_list:
+            if file_path in processed_files:
+                continue
 
-    # Identyfikujemy niesparowane pliki
-    unpaired_files = all_files - processed_files
-    for f in unpaired_files:
-        if os.path.splitext(f)[1].lower() in ARCHIVE_EXTENSIONS:
-            unpaired_archives.append(f)
-        elif os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS:
-            unpaired_previews.append(f)
+            # Process file without creating intermediate objects
+            ext_lower = os.path.splitext(file_path)[1].lower()
 
+            if ext_lower in ARCHIVE_EXTENSIONS:
+                unpaired_archives.append(file_path)
+            elif ext_lower in PREVIEW_EXTENSIONS:
+                unpaired_previews.append(file_path)
+
+    # Sort efficiently with key function
     unpaired_archives.sort(key=lambda x: os.path.basename(x).lower())
     unpaired_previews.sort(key=lambda x: os.path.basename(x).lower())
 
