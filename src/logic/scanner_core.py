@@ -5,9 +5,11 @@ Ten moduł zawiera funkcje do skanowania katalogów w poszukiwaniu plików
 oraz koordynowania procesu skanowania.
 """
 
+import gc
 import logging
 import os
 import time
+import uuid
 from collections import defaultdict
 from threading import RLock
 from typing import Callable, Dict, List, Optional, Tuple
@@ -32,6 +34,10 @@ logger = logging.getLogger(__name__)
 # Parametry cache z centralnego pliku konfiguracyjnego
 MAX_CACHE_ENTRIES = app_config.SCANNER_MAX_CACHE_ENTRIES
 MAX_CACHE_AGE_SECONDS = app_config.SCANNER_MAX_CACHE_AGE_SECONDS
+
+# Memory management configuration
+GC_INTERVAL_FILES = 1000  # Garbage collection every 1000 files
+MEMORY_MONITORING_ENABLED = True  # Enable memory usage monitoring
 
 # Foldery ignorowane podczas skanowania
 IGNORED_FOLDERS = {
@@ -108,6 +114,32 @@ class ThreadSafeProgressManager:
             self.report_progress(scaled_percent, message)
 
         return scaled_progress
+
+
+class ThreadSafeVisitedDirs:
+    """Thread-safe visited directories tracking."""
+
+    def __init__(self):
+        self._visited = set()
+        self._lock = RLock()
+
+    def add(self, directory: str) -> bool:
+        """Add directory and return True if it was already visited."""
+        with self._lock:
+            if directory in self._visited:
+                return True
+            self._visited.add(directory)
+            return False
+
+    def clear(self):
+        """Clear all visited directories."""
+        with self._lock:
+            self._visited.clear()
+
+    def size(self) -> int:
+        """Get number of visited directories."""
+        with self._lock:
+            return len(self._visited)
 
 
 class SpecialFoldersManager:
@@ -202,6 +234,231 @@ class ScanningInterrupted(Exception):
     pass
 
 
+def _check_interruption(
+    interrupt_check: Optional[Callable[[], bool]], context: str = ""
+):
+    """Thread-safe interruption check with context logging."""
+    if interrupt_check and interrupt_check():
+        logger.debug(f"Skanowanie przerwane: {context}")
+        raise ScanningInterrupted(f"Skanowanie przerwane: {context}")
+
+
+def _handle_file_entry(
+    entry,
+    normalized_current_dir: str,
+    file_map: Dict[str, List[str]],
+    total_files_found: int,
+    interrupt_check: Optional[Callable[[], bool]],
+    session_id: str,
+) -> int:
+    """Process single file entry and return updated file count."""
+    total_files_found += 1
+
+    # Check interruption every 50 files
+    if total_files_found % 50 == 0:
+        _check_interruption(interrupt_check, "przetwarzanie plików")
+
+    name = entry.name
+    base_name, ext = os.path.splitext(name)
+
+    # OPTYMALIZOWANY key generation
+    map_key = os.path.join(normalized_current_dir, base_name.lower())
+    full_file_path = os.path.join(normalized_current_dir, name)
+    file_map[map_key].append(full_file_path)
+
+    # Memory cleanup with monitoring
+    _perform_memory_cleanup(total_files_found, session_id)
+
+    return total_files_found
+
+
+def _process_directory_entries(
+    entries: List,
+    current_dir: str,
+    normalized_current_dir: str,
+    file_map: Dict[str, List[str]],
+    total_files_found: int,
+    interrupt_check: Optional[Callable[[], bool]],
+    session_id: str,
+) -> Tuple[int, bool]:
+    """Process directory entries and return (updated_file_count, has_relevant_subdirs)."""
+    relevant_files = []
+    has_relevant_subdirs = False
+
+    for entry in entries:
+        if entry.is_file():
+            _, ext = os.path.splitext(entry.name)
+            # OPTYMALIZACJA O(1) lookup zamiast O(n)
+            if ext.lower() in SUPPORTED_EXTENSIONS:
+                relevant_files.append(entry)
+        elif entry.is_dir() and not should_ignore_folder(entry.name):
+            has_relevant_subdirs = True
+
+    # Skip processing jeśli brak relevant files i subdirs
+    if not relevant_files and not has_relevant_subdirs:
+        logger.debug(f"[{session_id}] Pomijam folder bez relevant files: {current_dir}")
+        return total_files_found, has_relevant_subdirs
+
+    # Check interruption after filtering
+    _check_interruption(interrupt_check, "smart filtering")
+
+    # Process relevant files
+    for entry in relevant_files:
+        total_files_found = _handle_file_entry(
+            entry,
+            normalized_current_dir,
+            file_map,
+            total_files_found,
+            interrupt_check,
+            session_id,
+        )
+
+    return total_files_found, has_relevant_subdirs
+
+
+def _scan_subdirectories(
+    entries: List,
+    current_dir: str,
+    depth: int,
+    max_depth: int,
+    interrupt_check: Optional[Callable[[], bool]],
+    visited_dirs: ThreadSafeVisitedDirs,
+    file_map: Dict[str, List[str]],
+    total_files_found: int,
+    total_folders_scanned: int,
+    session_id: str,
+) -> Tuple[int, int]:
+    """Scan subdirectories recursively and return (updated_file_count, updated_folder_count)."""
+    subfolders_processed = 0
+
+    for entry in entries:
+        if entry.is_dir():
+            # Ignoruj ukryte foldery i foldery systemowe
+            if should_ignore_folder(entry.name):
+                logger.debug(f"[{session_id}] Pomijam ignorowany folder: {entry.name}")
+                continue
+
+            subfolders_processed += 1
+
+            # Check interruption every 20 subdirectories
+            if subfolders_processed % 20 == 0:
+                _check_interruption(
+                    interrupt_check, f"rekursywne skanowanie w {current_dir}"
+                )
+
+            # Normalny rekursywny skan (tylko gdy folder ma pliki)
+            new_files, new_folders = _walk_directory_streaming(
+                entry.path,
+                depth + 1,
+                max_depth,
+                interrupt_check,
+                visited_dirs,
+                file_map,
+                total_files_found,
+                total_folders_scanned,
+                session_id,
+            )
+            total_files_found = new_files
+            total_folders_scanned = new_folders
+
+    return total_files_found, total_folders_scanned
+
+
+def _walk_directory_streaming(
+    current_dir: str,
+    depth: int,
+    max_depth: int,
+    interrupt_check: Optional[Callable[[], bool]],
+    visited_dirs: ThreadSafeVisitedDirs,
+    file_map: Dict[str, List[str]],
+    total_files_found: int,
+    total_folders_scanned: int,
+    session_id: str,
+) -> Tuple[int, int]:
+    """Decomposed directory walking function."""
+    # Pre-compute normalized current directory (cache optimization)
+    normalized_current_dir = normalize_path(current_dir)
+
+    # Check interruption
+    _check_interruption(interrupt_check, "przed przetwarzaniem katalogu")
+
+    # Handle depth limit
+    if max_depth >= 0 and depth > max_depth:
+        return total_files_found, total_folders_scanned
+
+    # Check for symbolic link loops
+    if visited_dirs.add(normalized_current_dir):
+        logger.debug(
+            f"[{session_id}] Wykryto pętlę w katalogach: {normalized_current_dir}"
+        )
+        return total_files_found, total_folders_scanned
+
+    # Scan directory
+    try:
+        total_folders_scanned += 1
+        entries = list(os.scandir(current_dir))
+
+        # Process directory entries
+        total_files_found, has_relevant_subdirs = _process_directory_entries(
+            entries,
+            current_dir,
+            normalized_current_dir,
+            file_map,
+            total_files_found,
+            interrupt_check,
+            session_id,
+        )
+
+        # Scan subdirectories if needed
+        if has_relevant_subdirs:
+            total_files_found, total_folders_scanned = _scan_subdirectories(
+                entries,
+                current_dir,
+                depth,
+                max_depth,
+                interrupt_check,
+                visited_dirs,
+                file_map,
+                total_files_found,
+                total_folders_scanned,
+                session_id,
+            )
+        else:
+            logger.debug(
+                f"[{session_id}] Pomijam podfoldery: {current_dir} (brak plików)"
+            )
+
+        logger.debug(
+            f"[{session_id}] Skanowanie: {current_dir} -> {total_files_found} plików"
+        )
+
+    except PermissionError as e:
+        logger.debug(f"[{session_id}] Brak uprawnień do katalogu {current_dir}: {e}")
+        # Continue scanning other directories
+    except FileNotFoundError as e:
+        logger.debug(
+            f"[{session_id}] Katalog usunięty podczas skanowania {current_dir}: {e}"
+        )
+        # Directory was deleted during scanning - continue
+    except OSError as e:
+        logger.error(f"[{session_id}] Błąd I/O podczas dostępu do {current_dir}: {e}")
+        # Try to continue with other directories
+    except MemoryError as e:
+        logger.critical(
+            f"[{session_id}] Brak pamięci podczas skanowania {current_dir}: {e}"
+        )
+        # Critical error - should probably stop scanning
+        raise
+    except ScanningInterrupted:
+        # Przepuszczamy wyjątek przerwania wyżej
+        raise
+    except Exception as e:
+        logger.error(f"[{session_id}] Nieoczekiwany błąd w katalogu {current_dir}: {e}")
+        # Log unexpected errors but continue scanning
+
+    return total_files_found, total_folders_scanned
+
+
 def collect_files_streaming(
     directory: str,
     max_depth: int = -1,
@@ -228,6 +485,8 @@ def collect_files_streaming(
     Raises:
         ScanningInterrupted: Jeśli skanowanie zostało przerwane
     """
+    # Generate session correlation ID
+    session_id = uuid.uuid4().hex[:8]
     normalized_dir = normalize_path(directory)
 
     # THREAD-SAFE progress manager
@@ -237,7 +496,9 @@ def collect_files_streaming(
     if not force_refresh:
         cached_file_map = cache.get_file_map(normalized_dir)
         if cached_file_map is not None:
-            logger.debug(f"CACHE HIT: używam buforowanych plików dla {normalized_dir}")
+            logger.debug(
+                f"[{session_id}] CACHE HIT: używam buforowanych plików dla {normalized_dir}"
+            )
             progress_manager.report_progress(
                 100, f"Używam cache dla {normalized_dir}", force=True
             )
@@ -245,12 +506,16 @@ def collect_files_streaming(
 
     # Jeśli katalog nie istnieje lub nie jest katalogiem, zwróć pusty słownik
     if not path_exists(normalized_dir) or not os.path.isdir(normalized_dir):
-        logger.warning(f"Katalog {normalized_dir} nie istnieje lub nie jest katalogiem")
+        logger.warning(
+            f"[{session_id}] Katalog {normalized_dir} nie istnieje lub nie jest katalogiem"
+        )
         if progress_callback:
             progress_callback(100, f"Katalog {normalized_dir} nie istnieje")
         return {}
 
-    logger.info(f"Rozpoczęto streaming zbieranie plików z katalogu: {normalized_dir}")
+    logger.info(
+        f"[{session_id}] Rozpoczęto streaming zbieranie plików z katalogu: {normalized_dir}"
+    )
     if progress_callback:
         progress_callback(0, f"Rozpoczynam streaming skanowanie: {normalized_dir}")
 
@@ -263,174 +528,53 @@ def collect_files_streaming(
     last_progress_time = time.time()
     PROGRESS_THROTTLE_INTERVAL = 0.1  # Minimum 100ms between progress updates
 
-    # Zestaw odwiedzonych katalogów (do obsługi pętli symbolicznych)
-    visited_dirs = set()
+    # Thread-safe visited directories tracking
+    visited_dirs = ThreadSafeVisitedDirs()
 
-    def _walk_directory_streaming(current_dir: str, depth: int = 0):
-        nonlocal total_folders_scanned, total_files_found, last_progress_time
-
-        # Pre-compute normalized current directory (cache optimization)
-        normalized_current_dir = normalize_path(current_dir)
-
-        # Throttled progress reporting to prevent UI freeze
+    def _report_progress_with_throttling():
+        """Thread-safe progress reporting with throttling."""
+        nonlocal last_progress_time
         current_time = time.time()
         if (
             progress_callback
             and (current_time - last_progress_time) >= PROGRESS_THROTTLE_INTERVAL
         ):
-            progress = min(95, total_folders_scanned * 2)  # Aproksymacja progressu
+            # Improved progress calculation based on actual files found
+            progress = min(
+                95, int((total_files_found / max(1, total_folders_scanned)) * 10)
+            )
             progress_callback(
                 progress,
-                f"Skanowanie: {os.path.basename(current_dir)} "
+                f"Skanowanie: {os.path.basename(normalized_dir)} "
                 f"({total_files_found} plików, {total_folders_scanned} folderów)",
             )
             last_progress_time = current_time
 
-        # Sprawdzenie czy należy przerwać skanowanie
-        if interrupt_check and interrupt_check():
-            logger.warning("Skanowanie przerwane przez użytkownika")
-            raise ScanningInterrupted("Skanowanie przerwane przez użytkownika")
-
-        # Sprawdzanie co każde 50 plików dla responsywności
-        if total_files_found % 50 == 0 and interrupt_check and interrupt_check():
-            logger.warning(
-                "Skanowanie przerwane przez użytkownika podczas " "przetwarzania plików"
-            )
-            raise ScanningInterrupted("Skanowanie przerwane przez użytkownika")
-
-        # Obsługa limitu głębokości
-        if max_depth >= 0 and depth > max_depth:
-            return
-
-        # Zabezpieczenie przed zapętleniem (symlinki)
-        if normalized_current_dir in visited_dirs:
-            logger.warning(f"Wykryto pętlę w katalogach: {normalized_current_dir}")
-            return
-        visited_dirs.add(normalized_current_dir)
-
-        # Skanowanie folderu
-        try:
-            total_folders_scanned += 1
-            entries = list(os.scandir(current_dir))
-
-            # SMART PRE-FILTERING - sprawdź czy folder ma relevant files
-            relevant_files = []
-            has_relevant_subdirs = False
-
-            for entry in entries:
-                if entry.is_file():
-                    _, ext = os.path.splitext(entry.name)
-                    # OPTYMALIZACJA O(1) lookup zamiast O(n)
-                    if ext.lower() in SUPPORTED_EXTENSIONS:
-                        relevant_files.append(entry)
-                elif entry.is_dir() and not should_ignore_folder(entry.name):
-                    has_relevant_subdirs = True
-
-            # Skip processing jeśli brak relevant files i subdirs
-            if not relevant_files and not has_relevant_subdirs:
-                logger.debug(f"Pomijam folder bez relevant files: {current_dir}")
-                return
-
-            # Sprawdzenie przerwania po smart filtering
-            if interrupt_check and interrupt_check():
-                logger.warning("Skanowanie przerwane podczas smart filtering")
-                raise ScanningInterrupted(
-                    "Skanowanie przerwane podczas smart filtering"
-                )
-
-            # Przetwarzamy TYLKO relevant files
-            files_processed_in_folder = 0
-            for entry in relevant_files:
-                total_files_found += 1
-                files_processed_in_folder += 1
-
-                # ULEPSZONE batch processing - co 50 plików zamiast 100
-                if (
-                    files_processed_in_folder % 50 == 0
-                    and interrupt_check
-                    and interrupt_check()
-                ):
-                    msg = f"Skanowanie przerwane podczas przetwarzania plików w {current_dir}"
-                    logger.warning(msg)
-                    raise ScanningInterrupted(msg)
-
-                name = entry.name
-                base_name, ext = os.path.splitext(name)
-
-                # OPTYMALIZOWANY key generation
-                map_key = os.path.join(normalized_current_dir, base_name.lower())
-                full_file_path = os.path.join(normalized_current_dir, name)
-                file_map[map_key].append(full_file_path)
-
-                # MEMORY CLEANUP co 1000 plików
-                if total_files_found % 1000 == 0:
-                    import gc
-
-                    gc.collect()
-
-            should_scan_subfolders = has_relevant_subdirs
-
-            logger.debug(
-                f"Skanowanie: {current_dir} -> {files_processed_in_folder} plików"
-            )
-
-            if should_scan_subfolders:
-                subfolders_processed = 0
-                for entry in entries:
-                    if entry.is_dir():
-                        # Ignoruj ukryte foldery i foldery systemowe
-                        if should_ignore_folder(entry.name):
-                            logger.debug(f"Pomijam ignorowany folder: {entry.name}")
-                            continue
-
-                        subfolders_processed += 1
-
-                        # Sprawdzenie co 20 podfolderów (batch processing)
-                        if (
-                            subfolders_processed % 20 == 0
-                            and interrupt_check
-                            and interrupt_check()
-                        ):
-                            msg = (
-                                "Skanowanie przerwane podczas rekursywnego "
-                                f"skanowania w {current_dir}"
-                            )
-                            logger.warning(msg)
-                            raise ScanningInterrupted(msg)
-
-                        # Normalny rekursywny skan (tylko gdy folder ma pliki)
-                        _walk_directory_streaming(entry.path, depth + 1)
-            else:
-                logger.debug(f"Pomijam podfoldery: {current_dir} (brak plików)")
-
-        except PermissionError as e:
-            logger.warning(f"Brak uprawnień do katalogu {current_dir}: {e}")
-            # Continue scanning other directories
-        except FileNotFoundError as e:
-            logger.warning(f"Katalog usunięty podczas skanowania {current_dir}: {e}")
-            # Directory was deleted during scanning - continue
-        except OSError as e:
-            logger.error(f"Błąd I/O podczas dostępu do {current_dir}: {e}")
-            # Try to continue with other directories
-        except MemoryError as e:
-            logger.critical(f"Brak pamięci podczas skanowania {current_dir}: {e}")
-            # Critical error - should probably stop scanning
-            raise
-        except ScanningInterrupted:
-            # Przepuszczamy wyjątek przerwania wyżej
-            raise
-        except Exception as e:
-            logger.error(f"Nieoczekiwany błąd w katalogu {current_dir}: {e}")
-            # Log unexpected errors but continue scanning
-
     try:
-        _walk_directory_streaming(normalized_dir)
+        # Use decomposed function with proper parameters
+        total_files_found, total_folders_scanned = _walk_directory_streaming(
+            normalized_dir,
+            0,
+            max_depth,
+            interrupt_check,
+            visited_dirs,
+            file_map,
+            total_files_found,
+            total_folders_scanned,
+            session_id,
+        )
+
+        # Report progress during scanning
+        _report_progress_with_throttling()
+
     except ScanningInterrupted:
         raise
     finally:
         # Cleanup to prevent memory leaks on repeated scans
         visited_dirs.clear()
-        logger.debug(f"Cleaned up visited_dirs cache ({len(visited_dirs)} entries)")
+        logger.debug(
+            f"[{session_id}] Cleaned up visited_dirs cache ({visited_dirs.size()} entries)"
+        )
 
     elapsed_time = time.time() - start_time
 
@@ -439,7 +583,7 @@ def collect_files_streaming(
     folders_per_second = total_folders_scanned / elapsed_time if elapsed_time > 0 else 0
 
     logger.info(
-        f"SCAN_COMPLETED: {normalized_dir} | "
+        f"[{session_id}] SCAN_COMPLETED: {normalized_dir} | "
         f"files={total_files_found} | folders={total_folders_scanned} | "
         f"time={elapsed_time:.2f}s | "
         f"rate={files_per_second:.1f}files/s, {folders_per_second:.1f}folders/s"
@@ -448,7 +592,7 @@ def collect_files_streaming(
     # Performance warning for slow scans
     if files_per_second < 100 and total_files_found > 500:
         logger.warning(
-            f"SLOW_SCAN_DETECTED: {normalized_dir} | "
+            f"[{session_id}] SLOW_SCAN_DETECTED: {normalized_dir} | "
             f"rate={files_per_second:.1f}files/s (expected >100files/s for large folders)"
         )
 
@@ -598,3 +742,30 @@ def get_scan_statistics() -> Dict[str, float]:
 # DEAD CODE REMOVED zgodnie z PATCH 6
 # Note: find_special_folders() function has been removed as special folders
 # are now handled through metadata system. Use _handle_special_folders_simple() instead.
+
+
+def _get_memory_usage() -> int:
+    """Get current memory usage in MB."""
+    try:
+        import psutil
+
+        process = psutil.Process()
+        return process.memory_info().rss // 1024 // 1024  # Convert to MB
+    except ImportError:
+        return 0  # psutil not available
+
+
+def _perform_memory_cleanup(total_files_found: int, session_id: str):
+    """Perform memory cleanup with monitoring."""
+    if total_files_found % GC_INTERVAL_FILES == 0:
+        initial_memory = _get_memory_usage()
+        gc.collect()
+        final_memory = _get_memory_usage()
+
+        if MEMORY_MONITORING_ENABLED and initial_memory > 0:
+            memory_freed = initial_memory - final_memory
+            logger.debug(
+                f"[{session_id}] Memory cleanup: {initial_memory}MB -> "
+                f"{final_memory}MB (freed: {memory_freed}MB) "
+                f"at {total_files_found} files"
+            )

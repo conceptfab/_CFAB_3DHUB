@@ -299,6 +299,15 @@ src/ui/directory_tree/
 - **Pliki wynikowe:**
   - `AUDYT/corrections/scanner_core_correction.md`
   - `AUDYT/patches/scanner_core_patch_code.md`
+- **Podsumowanie refaktoryzacji 2025-01-28:**
+  - Dekompozycja gigantycznej funkcji \_walk_directory_streaming na mniejsze, focused functions (\_process_directory_entries, \_handle_file_entry, \_scan_subdirectories, \_check_interruption)
+  - Wprowadzenie ThreadSafeVisitedDirs z RLock dla thread-safe tracking odwiedzonych katalogów
+  - Enhanced memory management z configurable GC intervals (GC_INTERVAL_FILES=1000), proper cleanup w finally blocks
+  - Session correlation IDs (UUID) dla wszystkich operacji skanowania - łatwe tracking w logach
+  - Standaryzacja logowania: DEBUG dla niekrytycznych, ERROR tylko dla wyjątków, performance monitoring
+  - Memory monitoring z psutil (opcjonalne) - logowanie zwolnionej pamięci co 1000 plików
+  - 100% kompatybilność API (wszystkie publiczne funkcje zachowane)
+  - Testy importu i uruchomienia aplikacji OK
 
 ### 📄 FILE_TILE_WIDGET.PY
 
