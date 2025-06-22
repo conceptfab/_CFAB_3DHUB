@@ -1,5 +1,7 @@
 # 📋 AUDYT LOGIKI BIZNESOWEJ CFAB_3DHUB
 
+> **WAŻNE! Wszystkie pliki wynikowe audytu (np. `business_logic_map.md`, `corrections.md`, `patch_code.md`, pliki z analizami i poprawkami) MUSZĄ być zapisywane wyłącznie w katalogu `AUDYT`. Tylko tam należy ich szukać!**
+
 ## 🎯 CEL
 
 Kompleksowa analiza, optymalizacja i uproszczenie logiki biznesowej aplikacji z naciskiem na wydajność procesów, stabilność operacji i eliminację over-engineering w warstwie biznesowej.
