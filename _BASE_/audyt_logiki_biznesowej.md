@@ -301,6 +301,57 @@ Przeanalizuj **WSZYSTKIE** pliki logiki biznesowej pod kątem:
     - Skopiuj `_BASE_/patch_code_template.md` do `AUDYT/patches/[nazwa_pliku]_patch_code.md`.
     - Wypełnij plik patch fragmentami kodu z optymalizacjami logiki biznesowej.
 
+### 🚫 ZASADA INDYWIDUALNEGO GENEROWANIA DOKUMENTÓW
+
+**GRUPOWANIE POPRAWEK DLA WIELU PLIKÓW JEST NIEDOPUSZCZALNE!**
+
+**OBOWIĄZKOWE ZASADY:**
+
+1. **Jeden plik = jeden correction** - Każdy plik `.py` ma SWÓJ plik `[nazwa]_correction.md`
+2. **Jeden plik = jeden patch** - Każdy plik `.py` ma SWÓJ plik `[nazwa]_patch_code.md`
+3. **Brak grupowania** - NIGDY nie łącz analiz wielu plików w jeden dokument
+4. **Indywidualne nazwy** - Każdy dokument ma nazwę bazującą na nazwie pliku źródłowego
+
+**PRZYKŁADY POPRAWNEJ STRUKTURY:**
+
+```
+AUDYT/corrections/
+├── scanner_core_correction.md          ✅ Jeden plik
+├── file_pairing_correction.md          ✅ Jeden plik
+├── metadata_manager_correction.md      ✅ Jeden plik
+└── gallery_tab_correction.md           ✅ Jeden plik
+
+AUDYT/patches/
+├── scanner_core_patch_code.md          ✅ Jeden plik
+├── file_pairing_patch_code.md          ✅ Jeden plik
+├── metadata_manager_patch_code.md      ✅ Jeden plik
+└── gallery_tab_patch_code.md           ✅ Jeden plik
+```
+
+**PRZYKŁADY NIEDOPUSZCZALNE:**
+
+```
+❌ AUDYT/corrections/business_logic_correction.md    # Grupowanie wielu plików
+❌ AUDYT/patches/core_optimizations_patch.md         # Grupowanie wielu plików
+❌ AUDYT/corrections/scanner_and_pairing_correction.md # Łączenie 2 plików
+```
+
+**KONSEKWENCJE NARUSZENIA:**
+
+- ❌ Dokument zostanie odrzucony
+- ❌ Analiza będzie musiała być powtórzona
+- ❌ Postęp audytu zostanie wstrzymany
+- ❌ Model będzie musiał podzielić dokument na indywidualne pliki
+
+**WERYFIKACJA ZASADY:**
+
+Przed utworzeniem dokumentu sprawdź:
+
+- ✅ Czy dokument dotyczy TYLKO jednego pliku `.py`?
+- ✅ Czy nazwa dokumentu zawiera nazwę tego pliku?
+- ✅ Czy nie ma próby grupowania wielu plików?
+- ✅ Czy każdy plik ma SWÓJ correction i SWÓJ patch?
+
 ### 📈 OBOWIĄZKOWA KONTROLA POSTĘPU PO KAŻDYM ETAPIE
 
 **MODEL MUSI SPRAWDZIĆ I PODAĆ:**
@@ -319,6 +370,51 @@ Przeanalizuj **WSZYSTKIE** pliki logiki biznesowej pod kątem:
 ⏳ Pozostałe etapy: 12
 💼 Business impact: Skanowanie 30% szybsze
 ```
+
+### ✅ ZAZNACZANIE UKOŃCZONYCH ANALIZ W BUSINESS_LOGIC_MAP.MD
+
+**PO KAŻDEJ UKOŃCZONEJ ANALIZIE PLIKU LOGIKI BIZNESOWEJ:**
+
+1. **Otwórz plik** `AUDYT/business_logic_map.md`
+2. **Znajdź sekcję** z analizowanym plikiem
+3. **Dodaj status ukończenia** w formacie:
+
+```markdown
+### 📄 [NAZWA_PLIKU].PY
+
+- **Status:** ✅ UKOŃCZONA ANALIZA
+- **Data ukończenia:** [DATA]
+- **Business impact:** [KRÓTKI OPIS WPŁYWU]
+- **Pliki wynikowe:**
+  - `AUDYT/corrections/[nazwa_pliku]_correction.md`
+  - `AUDYT/patches/[nazwa_pliku]_patch_code.md`
+```
+
+**PRZYKŁAD ZAZNACZENIA:**
+
+```markdown
+### 📄 scanner_core.py
+
+- **Status:** ✅ UKOŃCZONA ANALIZA
+- **Data ukończenia:** 2025-01-27
+- **Business impact:** Skanowanie 30% szybsze, eliminacja memory leaks
+- **Pliki wynikowe:**
+  - `AUDYT/corrections/scanner_core_correction.md`
+  - `AUDYT/patches/scanner_core_patch_code.md`
+```
+
+**OBOWIĄZKOWE ZAZNACZENIA:**
+
+- ✅ **Status ukończenia** - zawsze "✅ UKOŃCZONA ANALIZA"
+- ✅ **Data ukończenia** - aktualna data w formacie YYYY-MM-DD
+- ✅ **Business impact** - konkretny wpływ na procesy biznesowe
+- ✅ **Pliki wynikowe** - ścieżki do utworzonych plików correction i patch
+
+**KONTROLA SPÓJNOŚCI:**
+
+- Sprawdź czy wszystkie ukończone pliki są zaznaczone w mapie
+- Upewnij się że ścieżki do plików wynikowych są prawidłowe
+- Zweryfikuj że business impact jest opisany konkretnie
 
 ### 🚨 WAŻNE: ZASADY DOKUMENTACJI I COMMITÓW
 
