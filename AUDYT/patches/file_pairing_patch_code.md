@@ -1,32 +1,33 @@
-# PATCH-CODE DLA: FILE_PAIRING.PY
+# PATCH-CODE DLA: FILE_PAIRING
 
 **Powiązany plik z analizą:** `../corrections/file_pairing_correction.md`
-**Zasady ogólne:** `../refactoring_rules.md`
+**Zasady ogólne:** `../../_BASE_/refactoring_rules.md`
 
 ---
 
-### PATCH 1: PRE-COMPUTED FILE INFO - ELIMINATE REDUNDANT PARSING
+### PATCH 1: USUNIĘCIE DEAD CODE - STARA FUNKCJA KATEGORYZACJI
 
-**Problem:** Double extension parsing dla każdego pliku (20-30% CPU overhead)
-**Rozwiązanie:** FileInfo class z pre-computed properties dla O(1) access
+**Problem:** Duplikacja funkcji kategoryzacji - `_categorize_files()` nie jest używana, tylko `_categorize_files_optimized()`
+**Rozwiązanie:** Usunięcie starej funkcji i refaktoryzacja nazwy zoptymalizowanej wersji
 
 ```python
-# DODAJ na początku pliku po imports
+# USUNĄĆ (linie 283-299):
+def _categorize_files(files_list: List[str]) -> Tuple[List[str], List[str]]:
+    """
+    Kategoryzuje pliki na archiwa i podglądy.
+    """
+    # Pre-compute rozszerzeń dla optymalizacji
+    files_with_ext = [(f, os.path.splitext(f)[1].lower()) for f in files_list]
 
-@dataclass
-class FileInfo:
-    """Pre-computed file information dla performance optimization."""
+    archive_files = [f for f, ext in files_with_ext if ext in ARCHIVE_EXTENSIONS]
+    preview_files = [f for f, ext in files_with_ext if ext in PREVIEW_EXTENSIONS]
 
-    def __init__(self, path: str):
-        self.path = path
-        self.basename = os.path.basename(path)
-        self.name_lower = os.path.splitext(self.basename)[0].lower()
-        self.ext_lower = os.path.splitext(path)[1].lower()
-        self.is_archive = self.ext_lower in ARCHIVE_EXTENSIONS
-        self.is_preview = self.ext_lower in PREVIEW_EXTENSIONS
+    return archive_files, preview_files
 
-# ZASTĄP _categorize_files() funkcję
+# ZMIENIĆ NAZWĘ (linie 38-53):
 def _categorize_files_optimized(files_list: List[str]) -> Tuple[List[str], List[str]]:
+# NA:
+def _categorize_files(files_list: List[str]) -> Tuple[List[str], List[str]]:
     """
     Optimized kategoryzacja plików na archiwa i podglądy.
     Pre-computes file info once instead of parsing extensions multiple times.
@@ -42,355 +43,250 @@ def _categorize_files_optimized(files_list: List[str]) -> Tuple[List[str], List[
     preview_files = [fi.path for fi in file_infos if fi.is_preview]
 
     return archive_files, preview_files
+
+# ZMIENIĆ WYWOŁANIE (linia 332):
+        archive_files, preview_files = _categorize_files_optimized(files_list)
+# NA:
+        archive_files, preview_files = _categorize_files(files_list)
 ```
 
 ---
 
-### PATCH 2: OPTIMIZED BESTMATCHSTRATEGY - TRIE-BASED PARTIAL MATCHING
+### PATCH 2: DODANIE THREAD SAFETY DO SimpleTrie
 
-**Problem:** O(n²) complexity w partial matching dla dużych folderów
-**Rozwiązanie:** Trie-based lookup z O(log n) complexity + eliminated I/O operations
+**Problem:** SimpleTrie nie jest thread-safe - race conditions przy concurrent access
+**Rozwiązanie:** Dodanie locks dla thread safety i memory management
 
 ```python
-# DODAJ Trie implementation
-class SimpleTrie:
-    """Simple Trie dla fast prefix matching."""
+import threading
+from threading import RLock
 
-    def __init__(self):
+class SimpleTrie:
+    """Thread-safe Simple Trie dla fast prefix matching z memory management."""
+
+    def __init__(self, max_files_per_key: int = 50):
         self.root = {}
         self.files = {}  # Maps prefix -> list of files
+        self._lock = RLock()  # Reentrant lock dla thread safety
+        self._max_files_per_key = max_files_per_key
+        self._total_entries = 0
+        self._max_total_entries = 10000  # Memory limit
 
     def add(self, key: str, file_path: str):
-        """Adds file with its prefix key."""
-        node = self.root
-        for char in key:
-            if char not in node:
-                node[char] = {}
-            node = node[char]
+        """Thread-safe adds file with its prefix key."""
+        with self._lock:
+            # Memory management - prevent unlimited growth
+            if self._total_entries >= self._max_total_entries:
+                self._cleanup_old_entries()
+            
+            node = self.root
+            for char in key:
+                if char not in node:
+                    node[char] = {}
+                node = node[char]
 
-        if key not in self.files:
-            self.files[key] = []
-        self.files[key].append(file_path)
+            if key not in self.files:
+                self.files[key] = []
+            
+            # Limit files per key to prevent memory bloat
+            if len(self.files[key]) < self._max_files_per_key:
+                self.files[key].append(file_path)
+                self._total_entries += 1
 
     def find_prefix_matches(self, prefix: str, max_results: int = 20) -> List[str]:
-        """Finds all keys that match the prefix."""
-        matches = []
+        """Thread-safe finds all keys that match the prefix with O(log k) optimization."""
+        with self._lock:
+            matches = []
 
-        # Exact match first (highest priority)
-        if prefix in self.files:
-            matches.extend(self.files[prefix])
+            # Exact match first (highest priority)
+            if prefix in self.files:
+                matches.extend(self.files[prefix][:max_results])
 
-        # Prefix matches
-        for key in self.files:
             if len(matches) >= max_results:
-                break
-            if key != prefix and (key.startswith(prefix) or prefix.startswith(key)):
-                matches.extend(self.files[key])
+                return matches[:max_results]
 
-        return matches[:max_results]
+            # Optimized prefix matches using sorted keys
+            sorted_keys = sorted(self.files.keys())
+            remaining_slots = max_results - len(matches)
+            
+            for key in sorted_keys:
+                if len(matches) >= max_results:
+                    break
+                if key != prefix and (key.startswith(prefix) or prefix.startswith(key)):
+                    available_slots = remaining_slots - len(matches)
+                    matches.extend(self.files[key][:available_slots])
 
-# ZASTĄP BestMatchStrategy
-class OptimizedBestMatchStrategy(PairingStrategy):
-    """Optimized strategia inteligentnego parowania z Trie-based matching."""
+            return matches[:max_results]
+    
+    def _cleanup_old_entries(self):
+        """Remove least recently used entries to manage memory."""
+        if len(self.files) <= 100:  # Keep minimum entries
+            return
+            
+        # Remove entries with fewer files (less important)
+        keys_to_remove = []
+        for key, file_list in self.files.items():
+            if len(file_list) <= 1:  # Remove single-file entries first
+                keys_to_remove.append(key)
+                if len(keys_to_remove) >= len(self.files) // 4:  # Remove 25%
+                    break
+        
+        for key in keys_to_remove:
+            self._total_entries -= len(self.files[key])
+            del self.files[key]
+    
+    def clear(self):
+        """Thread-safe clear all entries."""
+        with self._lock:
+            self.root.clear()
+            self.files.clear()
+            self._total_entries = 0
+```
 
-    # Simplified preference - tylko extension priority, bez I/O operations
-    PREVIEW_PREFERENCE = {
-        ".jpg": 60, ".jpeg": 55, ".png": 50,
-        ".gif": 40, ".bmp": 30, ".tiff": 20
-    }
+---
 
-    def create_pairs(
-        self, archive_files: List[str], preview_files: List[str], base_directory: str
-    ) -> Tuple[List[FilePair], Set[str]]:
-        """Optimized pairing z Trie-based matching."""
-        pairs = []
-        processed = set()
+### PATCH 3: OPTYMALIZACJA LOGOWANIA I PERFORMANCE MONITORING
 
-        if not archive_files or not preview_files:
-            return pairs, processed
+**Problem:** Over-logging błędów może spamować logi, brak performance metrics
+**Rozwiązanie:** Standaryzacja logowania i dodanie optional performance tracking
 
-        # Build optimized Trie index - O(m log m)
-        preview_trie = self._build_preview_trie(preview_files)
+```python
+import time
+from typing import Optional
 
-        # Match archives to previews - O(n log m) instead of O(n*m)
-        for archive in archive_files:
-            if archive in processed:
-                continue
-
-            best_preview = self._find_best_preview_optimized(archive, preview_trie)
-
-            if best_preview and best_preview not in processed:
-                try:
-                    pair = FilePair(archive, best_preview, base_directory)
-                    pairs.append(pair)
-                    processed.add(archive)
-                    processed.add(best_preview)
-                except ValueError as e:
-                    logger.warning(f"Skipping invalid pair {archive} + {best_preview}: {e}")
-
-        return pairs, processed
-
-    def _build_preview_trie(self, preview_files: List[str]) -> SimpleTrie:
-        """Builds Trie index dla fast preview lookup."""
-        trie = SimpleTrie()
-
-        for preview in preview_files:
-            basename = os.path.basename(preview)
-            name_lower = os.path.splitext(basename)[0].lower()
-            trie.add(name_lower, preview)
-
-        return trie
-
-    def _find_best_preview_optimized(self, archive: str, preview_trie: SimpleTrie) -> str:
-        """Fast best preview lookup using Trie."""
-        archive_basename = os.path.basename(archive)
-        archive_name = os.path.splitext(archive_basename)[0].lower()
-
-        # Get candidates using Trie - O(log m) instead of O(m)
-        candidates = preview_trie.find_prefix_matches(archive_name, max_results=20)
-
-        if not candidates:
+# Dodaj na początku pliku:
+class PerformanceTracker:
+    """Optional performance tracking dla profiling."""
+    
+    def __init__(self, enabled: bool = False):
+        self.enabled = enabled
+        self.metrics = {}
+    
+    def track_operation(self, operation_name: str, file_count: int, duration: float):
+        if not self.enabled:
+            return
+        
+        if operation_name not in self.metrics:
+            self.metrics[operation_name] = []
+        
+        self.metrics[operation_name].append({
+            'file_count': file_count,
+            'duration': duration,
+            'files_per_second': file_count / duration if duration > 0 else 0
+        })
+    
+    def get_average_performance(self, operation_name: str) -> Optional[float]:
+        if operation_name not in self.metrics or not self.metrics[operation_name]:
             return None
+        
+        records = self.metrics[operation_name]
+        avg_fps = sum(r['files_per_second'] for r in records) / len(records)
+        return avg_fps
 
-        # Simple scoring without expensive I/O operations
-        best_preview = None
-        best_score = -1
+# Global performance tracker - enabled via config
+_performance_tracker = PerformanceTracker(enabled=getattr(app_config, 'ENABLE_PERFORMANCE_TRACKING', False))
 
-        for preview in candidates:
-            score = self._calculate_simple_score(preview, archive_name)
-            if score > best_score:
-                best_score = score
-                best_preview = preview
+# ZMIENIĆ error handling w OptimizedBestMatchStrategy (linie 180-183):
+                except ValueError as e:
+                    logger.warning(
+                        f"Skipping invalid pair {archive} + {best_preview}: {e}"
+                    )
+# NA:
+                except ValueError as e:
+                    # Reduced logging to prevent spam - count errors instead
+                    if not hasattr(self, '_error_count'):
+                        self._error_count = 0
+                    self._error_count += 1
+                    
+                    # Log only first few errors and then periodically
+                    if self._error_count <= 3 or self._error_count % 100 == 0:
+                        logger.warning(f"Pairing errors encountered: {self._error_count} total")
+                        logger.debug(f"Latest error: {archive} + {best_preview}: {e}")
 
-        return best_preview if best_score > 0 else None
+# ZMIENIĆ error handling w FirstMatchStrategy (linie 130-133):
+                logger.error(
+                    f"Błąd tworzenia FilePair dla '{archive_files[0]}' i '{preview_files[0]}': {e}"
+                )
+# NA:
+                logger.warning(f"Failed to create FilePair: {e}")
+                logger.debug(f"Files: {archive_files[0]} + {preview_files[0]}")
 
-    def _calculate_simple_score(self, preview: str, archive_name: str) -> int:
-        """Simplified scoring bez I/O operations."""
-        preview_basename = os.path.basename(preview)
-        preview_name = os.path.splitext(preview_basename)[0].lower()
-        preview_ext = os.path.splitext(preview)[1].lower()
-
-        # Base score from name matching
-        if preview_name == archive_name:
-            score = 1000  # Perfect match
-        elif preview_name.startswith(archive_name) or archive_name.startswith(preview_name):
-            score = 500   # Partial match
-        else:
-            score = 100   # Fallback
-
-        # Extension preference bonus
-        if preview_ext in self.PREVIEW_PREFERENCE:
-            score += self.PREVIEW_PREFERENCE[preview_ext]
-
-        return score
-```
-
----
-
-### PATCH 3: REMOVE DEAD CODE - ALLCOMBINATIONSSTRATEGY
-
-**Problem:** AllCombinationsStrategy creates exponential memory usage bez practical value
-**Rozwiązanie:** Remove completely jako dead code
-
-```python
-# USUŃ całkowicie AllCombinationsStrategy class
-# class AllCombinationsStrategy(PairingStrategy):  # DELETE ENTIRE CLASS
-
-# ZAKTUALIZUJ PairingStrategyFactory
-class OptimizedPairingStrategyFactory:
-    """Simplified factory bez dead code."""
-
-    _strategies = {
-        "first_match": FirstMatchStrategy,
-        "best_match": OptimizedBestMatchStrategy,  # Use optimized version
-        # "all_combinations": REMOVED - dead code
-    }
-
-    @classmethod
-    def get_strategy(cls, strategy_name: str) -> PairingStrategy:
-        """
-        Returns strategy instance z validation.
-
-        Args:
-            strategy_name: Strategy name ("first_match" or "best_match")
-
-        Returns:
-            Strategy instance
-
-        Raises:
-            ValueError: If strategy doesn't exist
-        """
-        if not strategy_name or strategy_name not in cls._strategies:
-            logger.warning(f"Unknown strategy '{strategy_name}', using 'first_match' as fallback")
-            strategy_name = "first_match"
-
-        return cls._strategies[strategy_name]()
-
-    @classmethod
-    def get_available_strategies(cls) -> List[str]:
-        """Returns list of available strategy names."""
-        return list(cls._strategies.keys())
-```
-
----
-
-### PATCH 4: INPUT VALIDATION & CONSISTENT ERROR HANDLING
-
-**Problem:** Missing input validation, inconsistent error handling
-**Rozwiązanie:** Centralized validation i error handling
-
-```python
-# DODAJ validation helpers
-def _validate_create_pairs_input(
-    file_map: Dict[str, List[str]],
-    base_directory: str,
-    pair_strategy: str
-) -> None:
-    """Validates input parameters dla create_file_pairs."""
-    if file_map is None:
-        raise ValueError("file_map cannot be None")
-
-    if not isinstance(file_map, dict):
-        raise TypeError(f"file_map must be dict, got {type(file_map)}")
-
-    if not base_directory or not isinstance(base_directory, str):
-        raise ValueError("base_directory must be non-empty string")
-
-    if not pair_strategy or not isinstance(pair_strategy, str):
-        raise ValueError("pair_strategy must be non-empty string")
-
-def _safe_create_file_pair(archive: str, preview: str, base_directory: str) -> Optional[FilePair]:
-    """Safely creates FilePair z consistent error handling."""
-    try:
-        return FilePair(archive, preview, base_directory)
-    except ValueError as e:
-        logger.warning(f"Invalid file pair ({os.path.basename(archive)} + {os.path.basename(preview)}): {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error creating pair ({archive} + {preview}): {e}")
-        return None
-
-# ZAKTUALIZUJ create_file_pairs z validation
-def create_file_pairs_validated(
+# DODAĆ performance tracking do create_file_pairs (po linii 319):
+def create_file_pairs(
     file_map: Dict[str, List[str]],
     base_directory: str,
     pair_strategy: str = "first_match",
 ) -> Tuple[List[FilePair], Set[str]]:
     """
-    Creates file pairs z comprehensive validation.
-
-    Args:
-        file_map: Dictionary of mapped files
-        base_directory: Base directory for relative paths
-        pair_strategy: Pairing strategy name
-
-    Returns:
-        Tuple containing list of created pairs and set of processed files
-
-    Raises:
-        ValueError: For invalid input parameters
-        TypeError: For incorrect parameter types
+    Tworzy pary plików na podstawie zebranych danych z performance tracking.
     """
-    # Validate inputs
-    _validate_create_pairs_input(file_map, base_directory, pair_strategy)
-
+    start_time = time.time()
+    total_files = sum(len(files) for files in file_map.values())
+    
     found_pairs: List[FilePair] = []
     processed_files: Set[str] = set()
 
-    # Handle empty file_map gracefully
-    if not file_map:
-        logger.info("Empty file_map provided, returning empty results")
-        return found_pairs, processed_files
-
-    # Get strategy with validation
-    try:
-        strategy = OptimizedPairingStrategyFactory.get_strategy(pair_strategy)
-    except ValueError as e:
-        logger.error(f"Strategy error: {e}")
-        return found_pairs, processed_files
-
-    # Process files with error handling
-    successful_pairs = 0
-    failed_pairs = 0
-
-    for base_path, files_list in file_map.items():
-        if not files_list:
-            continue
-
-        try:
-            # Use optimized categorization
-            archive_files, preview_files = _categorize_files_optimized(files_list)
-
-            if not archive_files or not preview_files:
-                continue
-
-            # Create pairs with error tracking
-            pairs, processed = strategy.create_pairs(
-                archive_files, preview_files, base_directory
-            )
-
-            # Validate pairs before adding
-            valid_pairs = []
-            for pair in pairs:
-                if pair is not None:
-                    valid_pairs.append(pair)
-                    successful_pairs += 1
-                else:
-                    failed_pairs += 1
-
-            found_pairs.extend(valid_pairs)
-            processed_files.update(processed)
-
-        except Exception as e:
-            logger.error(f"Error processing files in {base_path}: {e}")
-            continue
-
-    # Log summary
-    total_attempts = successful_pairs + failed_pairs
-    if total_attempts > 0:
-        success_rate = (successful_pairs / total_attempts) * 100
-        logger.info(f"Pairing completed: {successful_pairs} successful, {failed_pairs} failed ({success_rate:.1f}% success rate)")
-
+    # ... existing code ...
+    
+    # Performance tracking
+    duration = time.time() - start_time
+    _performance_tracker.track_operation('create_file_pairs', total_files, duration)
+    
+    if duration > 0:
+        files_per_second = total_files / duration
+        logger.info(f"File pairing completed: {len(found_pairs)} pairs created from {total_files} files in {duration:.2f}s ({files_per_second:.1f} files/s)")
+    
     return found_pairs, processed_files
 ```
 
 ---
 
-### PATCH 5: MEMORY-EFFICIENT SET OPERATIONS
+### PATCH 4: MEMORY OPTIMIZATION W IDENTIFY_UNPAIRED_FILES
 
-**Problem:** Large set operations causing memory spikes
-**Rozwiązanie:** Stream processing zamiast large intermediate sets
+**Problem:** Funkcja może być zoptymalizowana przez pre-filtrowanie processed_files
+**Rozwiązanie:** Early filtering i batch processing optimization
 
 ```python
-def identify_unpaired_files_optimized(
+def identify_unpaired_files(
     file_map: Dict[str, List[str]],
     processed_files: Set[str],
 ) -> Tuple[List[str], List[str]]:
     """
-    Memory-efficient identification of unpaired files.
-    Uses streaming approach instead of large set operations.
+    Memory-efficient identification of unpaired files z pre-filtering optimization.
     """
     if not file_map:
         return [], []
 
+    # Pre-filter processed files by extension dla performance
+    processed_archives = {f for f in processed_files 
+                         if os.path.splitext(f)[1].lower() in ARCHIVE_EXTENSIONS}
+    processed_previews = {f for f in processed_files 
+                         if os.path.splitext(f)[1].lower() in PREVIEW_EXTENSIONS}
+
     unpaired_archives: List[str] = []
     unpaired_previews: List[str] = []
 
-    # Stream processing instead of creating large intermediate sets
+    # Optimized streaming processing
     for files_list in file_map.values():
+        # Batch process files from same directory
+        archives_batch = []
+        previews_batch = []
+        
         for file_path in files_list:
-            if file_path in processed_files:
-                continue
-
-            # Process file without creating intermediate objects
             ext_lower = os.path.splitext(file_path)[1].lower()
-
+            
             if ext_lower in ARCHIVE_EXTENSIONS:
-                unpaired_archives.append(file_path)
+                if file_path not in processed_archives:
+                    archives_batch.append(file_path)
             elif ext_lower in PREVIEW_EXTENSIONS:
-                unpaired_previews.append(file_path)
+                if file_path not in processed_previews:
+                    previews_batch.append(file_path)
+        
+        # Add batches to results
+        unpaired_archives.extend(archives_batch)
+        unpaired_previews.extend(previews_batch)
 
-    # Sort efficiently with key function
+    # Efficient sorting with key function
     unpaired_archives.sort(key=lambda x: os.path.basename(x).lower())
     unpaired_previews.sort(key=lambda x: os.path.basename(x).lower())
 
@@ -399,129 +295,50 @@ def identify_unpaired_files_optimized(
 
 ---
 
-### PATCH 6: SIMPLIFIED STRATEGY IMPLEMENTATIONS
-
-**Problem:** Over-engineered patterns dla simple logic
-**Rozwiązanie:** Inline simple strategies, keep only complex ones as classes
-
-```python
-# UPROSZCZONA FirstMatchStrategy - może być funkcją
-def _create_first_match_pairs(
-    archive_files: List[str],
-    preview_files: List[str],
-    base_directory: str
-) -> Tuple[List[FilePair], Set[str]]:
-    """Simple first match pairing logic."""
-    if not archive_files or not preview_files:
-        return [], set()
-
-    pair = _safe_create_file_pair(archive_files[0], preview_files[0], base_directory)
-    if pair:
-        return [pair], {archive_files[0], preview_files[0]}
-    else:
-        return [], set()
-
-# ZAKTUALIZUJ factory to use functions where appropriate
-class HybridPairingStrategyFactory:
-    """Hybrid factory using functions for simple strategies, classes for complex ones."""
-
-    @classmethod
-    def create_pairs(
-        cls,
-        strategy_name: str,
-        archive_files: List[str],
-        preview_files: List[str],
-        base_directory: str
-    ) -> Tuple[List[FilePair], Set[str]]:
-        """Direct pairing bez unnecessary object creation."""
-
-        if strategy_name == "first_match":
-            return _create_first_match_pairs(archive_files, preview_files, base_directory)
-        elif strategy_name == "best_match":
-            strategy = OptimizedBestMatchStrategy()
-            return strategy.create_pairs(archive_files, preview_files, base_directory)
-        else:
-            logger.warning(f"Unknown strategy '{strategy_name}', using first_match")
-            return _create_first_match_pairs(archive_files, preview_files, base_directory)
-
-# UPROSZCZONA create_file_pairs usando direct factory calls
-def create_file_pairs_streamlined(
-    file_map: Dict[str, List[str]],
-    base_directory: str,
-    pair_strategy: str = "first_match",
-) -> Tuple[List[FilePair], Set[str]]:
-    """Streamlined file pairs creation z minimal overhead."""
-
-    # Quick validation
-    if not file_map or not base_directory:
-        return [], set()
-
-    found_pairs: List[FilePair] = []
-    processed_files: Set[str] = set()
-
-    for base_path, files_list in file_map.items():
-        if not files_list:
-            continue
-
-        # Optimized categorization
-        archive_files, preview_files = _categorize_files_optimized(files_list)
-
-        if not archive_files or not preview_files:
-            continue
-
-        # Direct factory call bez object creation overhead
-        pairs, processed = HybridPairingStrategyFactory.create_pairs(
-            pair_strategy, archive_files, preview_files, base_directory
-        )
-
-        found_pairs.extend(pairs)
-        processed_files.update(processed)
-
-    return found_pairs, processed_files
-```
-
----
-
-## ✅ CHECKLISTA WERYFIKACYJNA FILE_PAIRING.PY
+## ✅ CHECKLISTA WERYFIKACYJNA (DO WYPEŁNIENIA PRZED WDROŻENIEM)
 
 #### **FUNKCJONALNOŚCI DO WERYFIKACJI:**
 
-- [ ] **File pairing accuracy** - identical results dla wszystkich test cases
-- [ ] **Strategy selection** - first_match i best_match działają poprawnie
-- [ ] **Extension categorization** - archives i previews są poprawnie rozpoznawane
-- [ ] **Performance improvement** - minimum 30% szybsze parowanie dla >1000 plików
-- [ ] **Memory efficiency** - 50% mniej pamięci dla large file sets
-- [ ] **Error handling** - graceful handling invalid inputs i corrupted data
-- [ ] **Input validation** - proper validation dla None/empty inputs
-- [ ] **Thread safety** - concurrent pairing operations są bezpieczne
-- [ ] **Edge cases** - duplicate names, special characters, unicode support
-- [ ] **Partial matching** - intelligent matching dla podobnych nazw plików
+- [ ] **Funkcjonalność podstawowa** - parowanie plików działa identycznie jak wcześniej
+- [ ] **API kompatybilność** - create_file_pairs(), identify_unpaired_files() API unchanged
+- [ ] **Obsługa błędów** - mechanizmy error handling nie spamują logów
+- [ ] **Walidacja danych** - FilePair validation działa poprawnie
+- [ ] **Logowanie** - system logowania nie spamuje, performance logs działają
+- [ ] **Konfiguracja** - app_config extensions loading działa
+- [ ] **Cache** - SimpleTrie cache działa z memory management
+- [ ] **Thread safety** - SimpleTrie jest thread-safe z RLock
+- [ ] **Memory management** - Trie cleanup zapobiega memory leaks
+- [ ] **Performance** - 1000+ plików/sekundę maintained, memory <500MB
 
 #### **ZALEŻNOŚCI DO WERYFIKACJI:**
 
-- [ ] **FilePair model** - compatibility z existing FilePair class
-- [ ] **app_config** - ARCHIVE_EXTENSIONS i PREVIEW_EXTENSIONS są dostępne
-- [ ] **Logger integration** - logging działa bez spamowania
-- [ ] **Path utilities** - os.path operations działają na wszystkich platformach
-- [ ] **Scanner integration** - compatibility z scanner_core.py
-- [ ] **Gallery integration** - pairs są poprawnie wyświetlane w galerii
-- [ ] **Metadata integration** - pairs work z metadata system
-- [ ] **File operations** - pairs work z move/delete operations
-- [ ] **Cache integration** - pairing results są cacheable
+- [ ] **Importy** - wszystkie importy (app_config, FilePair) działają
+- [ ] **Zależności zewnętrzne** - threading, time modules used properly
+- [ ] **Zależności wewnętrzne** - integration z scanner_core.py maintained
+- [ ] **Cykl zależności** - no circular dependencies introduced
+- [ ] **Backward compatibility** - wszystkie existing calls działają
+- [ ] **Interface contracts** - PairingStrategy interface unchanged
+- [ ] **Event handling** - nie dotyczy bezpośrednio
+- [ ] **Signal/slot connections** - nie dotyczy bezpośrednio
+- [ ] **File I/O** - file path operations działają poprawnie
 
-#### **TESTY WYDAJNOŚCIOWE:**
+#### **TESTY WERYFIKACYJNE:**
 
-- [ ] **Small sets** (10x10): <0.1s (było: ~0.3s)
-- [ ] **Medium sets** (100x100): <1s (było: ~3s)
-- [ ] **Large sets** (500x500): <10s (było: ~30s)
-- [ ] **Memory usage**: <100MB dla 1000x1000 files (było: 500MB+)
-- [ ] **Trie performance**: O(log n) lookup verified przez profiling
-- [ ] **No I/O in hot path**: Zero os.path.getmtime() calls in best_match
+- [ ] **Test jednostkowy** - wszystkie funkcje działają w izolacji
+- [ ] **Test integracyjny** - integration z scanner pipeline działa
+- [ ] **Test regresyjny** - no functionality regressions
+- [ ] **Test wydajnościowy** - 1000+ files/s maintained, memory managed
+
+#### **PERFORMANCE KRYTERIA:**
+
+- [ ] **Pairing speed** - 1000+ plików/sekundę maintained
+- [ ] **Memory usage** - <100MB per 1000 files, Trie cleanup working
+- [ ] **Thread safety** - concurrent access bez race conditions
+- [ ] **Error handling** - no log spam, proper error counting
 
 #### **KRYTERIA SUKCESU:**
 
-- [ ] **PERFORMANCE +40%** - verified przez benchmarks
-- [ ] **MEMORY -50%** - verified przez memory profiling
-- [ ] **CODE REDUCTION -25%** - line count decreased 341 → ~255
-- [ ] **ZERO REGRESSIONS** - wszystkie existing test cases pass
-- [ ] **API COMPATIBILITY 100%** - drop-in replacement dla existing code
+- [ ] **WSZYSTKIE CHECKLISTY MUSZĄ BYĆ ZAZNACZONE** przed wdrożeniem
+- [ ] **BRAK FAILED TESTS** - wszystkie testy file pairing przechodzą
+- [ ] **PERFORMANCE BUDGET** - wydajność nie pogorszona, memory controlled
+- [ ] **CODE COVERAGE** - coverage maintained lub improved

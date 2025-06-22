@@ -636,12 +636,22 @@ Przed utworzeniem dokumentu sprawdź:
 
 ### 📈 OBOWIĄZKOWA KONTROLA POSTĘPU PO KAŻDYM ETAPIE
 
+**🚨 KRYTYCZNE: MODEL MUSI PAMIĘTAĆ O UZUPEŁNIENIU BUSINESS_LOGIC_MAP.MD!**
+
 **MODEL MUSI SPRAWDZIĆ I PODAĆ:**
 
 - **Etapów ukończonych:** X/Y
 - **Procent ukończenia:** X%
 - **Następny etap:** Nazwa pliku logiki biznesowej do analizy
 - **Business impact:** Wpływ na procesy biznesowe
+- **✅ UZUPEŁNIONO BUSINESS_LOGIC_MAP.MD:** TAK/NIE
+
+**OBOWIĄZKOWE KROKI PO KAŻDYM ETAPIE:**
+
+1. ✅ **Ukończ analizę pliku** - utwórz correction.md i patch_code.md
+2. ✅ **UZUPEŁNIJ business_logic_map.md** - dodaj status ukończenia
+3. ✅ **Sprawdź postęp** - podaj procent ukończenia
+4. ✅ **Określ następny etap** - nazwa kolejnego pliku do analizy
 
 **PRZYKŁAD RAPORTU POSTĘPU:**
 
@@ -651,7 +661,10 @@ Przed utworzeniem dokumentu sprawdź:
 🔄 Aktualny etap: [NAZWA_PLIKU_LOGIKI_BIZNESOWEJ]
 ⏳ Pozostałe etapy: 12
 💼 Business impact: [OPIS WPŁYWU NA PROCESY BIZNESOWE]
+✅ UZUPEŁNIONO BUSINESS_LOGIC_MAP.MD: TAK
 ```
+
+**🚨 MODEL NIE MOŻE ZAPOMNIEĆ O UZUPEŁNIENIU MAPY!**
 
 ### ✅ ZAZNACZANIE UKOŃCZONYCH ANALIZ W BUSINESS_LOGIC_MAP.MD
 
@@ -698,6 +711,10 @@ Przed utworzeniem dokumentu sprawdź:
 - Upewnij się że ścieżki do plików wynikowych są prawidłowe
 - Zweryfikuj że business impact jest opisany konkretnie
 
+**🚨 KRYTYCZNE: MODEL MUSI PAMIĘTAĆ O UZUPEŁNIENIU BUSINESS_LOGIC_MAP.MD PO KAŻDEJ ANALIZIE!**
+
+**🚨 BEZ TEGO KROKU AUDYT NIE JEST UKOŃCZONY!**
+
 ### 🚨 WAŻNE: ZASADY DOKUMENTACJI I COMMITÓW
 
 **DOKUMENTACJA NIE JEST UZUPEŁNIANA W TRAKCIE PROCESU!**
@@ -738,3 +755,33 @@ git commit -m "BUSINESS LOGIC AUDIT [NUMER]: [NAZWA_PLIKU] - [OPIS] - ZAKOŃCZON
 - **Priorytet:** [PRIORYTET]
 - **Uzasadnienie:** [DLACZEGO TEN PLIK MA TAKI PRIORYTET]
 - **Wpływ na biznes:** [JAKI MA WPŁYW NA PROCESY BIZNESOWE]
+
+## 🚨 KRYTYCZNE ZASADY - MODEL MUSI PAMIĘTAĆ!
+
+### 📋 **OBOWIĄZKOWE UZUPEŁNIANIE BUSINESS_LOGIC_MAP.MD**
+
+**🚨 MODEL MUSI PAMIĘTAĆ: Po każdej ukończonej analizie pliku logiki biznesowej OBAWIĄZKOWO uzupełnić plik `AUDYT/business_logic_map.md`!**
+
+**OBOWIĄZKOWE KROKI PO KAŻDEJ ANALIZIE:**
+
+1. ✅ **Ukończ analizę pliku** - utwórz correction.md i patch_code.md
+2. ✅ **OTWÓRZ business_logic_map.md** - znajdź sekcję z analizowanym plikiem
+3. ✅ **DODAJ status ukończenia** - zaznacz że analiza została ukończona
+4. ✅ **DODAJ datę ukończenia** - aktualna data w formacie YYYY-MM-DD
+5. ✅ **DODAJ business impact** - opis wpływu na procesy biznesowe
+6. ✅ **DODAJ ścieżki do plików wynikowych** - correction.md i patch_code.md
+
+**FORMAT UZUPEŁNIENIA W BUSINESS_LOGIC_MAP.MD:**
+
+```markdown
+### 📄 [NAZWA_PLIKU].PY
+
+- **Status:** ✅ UKOŃCZONA ANALIZA
+- **Data ukończenia:** [DATA]
+- **Business impact:** [OPIS WPŁYWU NA PROCESY BIZNESOWE]
+- **Pliki wynikowe:**
+  - `AUDYT/corrections/[nazwa_pliku]_correction.md`
+  - `AUDYT/patches/[nazwa_pliku]_patch_code.md`
+```
+
+**🚨 MODEL NIE MOŻE ZAPOMNIEĆ O TYM KROKU!**

@@ -1,149 +1,60 @@
-# PATCH-CODE DLA: SCANNER_CORE.PY
+# PATCH-CODE DLA: SCANNER_CORE
 
 **Powiązany plik z analizą:** `../corrections/scanner_core_correction.md`
-**Zasady ogólne:** `../refactoring_rules.md`
+**Zasady ogólne:** `../../_BASE_/refactoring_rules.md`
 
 ---
 
-### PATCH 1: OPTYMALIZACJA ROZSZERZEŃ - FROZENSET LOOKUP
+### PATCH 1: POPRAWA THREAD SAFETY I MEMORY MANAGEMENT
 
-**Problem:** O(n) lookup w ARCHIVE_EXTENSIONS/PREVIEW_EXTENSIONS dla każdego pliku
-**Rozwiązanie:** Pre-computed frozenset dla O(1) lookup, 10-20x szybsze
-
-```python
-# ... istniejący kod ...
-from src.logic.file_pairing import (
-    ARCHIVE_EXTENSIONS,
-    PREVIEW_EXTENSIONS,
-    create_file_pairs,
-    identify_unpaired_files,
-)
-
-# DODAJ OPTYMALIZACJĘ - Pre-computed frozenset dla O(1) lookup
-SUPPORTED_EXTENSIONS = frozenset(
-    ext.lower() for ext in set(ARCHIVE_EXTENSIONS) | set(PREVIEW_EXTENSIONS)
-)
-
-# Pre-computed set for O(1) lookup optimization
-IGNORED_FOLDERS_SET = frozenset(IGNORED_FOLDERS)
-# ... istniejący kod ...
-```
-
----
-
-### PATCH 2: SMART FOLDER SCANNING - SKIP IRRELEVANT FOLDERS
-
-**Problem:** Skanuje wszystkie podfoldery nawet bez relevant files (300-500% spowolnienie)
-**Rozwiązanie:** Pre-scan entries i skip folders bez supported extensions
+**Problem:** Race conditions w visited_dirs, memory leaks przy interrupted scans, thread safety issues
+**Rozwiązanie:** Thread-safe collections, proper cleanup w finally blocks, enhanced memory management
 
 ```python
-# ... istniejący kod w _walk_directory_streaming ...
-
-        # Skanowanie folderu
-        try:
-            total_folders_scanned += 1
-            entries = list(os.scandir(current_dir))
-
-            # DODAJ SMART PRE-FILTERING - sprawdź czy folder ma relevant files
-            relevant_files = []
-            has_relevant_subdirs = False
-
-            for entry in entries:
-                if entry.is_file():
-                    _, ext = os.path.splitext(entry.name)
-                    if ext.lower() in SUPPORTED_EXTENSIONS:
-                        relevant_files.append(entry)
-                elif entry.is_dir() and not should_ignore_folder(entry.name):
-                    has_relevant_subdirs = True
-
-            # Skip processing jeśli brak relevant files i subdirs
-            if not relevant_files and not has_relevant_subdirs:
-                logger.debug(f"Pomijam folder bez relevant files: {current_dir}")
-                return
-
-            # Sprawdzenie przerwania po smart filtering
-            if interrupt_check and interrupt_check():
-                logger.warning("Skanowanie przerwane podczas smart filtering")
-                raise ScanningInterrupted("Skanowanie przerwane podczas smart filtering")
-
-            # Przetwarzamy TYLKO relevant files
-            files_processed_in_folder = 0
-            for entry in relevant_files:
-                total_files_found += 1
-                files_processed_in_folder += 1
-
-                # ULEPSZONE batch processing - co 50 plików zamiast 100
-                if (
-                    files_processed_in_folder % 50 == 0
-                    and interrupt_check
-                    and interrupt_check()
-                ):
-                    msg = f"Skanowanie przerwane podczas przetwarzania plików w {current_dir}"
-                    logger.warning(msg)
-                    raise ScanningInterrupted(msg)
-
-                name = entry.name
-                base_name, ext = os.path.splitext(name)
-
-                # OPTYMALIZOWANY key generation
-                map_key = os.path.join(normalized_current_dir, base_name.lower())
-                full_file_path = os.path.join(normalized_current_dir, name)
-                file_map[map_key].append(full_file_path)
-
-                # MEMORY CLEANUP co 1000 plików
-                if total_files_found % 1000 == 0:
-                    import gc
-                    gc.collect()
-
-# ... istniejący kod ...
-```
-
----
-
-### PATCH 3: THREAD-SAFE PROGRESS REPORTING
-
-**Problem:** Shared state w progress reporting bez synchronizacji
-**Rozwiązanie:** Thread-safe progress manager z lokalnymi state variables
-
-```python
-# ... istniejący kod ...
 import threading
 from threading import RLock
+from collections import defaultdict
+import weakref
+import uuid
 
-class ThreadSafeProgressManager:
-    """Thread-safe progress reporting z rate limiting."""
-
-    def __init__(self, progress_callback: Optional[Callable], throttle_interval: float = 0.1):
-        self.progress_callback = progress_callback
-        self.throttle_interval = throttle_interval
+# Dodaj na początku pliku:
+class ThreadSafeScanSession:
+    """Thread-safe session for scanning operations z proper resource management."""
+    
+    def __init__(self, session_id: str = None):
+        self.session_id = session_id or str(uuid.uuid4())[:8]
+        self._visited_dirs = set()
         self._lock = RLock()
-        self._last_progress_time = 0.0
-        self._last_percent = -1
-
-    def report_progress(self, percent: int, message: str, force: bool = False):
-        """Thread-safe progress reporting z throttling."""
-        if not self.progress_callback:
-            return
-
-        current_time = time.time()
-
+        self._total_files = 0
+        self._total_folders = 0
+        self._start_time = None
+        
+    def add_visited_dir(self, directory: str) -> bool:
+        """Thread-safe add directory, returns False if already visited."""
         with self._lock:
-            # Throttling - raportuj tylko jeśli minął wystarczający czas lub zmienił się znacząco procent
-            if (not force and
-                current_time - self._last_progress_time < self.throttle_interval and
-                abs(percent - self._last_percent) < 5):
-                return
+            if directory in self._visited_dirs:
+                return False
+            self._visited_dirs.add(directory)
+            return True
+    
+    def increment_counters(self, files: int = 0, folders: int = 0):
+        """Thread-safe increment counters."""
+        with self._lock:
+            self._total_files += files
+            self._total_folders += folders
+    
+    def get_stats(self) -> tuple:
+        """Thread-safe get statistics."""
+        with self._lock:
+            return self._total_files, self._total_folders
+    
+    def cleanup(self):
+        """Cleanup resources."""
+        with self._lock:
+            self._visited_dirs.clear()
+            logger.debug(f"Session {self.session_id}: Cleaned up visited_dirs")
 
-            self._last_progress_time = current_time
-            self._last_percent = percent
-
-        # Callback poza lockiem aby uniknąć deadlock
-        try:
-            self.progress_callback(percent, message)
-        except Exception as e:
-            logger.warning(f"Progress callback error: {e}")
-
-# ZMIANA w collect_files_streaming
+# ZMIENIĆ collect_files_streaming signature i implementation:
 def collect_files_streaming(
     directory: str,
     max_depth: int = -1,
@@ -151,264 +62,594 @@ def collect_files_streaming(
     force_refresh: bool = False,
     progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> Dict[str, List[str]]:
-    """Zbiera wszystkie pliki w katalogu z thread-safe streaming progress."""
-
+    """
+    Thread-safe zbiera wszystkie pliki w katalogu z enhanced memory management.
+    """
     normalized_dir = normalize_path(directory)
-
+    
+    # Create thread-safe session
+    session = ThreadSafeScanSession()
+    logger.info(f"Starting scan session {session.session_id} for: {normalized_dir}")
+    
     # THREAD-SAFE progress manager
     progress_manager = ThreadSafeProgressManager(progress_callback)
-
+    
     # Cache check
     if not force_refresh:
         cached_file_map = cache.get_file_map(normalized_dir)
         if cached_file_map is not None:
-            logger.debug(f"CACHE HIT: używam buforowanych plików dla {normalized_dir}")
-            progress_manager.report_progress(100, f"Używam cache dla {normalized_dir}", force=True)
+            logger.debug(f"Session {session.session_id}: CACHE HIT for {normalized_dir}")
+            progress_manager.report_progress(
+                100, f"Używam cache dla {normalized_dir}", force=True
+            )
             return cached_file_map
 
-    # ... reszta implementacji z progress_manager.report_progress() ...
-```
+    # Validation
+    if not path_exists(normalized_dir) or not os.path.isdir(normalized_dir):
+        logger.warning(f"Session {session.session_id}: Directory {normalized_dir} nie istnieje")
+        return {}
 
----
+    file_map = defaultdict(list)
+    session._start_time = time.time()
+    
+    try:
+        # Enhanced memory management configuration
+        memory_config = {
+            'gc_interval': getattr(app_config, 'SCANNER_GC_INTERVAL', 1000),
+            'progress_batch': getattr(app_config, 'SCANNER_PROGRESS_BATCH', 50),
+            'subfolder_batch': getattr(app_config, 'SCANNER_SUBFOLDER_BATCH', 20)
+        }
+        
+        _scan_directory_recursive(
+            normalized_dir, 
+            file_map, 
+            session, 
+            progress_manager,
+            memory_config,
+            max_depth, 
+            interrupt_check
+        )
+        
+    except ScanningInterrupted:
+        logger.warning(f"Session {session.session_id}: Scanning interrupted by user")
+        raise
+    except MemoryError as e:
+        logger.critical(f"Session {session.session_id}: Memory error during scanning: {e}")
+        # Force garbage collection and re-raise
+        import gc
+        gc.collect()
+        raise
+    except Exception as e:
+        logger.error(f"Session {session.session_id}: Unexpected error during scanning: {e}")
+        raise
+    finally:
+        # CRITICAL: Always cleanup session resources
+        session.cleanup()
+        import gc
+        gc.collect()  # Final cleanup
+    
+    # Final statistics and caching
+    total_files, total_folders = session.get_stats()
+    elapsed_time = time.time() - session._start_time
+    
+    _log_scan_completion(session.session_id, normalized_dir, total_files, total_folders, elapsed_time)
+    
+    # Save to cache
+    if not force_refresh:
+        cache.set_file_map(normalized_dir, file_map)
+    
+    progress_manager.report_progress(100, "Zakończono zbieranie plików", force=True)
+    return file_map
 
-### PATCH 4: MEMORY-EFFICIENT FILE_MAP Z GENERATOR PATTERN
+# NOWA FUNKCJA: Dekompozycja _walk_directory_streaming
+def _scan_directory_recursive(
+    directory: str,
+    file_map: Dict[str, List[str]],
+    session: ThreadSafeScanSession,
+    progress_manager: ThreadSafeProgressManager,
+    memory_config: dict,
+    max_depth: int = -1,
+    interrupt_check: Optional[Callable[[], bool]] = None,
+    depth: int = 0
+):
+    """Recursive directory scanning z proper error handling i memory management."""
+    
+    # Depth limit check
+    if max_depth >= 0 and depth > max_depth:
+        return
+    
+    # Thread-safe visited directory check
+    normalized_dir = normalize_path(directory)
+    if not session.add_visited_dir(normalized_dir):
+        logger.warning(f"Session {session.session_id}: Loop detected in {normalized_dir}")
+        return
+    
+    # Interrupt check
+    if interrupt_check and interrupt_check():
+        raise ScanningInterrupted(f"Scanning interrupted at {directory}")
+    
+    try:
+        entries = list(os.scandir(directory))
+        session.increment_counters(folders=1)
+        
+        # Smart pre-filtering
+        relevant_files, relevant_subdirs = _filter_directory_entries(entries)
+        
+        # Process files
+        files_processed = _process_directory_files(
+            directory, relevant_files, file_map, session, 
+            memory_config, interrupt_check
+        )
+        
+        # Report progress
+        total_files, total_folders = session.get_stats()
+        progress_manager.report_progress(
+            min(95, total_folders * 2),  # Improved progress calculation
+            f"Skanowanie: {os.path.basename(directory)} "
+            f"({total_files} plików, {total_folders} folderów)"
+        )
+        
+        # Recursive scanning of subdirectories
+        if relevant_subdirs:
+            _scan_subdirectories(
+                relevant_subdirs, file_map, session, progress_manager,
+                memory_config, max_depth, interrupt_check, depth
+            )
+            
+    except PermissionError as e:
+        logger.warning(f"Session {session.session_id}: Permission denied {directory}: {e}")
+    except FileNotFoundError as e:
+        logger.warning(f"Session {session.session_id}: Directory removed during scan {directory}: {e}")
+    except OSError as e:
+        logger.error(f"Session {session.session_id}: I/O error accessing {directory}: {e}")
+        # Continue with other directories
+    except ScanningInterrupted:
+        raise  # Propagate interruption
+    except Exception as e:
+        logger.error(f"Session {session.session_id}: Unexpected error in {directory}: {e}")
+        # Continue scanning other directories
 
-**Problem:** Memory leak w file_map dla dużych folderów (OutOfMemory przy 50k+ plików)
-**Rozwiązanie:** Memory-bounded file_map z periodic cleanup
+def _filter_directory_entries(entries) -> Tuple[List, List]:
+    """Smart filtering of directory entries z early rejection."""
+    relevant_files = []
+    relevant_subdirs = []
+    
+    for entry in entries:
+        if entry.is_file():
+            _, ext = os.path.splitext(entry.name)
+            if ext.lower() in SUPPORTED_EXTENSIONS:
+                relevant_files.append(entry)
+        elif entry.is_dir() and not should_ignore_folder(entry.name):
+            relevant_subdirs.append(entry)
+    
+    return relevant_files, relevant_subdirs
 
-```python
-# ... istniejący kod ...
-
-class MemoryEfficientFileMap:
-    """Memory-efficient file map z automatic cleanup."""
-
-    def __init__(self, max_memory_mb: int = 500):
-        self.file_map = defaultdict(list)
-        self.max_memory_bytes = max_memory_mb * 1024 * 1024
-        self._current_memory = 0
-        self._file_count = 0
-
-    def add_file(self, map_key: str, file_path: str):
-        """Dodaje plik z memory tracking."""
-        self.file_map[map_key].append(file_path)
-        self._current_memory += len(map_key) + len(file_path) + 64  # Estymacja overhead
-        self._file_count += 1
-
-        # Periodic memory check
-        if self._file_count % 1000 == 0:
-            self._check_memory_usage()
-
-    def _check_memory_usage(self):
-        """Sprawdza użycie pamięci i force cleanup jeśli trzeba."""
-        if self._current_memory > self.max_memory_bytes:
-            logger.warning(f"File map memory usage high: {self._current_memory/1024/1024:.1f}MB")
+def _process_directory_files(
+    directory: str,
+    relevant_files: List,
+    file_map: Dict[str, List[str]],
+    session: ThreadSafeScanSession,
+    memory_config: dict,
+    interrupt_check: Optional[Callable[[], bool]] = None
+) -> int:
+    """Process files w directory z memory management."""
+    files_processed = 0
+    
+    for entry in relevant_files:
+        # Batch interrupt checking
+        if (files_processed % memory_config['progress_batch'] == 0 
+            and interrupt_check and interrupt_check()):
+            raise ScanningInterrupted(f"Interrupted while processing files in {directory}")
+        
+        # Process file
+        name = entry.name
+        base_name, ext = os.path.splitext(name)
+        normalized_dir = normalize_path(directory)
+        
+        map_key = os.path.join(normalized_dir, base_name.lower())
+        full_file_path = os.path.join(normalized_dir, name)
+        file_map[map_key].append(full_file_path)
+        
+        files_processed += 1
+        
+        # Memory management
+        if files_processed % memory_config['gc_interval'] == 0:
             import gc
             gc.collect()
-            # Można dodać dodatkowe optimizations jak kompresja długich ścieżek
+    
+    session.increment_counters(files=files_processed)
+    return files_processed
 
-    def get_dict(self) -> Dict[str, List[str]]:
-        """Zwraca internal dict."""
-        return dict(self.file_map)
+def _scan_subdirectories(
+    subdirs: List,
+    file_map: Dict[str, List[str]],
+    session: ThreadSafeScanSession,
+    progress_manager: ThreadSafeProgressManager,
+    memory_config: dict,
+    max_depth: int,
+    interrupt_check: Optional[Callable[[], bool]],
+    depth: int
+):
+    """Scan subdirectories z batch interrupt checking."""
+    subfolders_processed = 0
+    
+    for entry in subdirs:
+        # Batch interrupt checking
+        if (subfolders_processed % memory_config['subfolder_batch'] == 0
+            and interrupt_check and interrupt_check()):
+            raise ScanningInterrupted(f"Interrupted while scanning subdirectories")
+        
+        _scan_directory_recursive(
+            entry.path, file_map, session, progress_manager,
+            memory_config, max_depth, interrupt_check, depth + 1
+        )
+        
+        subfolders_processed += 1
 
-# ZMIANA w _walk_directory_streaming
-def _walk_directory_streaming(current_dir: str, depth: int = 0):
-    # ... istniejący kod ...
-
-    # MEMORY-EFFICIENT file map
-    efficient_file_map = MemoryEfficientFileMap()
-
-    # ... processing logic ...
-
-    # Dodawanie plików z memory tracking
-    efficient_file_map.add_file(map_key, full_file_path)
-
-    # Return dict at end
-    return efficient_file_map.get_dict()
+def _log_scan_completion(session_id: str, directory: str, total_files: int, total_folders: int, elapsed_time: float):
+    """Standardized completion logging z performance metrics."""
+    files_per_second = total_files / elapsed_time if elapsed_time > 0 else 0
+    folders_per_second = total_folders / elapsed_time if elapsed_time > 0 else 0
+    
+    logger.info(
+        f"SCAN_COMPLETED: Session {session_id} | {directory} | "
+        f"files={total_files} | folders={total_folders} | "
+        f"time={elapsed_time:.2f}s | "
+        f"rate={files_per_second:.1f}files/s, {folders_per_second:.1f}folders/s"
+    )
+    
+    # Performance warning dla slow scans
+    if files_per_second < 100 and total_files > 500:
+        logger.warning(
+            f"SLOW_SCAN: Session {session_id} | {directory} | "
+            f"rate={files_per_second:.1f}files/s (expected >100files/s for large folders)"
+        )
 ```
 
 ---
 
-### PATCH 5: SIMPLIFIED ARCHITECTURE - ELIMINATE OVER-ENGINEERING
+### PATCH 2: ENHANCED PROGRESS CALCULATION I ACCURACY
 
-**Problem:** Over-engineered ScanOrchestrator, ScanConfig, niepotrzebne managery
-**Rozwiązanie:** Konsolidacja do prostych helper functions
+**Problem:** Inaccurate progress calculation, aproksymacja nie odzwierciedla real progress
+**Rozwiązanie:** Directory size estimation, accurate progress calculation based na estimated totals
 
 ```python
-# USUŃ nadmiernie skomplikowane klasy:
-# class ScanOrchestrator  # USUNĄĆ
-# class ScanConfig  # USUNĄĆ
-# class ScanProgressManager  # ZASTĄPIĆ ThreadSafeProgressManager
-# class ScanCacheManager  # ZASTĄPIĆ prostymi funkcjami
-# class SpecialFoldersManager  # ZASTĄPIĆ prostymi funkcjami
-
-# DODAJ uproszczone helper functions:
-
-def _get_cached_scan_result(
-    directory: str,
-    pair_strategy: str,
-    use_cache: bool,
-    force_refresh: bool,
-    progress_manager: ThreadSafeProgressManager
-) -> Optional[Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]]:
-    """Simplified cache retrieval."""
-    if use_cache and not force_refresh:
-        cached_result = cache.get_scan_result(directory, pair_strategy)
-        if cached_result:
-            logger.debug(f"CACHE HIT: Zwracam zbuforowany wynik dla {directory}")
-            progress_manager.report_progress(100, f"Używam cache dla {directory}", force=True)
-            return cached_result
-    return None
-
-def _save_scan_result(
-    directory: str,
-    pair_strategy: str,
-    result: Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]],
-    use_cache: bool
-):
-    """Simplified cache saving."""
-    if use_cache:
-        cache.set_scan_result(directory, pair_strategy, result)
-
-def _handle_special_folders_simple(directory: str) -> List[SpecialFolder]:
-    """Simplified special folders handling."""
-    metadata_manager = MetadataManager.get_instance(directory)
-    metadata = metadata_manager.io.load_metadata_from_file()
-
-    special_folders = []
-    if metadata and metadata.get("has_special_folders"):
-        # Create virtual folder based on metadata
-        special_folders_from_meta = metadata.get("special_folders", [])
-        if special_folders_from_meta:
-            virtual_folder_name = special_folders_from_meta[0]
-            virtual_folder_path = os.path.join(directory, virtual_folder_name)
-            from src.models.special_folder import SpecialFolder
-            virtual_folder = SpecialFolder(
-                folder_name=virtual_folder_name,
-                folder_path=virtual_folder_path,
-                is_virtual=True,
+class ProgressEstimator:
+    """Enhanced progress estimation based na directory analysis."""
+    
+    def __init__(self):
+        self._estimated_total_files = 0
+        self._estimated_total_folders = 0
+        self._estimation_complete = False
+    
+    def quick_estimate(self, directory: str, max_sample_folders: int = 10) -> tuple:
+        """Quick estimation of total files/folders by sampling."""
+        if not os.path.isdir(directory):
+            return 0, 0
+        
+        try:
+            # Sample first few folders dla estimation
+            sample_files = 0
+            sample_folders = 0
+            folders_sampled = 0
+            
+            for root, dirs, files in os.walk(directory):
+                if folders_sampled >= max_sample_folders:
+                    break
+                
+                # Filter relevant files
+                relevant_files = [f for f in files 
+                                if os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS]
+                sample_files += len(relevant_files)
+                sample_folders += 1
+                folders_sampled += 1
+                
+                # Remove ignored folders from dirs to prevent os.walk from visiting them
+                dirs[:] = [d for d in dirs if not should_ignore_folder(d)]
+            
+            # Estimate total based na sample
+            if folders_sampled > 0:
+                # Estimate total folders by extrapolating from sample
+                try:
+                    total_subdirs = sum(len(dirs) for _, dirs, _ in os.walk(directory))
+                    avg_files_per_folder = sample_files / folders_sampled
+                    estimated_files = int(avg_files_per_folder * total_subdirs)
+                    estimated_folders = total_subdirs
+                except:
+                    # Fallback estimation
+                    estimated_files = sample_files * 10  # Conservative estimate
+                    estimated_folders = sample_folders * 10
+            else:
+                estimated_files = estimated_folders = 0
+            
+            self._estimated_total_files = estimated_files
+            self._estimated_total_folders = estimated_folders
+            self._estimation_complete = True
+            
+            logger.debug(
+                f"Progress estimation: ~{estimated_files} files, ~{estimated_folders} folders"
             )
-            special_folders.append(virtual_folder)
-            logger.info(f"Utworzono wirtualny folder: {virtual_folder_path}")
+            
+            return estimated_files, estimated_folders
+            
+        except Exception as e:
+            logger.warning(f"Progress estimation failed: {e}")
+            return 0, 0
+    
+    def calculate_progress(self, current_files: int, current_folders: int) -> int:
+        """Calculate accurate progress percentage."""
+        if not self._estimation_complete or self._estimated_total_files == 0:
+            # Fallback to simple calculation
+            return min(95, current_folders * 2)
+        
+        # Weight files more heavily than folders (files are primary goal)
+        file_progress = (current_files / self._estimated_total_files) * 0.8
+        folder_progress = (current_folders / self._estimated_total_folders) * 0.2
+        
+        total_progress = (file_progress + folder_progress) * 100
+        return min(95, int(total_progress))  # Cap at 95% until completion
 
-    return special_folders
+# MODYFIKACJA ThreadSafeProgressManager:
+class EnhancedThreadSafeProgressManager(ThreadSafeProgressManager):
+    """Enhanced progress manager z accurate calculation."""
+    
+    def __init__(self, progress_callback: Optional[Callable], throttle_interval: float = 0.1):
+        super().__init__(progress_callback, throttle_interval)
+        self.estimator = ProgressEstimator()
+    
+    def set_estimation(self, directory: str):
+        """Initialize progress estimation dla directory."""
+        self.estimator.quick_estimate(directory)
+    
+    def report_accurate_progress(self, current_files: int, current_folders: int, message: str):
+        """Report progress z accurate calculation."""
+        progress = self.estimator.calculate_progress(current_files, current_folders)
+        self.report_progress(progress, message)
 
-# UPROSZCZONA scan_folder_for_pairs - eliminuje ScanOrchestrator
-def scan_folder_for_pairs(
+# ZMIENIĆ w collect_files_streaming:
+def collect_files_streaming(
     directory: str,
     max_depth: int = -1,
-    use_cache: bool = True,
-    pair_strategy: str = "first_match",
     interrupt_check: Optional[Callable[[], bool]] = None,
-    force_refresh_cache: bool = False,
+    force_refresh: bool = False,
     progress_callback: Optional[Callable[[int, str], None]] = None,
-) -> Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]:
-    """
-    SIMPLIFIED: Skanuje folder bez over-engineered orchestrator pattern.
-    """
-    normalized_dir = normalize_path(directory)
-    progress_manager = ThreadSafeProgressManager(progress_callback)
-
-    # 1. Check cache
-    cached_result = _get_cached_scan_result(
-        normalized_dir, pair_strategy, use_cache, force_refresh_cache, progress_manager
-    )
-    if cached_result:
-        return cached_result
-
-    # 2. Validate directory
-    if not path_exists(normalized_dir) or not os.path.isdir(normalized_dir):
-        logger.warning(f"Katalog {normalized_dir} nie istnieje lub nie jest katalogiem")
-        return [], [], [], []
-
-    # 3. Collect files with optimized scanning
-    progress_manager.report_progress(5, "Rozpoczynam skanowanie plików...")
-    file_map = collect_files_streaming(
-        normalized_dir, max_depth, interrupt_check, force_refresh_cache,
-        lambda p, m: progress_manager.report_progress(5 + int(p * 0.4), m)  # 5-45%
-    )
-
-    # 4. Create file pairs
-    progress_manager.report_progress(50, "Tworzenie par plików...")
-    file_pairs, processed_files = create_file_pairs(
-        file_map, base_directory=normalized_dir, pair_strategy=pair_strategy
-    )
-
-    # 5. Identify unpaired files
-    progress_manager.report_progress(70, "Identyfikacja nieparowanych plików...")
-    unpaired_archives, unpaired_previews = identify_unpaired_files(file_map, processed_files)
-
-    # 6. Handle special folders
-    progress_manager.report_progress(85, "Obsługa folderów specjalnych...")
-    special_folders = _handle_special_folders_simple(normalized_dir)
-
-    # 7. Save to cache and return
-    result = (file_pairs, unpaired_archives, unpaired_previews, special_folders)
-    _save_scan_result(normalized_dir, pair_strategy, result, use_cache)
-
-    progress_manager.report_progress(100, f"Skanowanie zakończone: {len(file_pairs)} par", force=True)
-    logger.info(f"Skanowanie zakończone dla {normalized_dir}. Znaleziono {len(file_pairs)} par.")
-
-    return result
+) -> Dict[str, List[str]]:
+    """Enhanced collect_files_streaming z accurate progress estimation."""
+    # ... existing code ...
+    
+    # Use enhanced progress manager
+    progress_manager = EnhancedThreadSafeProgressManager(progress_callback)
+    progress_manager.set_estimation(normalized_dir)  # Initialize estimation
+    
+    # ... rest of the function ...
+    
+    # W _scan_directory_recursive zmienić progress reporting:
+    def _scan_directory_recursive(...):
+        # ... existing code ...
+        
+        # Enhanced progress reporting
+        total_files, total_folders = session.get_stats()
+        progress_manager.report_accurate_progress(
+            total_files, total_folders,
+            f"Skanowanie: {os.path.basename(directory)} "
+            f"({total_files} plików, {total_folders} folderów)"
+        )
 ```
 
 ---
 
-### PATCH 6: REMOVE DEAD CODE
+### PATCH 3: USUNIĘCIE DEAD CODE I CLEANUP COMMENTS
 
-**Problem:** Dead code i deprecated functions (find_special_folders)
-**Rozwiązanie:** Usunięcie nieużywanego kodu
+**Problem:** Dead code comments, outdated references, cleanup needed
+**Rozwiązanie:** Remove comments about eliminated classes, cleanup obsolete references
 
 ```python
-# USUŃ dead code:
-# def find_special_folders(folder_path: str) -> List[SpecialFolder]:  # USUNĄĆ CAŁKOWICIE
+# USUNĄĆ następujące linie i komentarze:
 
-# DODAJ w dokumentacji API compatibility note jeśli konieczne:
+# LINIA 56: USUNĄĆ
+# ELIMINATED: ScanConfig dataclass - over-engineered wrapper dla parametrów funkcji
+
+# LINIA 59: USUNĄĆ  
+# ELIMINATED: ScanCacheManager - niepotrzebna abstrakcja, replaced by helper functions
+
+# LINIA 182: USUNĄĆ
+# ELIMINATED: ScanOrchestrator - over-engineered pattern, replaced by simplified scan_folder_for_pairs()
+
+# LINIE 598-600: USUNĄĆ
+# DEAD CODE REMOVED zgodnie z PATCH 6
 # Note: find_special_folders() function has been removed as special folders
-# are now handled through metadata system. Use MetadataManager.get_special_folders() instead.
+# are now handled through metadata system. Use _handle_special_folders_simple() instead.
+
+# DODAĆ na początku pliku po imports:
+"""
+Enhanced scanner core module z optimized performance, thread safety, i accurate progress reporting.
+
+Key optimizations:
+- Thread-safe scanning sessions z proper resource management
+- Accurate progress estimation based na directory sampling
+- Enhanced memory management z configurable cleanup intervals
+- Comprehensive error handling z recovery strategies
+- Performance monitoring z business metrics
+
+Performance targets:
+- 100+ files/second dla folders >500 files
+- <200MB memory usage per 10,000 files
+- Thread-safe concurrent operations
+- <5% progress calculation deviation
+"""
 ```
 
 ---
 
-## ✅ CHECKLISTA WERYFIKACYJNA SCANNER_CORE.PY
+### PATCH 4: ENHANCED ERROR HANDLING I LOGGING
+
+**Problem:** Inconsistent logging levels, missing correlation, incomplete error recovery
+**Rozwiązanie:** Standardized logging z session correlation, comprehensive error handling
+
+```python
+import sys
+from enum import Enum
+
+class ScanLogLevel(Enum):
+    """Standardized logging levels dla scan operations."""
+    TRACE = "TRACE"      # Bardzo szczegółowe debug info
+    DEBUG = "DEBUG"      # Debugging info  
+    INFO = "INFO"        # Normal operations
+    WARNING = "WARNING"  # Recoverable errors
+    ERROR = "ERROR"      # Serious errors
+    CRITICAL = "CRITICAL" # Critical errors requiring attention
+
+class ScanLogger:
+    """Enhanced logger z session correlation i structured logging."""
+    
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.logger = logging.getLogger(__name__)
+    
+    def log(self, level: ScanLogLevel, message: str, **kwargs):
+        """Log message z session correlation."""
+        formatted_msg = f"[Session {self.session_id}] {message}"
+        
+        if kwargs:
+            # Add structured data
+            structured_data = " | ".join(f"{k}={v}" for k, v in kwargs.items())
+            formatted_msg += f" | {structured_data}"
+        
+        log_method = getattr(self.logger, level.value.lower())
+        log_method(formatted_msg)
+    
+    def trace(self, message: str, **kwargs):
+        if self.logger.isEnabledFor(logging.DEBUG):  # Trace only w debug mode
+            self.log(ScanLogLevel.TRACE, message, **kwargs)
+    
+    def performance(self, operation: str, duration: float, **metrics):
+        """Log performance metrics."""
+        self.log(ScanLogLevel.INFO, f"PERFORMANCE: {operation}", 
+                duration=f"{duration:.2f}s", **metrics)
+    
+    def error_with_recovery(self, error: Exception, recovery_action: str, **context):
+        """Log error z recovery information."""
+        self.log(ScanLogLevel.ERROR, 
+                f"Error: {str(error)} | Recovery: {recovery_action}", 
+                error_type=type(error).__name__, **context)
+
+# ZMIENIĆ ThreadSafeScanSession aby używał ScanLogger:
+class ThreadSafeScanSession:
+    def __init__(self, session_id: str = None):
+        self.session_id = session_id or str(uuid.uuid4())[:8]
+        self.logger = ScanLogger(self.session_id)
+        # ... rest of initialization ...
+    
+    def cleanup(self):
+        """Enhanced cleanup z logging."""
+        with self._lock:
+            entries_cleaned = len(self._visited_dirs)
+            self._visited_dirs.clear()
+            self.logger.trace("Session cleanup completed", 
+                            visited_dirs_cleaned=entries_cleaned)
+
+# ZMIENIĆ error handling w _scan_directory_recursive:
+def _scan_directory_recursive(...):
+    session_logger = session.logger
+    
+    try:
+        # ... existing scanning logic ...
+        
+    except PermissionError as e:
+        session_logger.error_with_recovery(
+            e, "Continue scanning other directories",
+            directory=directory, depth=depth
+        )
+    except FileNotFoundError as e:
+        session_logger.error_with_recovery(
+            e, "Directory removed during scan, continuing",
+            directory=directory, scan_time=time.time()
+        )
+    except OSError as e:
+        session_logger.error_with_recovery(
+            e, "I/O error, attempting to continue",
+            directory=directory, error_code=getattr(e, 'errno', 'unknown')
+        )
+    except MemoryError as e:
+        # Critical error - force cleanup and re-raise
+        session_logger.log(ScanLogLevel.CRITICAL, 
+                          "Memory exhausted during scanning",
+                          directory=directory, 
+                          memory_usage=_get_memory_usage())
+        import gc
+        gc.collect()
+        raise
+    except ScanningInterrupted:
+        session_logger.log(ScanLogLevel.WARNING, "Scanning interrupted by user")
+        raise
+    except Exception as e:
+        session_logger.error_with_recovery(
+            e, "Unexpected error, continuing with other directories",
+            directory=directory, depth=depth
+        )
+
+def _get_memory_usage() -> str:
+    """Get current memory usage dla logging."""
+    try:
+        import psutil
+        process = psutil.Process()
+        memory_mb = process.memory_info().rss / 1024 / 1024
+        return f"{memory_mb:.1f}MB"
+    except ImportError:
+        return "unavailable"
+```
+
+---
+
+## ✅ CHECKLISTA WERYFIKACYJNA (DO WYPEŁNIENIA PRZED WDROŻENIEM)
 
 #### **FUNKCJONALNOŚCI DO WERYFIKACJI:**
 
-- [ ] **Skanowanie folderów** - scan_folder_for_pairs() zwraca identyczne wyniki
-- [ ] **Collect files** - collect_files_streaming() znajduje wszystkie supported files
-- [ ] **Progress reporting** - progress callback działa płynnie i thread-safe
-- [ ] **Cache integration** - cache hit/miss działa identycznie jak wcześniej
-- [ ] **Special folders** - virtual folders są tworzone poprawnie z metadanych
-- [ ] **Interrupt handling** - interrupt_check funkcjonuje podczas skanowania
-- [ ] **Error recovery** - I/O errors są obsługiwane gracefully
-- [ ] **Memory management** - brak memory leaks przy dużych folderach
-- [ ] **Thread safety** - concurrent scanning działa bez race conditions
-- [ ] **Performance** - minimum 30% szybsze skanowanie dla >1000 plików
+- [ ] **Funkcjonalność podstawowa** - skanowanie folderów działa identycznie jak wcześniej
+- [ ] **API kompatybilność** - collect_files_streaming(), scan_folder_for_pairs() API unchanged
+- [ ] **Obsługa błędów** - comprehensive error handling z recovery strategies
+- [ ] **Walidacja danych** - path validation i directory checks działają
+- [ ] **Logowanie** - structured logging z session correlation nie spamuje
+- [ ] **Konfiguracja** - app_config integration dla memory management settings
+- [ ] **Cache** - scanner_cache integration maintained z proper lifecycle
+- [ ] **Thread safety** - ThreadSafeScanSession eliminuje race conditions
+- [ ] **Memory management** - configurable cleanup intervals, proper resource cleanup
+- [ ] **Performance** - 100+ plików/s maintained, accurate progress reporting
 
 #### **ZALEŻNOŚCI DO WERYFIKACJI:**
 
-- [ ] **file_pairing.py** - create_file_pairs() i identify_unpaired_files() działają
-- [ ] **scanner_cache.py** - cache.get_scan_result() i cache.set_scan_result() działają
-- [ ] **metadata_manager.py** - MetadataManager.get_instance() działa
-- [ ] **file_pair.py** - FilePair model jest kompatybilny
-- [ ] **special_folder.py** - SpecialFolder model jest kompatybilny
-- [ ] **path_utils.py** - normalize_path() i path_exists() działają
-- [ ] **app_config** - SCANNER_MAX_CACHE_ENTRIES jest dostępne
-- [ ] **Qt threading** - scanning w worker threads działa bezpiecznie
-- [ ] **Gallery components** - galeria otrzymuje poprawne scan results
+- [ ] **Importy** - wszystkie imports (file_pairing, metadata_manager, cache) działają
+- [ ] **Zależności zewnętrzne** - threading, uuid, weakref used properly
+- [ ] **Zależności wewnętrzne** - integration z scanning_service.py maintained
+- [ ] **Cykl zależności** - no circular dependencies introduced
+- [ ] **Backward compatibility** - wszystkie existing integrations działają
+- [ ] **Interface contracts** - public function signatures unchanged
+- [ ] **Event handling** - progress callbacks work properly
+- [ ] **Signal/slot connections** - interrupt mechanism works
+- [ ] **File I/O** - file system operations robust z error handling
 
-#### **TESTY WYDAJNOŚCIOWE:**
+#### **TESTY WERYFIKACYJNE:**
 
-- [ ] **Baseline 100 files** - skanowanie <0.5s (było: ~1s)
-- [ ] **Baseline 1000 files** - skanowanie <2s (było: ~4s)
-- [ ] **Baseline 5000 files** - skanowanie <8s (było: ~15s)
-- [ ] **Memory usage** - max 200MB dla 10k files (było: 500MB+)
-- [ ] **Concurrent scans** - 3 równoczesne skanowania bez problemów
-- [ ] **Large folders** - 50k+ files bez OutOfMemory
+- [ ] **Test jednostkowy** - wszystkie functions działają w izolacji
+- [ ] **Test integracyjny** - integration z file pairing pipeline działa
+- [ ] **Test regresyjny** - no functionality regressions
+- [ ] **Test wydajnościowy** - 100+ files/s maintained, memory managed
+- [ ] **Test thread safety** - concurrent scanning bez race conditions
+- [ ] **Test error handling** - recovery z various error scenarios
+
+#### **PERFORMANCE KRYTERIA:**
+
+- [ ] **Scanning speed** - 100+ plików/s dla folders >500 files
+- [ ] **Memory usage** - <200MB per 10,000 files, proper cleanup
+- [ ] **Progress accuracy** - <5% deviation between reported i actual progress
+- [ ] **Thread safety** - zero race conditions w concurrent operations
+- [ ] **Error recovery** - 100% recovery from non-critical errors
 
 #### **KRYTERIA SUKCESU:**
 
-- [ ] **PERFORMANCE +50%** - co najmniej 50% szybsze skanowanie
-- [ ] **MEMORY -30%** - co najmniej 30% mniej pamięci
-- [ ] **THREAD SAFETY 100%** - zero race conditions w testach concurrent
-- [ ] **API COMPATIBILITY 100%** - wszystkie publiczne functions działają identycznie
-- [ ] **ZERO REGRESSIONS** - wszystkie istniejące funkcjonalności zachowane
+- [ ] **WSZYSTKIE CHECKLISTY MUSZĄ BYĆ ZAZNACZONE** przed wdrożeniem
+- [ ] **BRAK FAILED TESTS** - wszystkie testy scanner core przechodzą
+- [ ] **PERFORMANCE BUDGET** - wydajność maintained, memory managed
+- [ ] **CODE COVERAGE** - coverage maintained lub improved
+- [ ] **THREAD SAFETY** - concurrent scanning tests pass
+- [ ] **ERROR HANDLING** - comprehensive recovery strategy tests pass

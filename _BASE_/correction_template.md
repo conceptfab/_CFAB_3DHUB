@@ -108,3 +108,46 @@
 - [ ] **Gotowe do wdrożenia**
 
 ---
+
+### 🚨 OBOWIĄZKOWE UZUPEŁNIENIE BUSINESS_LOGIC_MAP.MD
+
+**🚨 KRYTYCZNE: PO ZAKOŃCZENIU WSZYSTKICH POPRAWEK MODEL MUSI OBAWIĄZKOWO UZUPEŁNIĆ PLIK `AUDYT/business_logic_map.md`!**
+
+#### OBOWIĄZKOWE KROKI PO ZAKOŃCZENIU POPRAWEK:
+
+1. ✅ **Wszystkie poprawki wprowadzone** - kod działa poprawnie
+2. ✅ **Wszystkie testy przechodzą** - PASS na wszystkich testach
+3. ✅ **Aplikacja uruchamia się** - bez błędów startowych
+4. ✅ **OTWÓRZ business_logic_map.md** - znajdź sekcję z analizowanym plikiem
+5. ✅ **DODAJ status ukończenia** - zaznacz że analiza została ukończona
+6. ✅ **DODAJ datę ukończenia** - aktualna data w formacie YYYY-MM-DD
+7. ✅ **DODAJ business impact** - opis wpływu na procesy biznesowe
+8. ✅ **DODAJ ścieżki do plików wynikowych** - correction.md i patch_code.md
+
+#### FORMAT UZUPEŁNIENIA W BUSINESS_LOGIC_MAP.MD:
+
+```markdown
+### 📄 [NAZWA_PLIKU].PY
+
+- **Status:** ✅ UKOŃCZONA ANALIZA
+- **Data ukończenia:** [DATA]
+- **Business impact:** [OPIS WPŁYWU NA PROCESY BIZNESOWE]
+- **Pliki wynikowe:**
+  - `AUDYT/corrections/[nazwa_pliku]_correction.md`
+  - `AUDYT/patches/[nazwa_pliku]_patch_code.md`
+```
+
+#### KONTROLA UZUPEŁNIENIA:
+
+- [ ] **OTWARTO business_logic_map.md** - plik został otwarty i zlokalizowana sekcja
+- [ ] **DODANO status ukończenia** - "✅ UKOŃCZONA ANALIZA"
+- [ ] **DODANO datę ukończenia** - aktualna data w formacie YYYY-MM-DD
+- [ ] **DODANO business impact** - konkretny opis wpływu na procesy biznesowe
+- [ ] **DODANO ścieżki do plików** - correction.md i patch_code.md
+- [ ] **ZWERYFIKOWANO poprawność** - wszystkie informacje są prawidłowe
+
+**🚨 MODEL NIE MOŻE ZAPOMNIEĆ O UZUPEŁNIENIU BUSINESS_LOGIC_MAP.MD!**
+
+**🚨 BEZ TEGO KROKU ETAP NIE JEST UKOŃCZONY!**
+
+---
