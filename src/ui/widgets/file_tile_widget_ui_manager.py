@@ -4,12 +4,11 @@ UI Manager dla FileTileWidget.
 Zarządza wszystkimi operacjami UI setup.
 """
 
-import logging
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout
+from PyQt6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout
 
 from src.ui.widgets.metadata_controls_widget import MetadataControlsWidget
 from src.ui.widgets.tile_styles import (
@@ -111,6 +110,13 @@ class FileTileWidgetUIManager:
         self.widget.filename_label.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
+
+        # Ustawienie stylu CSS z efektem hover
+        base_font_size = 12  # domyślny rozmiar
+        self.widget.filename_label.setStyleSheet(
+            TileStylesheet.get_filename_label_stylesheet(base_font_size)
+        )
+
         self.update_font_size()
 
     def create_metadata_ui(self):

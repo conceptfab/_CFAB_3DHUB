@@ -10,6 +10,8 @@ from typing import Any, Callable, Optional
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
 from PyQt6.QtGui import QPixmap
 
+from src.models.file_pair import FilePair
+
 logger = logging.getLogger(__name__)
 
 # Globalne locki dla shared resources
@@ -52,6 +54,11 @@ class UnifiedWorkerSignals(QObject):
     scan_finished = pyqtSignal(
         list, list, list
     )  # found_pairs, unpaired_archives, unpaired_previews
+
+    # Rozszerzone sygnały dla DataProcessingWorker
+    tile_data_ready = pyqtSignal(FilePair)  # pojedynczy FilePair
+    tiles_batch_ready = pyqtSignal(list)  # lista FilePair
+    tiles_refresh_needed = pyqtSignal(list)  # lista FilePair do odświeżenia
 
 
 class UnifiedBaseWorker(QRunnable):

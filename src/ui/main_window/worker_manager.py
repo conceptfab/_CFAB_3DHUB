@@ -135,6 +135,7 @@ class WorkerManager:
     def start_data_processing_worker(self, file_pairs: list):
         """
         Inicjalizuje i uruchamia workera do przetwarzania danych.
+        Używane przy zmianie folderu z galerii.
 
         Args:
             file_pairs: Lista obiektów FilePair do przetworzenia
@@ -149,16 +150,16 @@ class WorkerManager:
         # NAPRAWKA: Prawidłowo zakończ poprzedni worker jeśli nadal działa
         if self.data_processing_thread and self.data_processing_thread.isRunning():
             self.logger.warning(
-                "Poprzedni worker przetwarzania nadal działa - "
-                "przerywam go i uruchamiam nowy"
+                "Poprzedni worker przetwarzania nadal działa - przerywam go "
+                "i uruchamiam nowy"
             )
             # Przerwij poprzedni worker
             if self.data_processing_worker:
                 try:
-                    self.data_processing_worker.finished.disconnect()
+                    self.data_processing_worker.signals.finished.disconnect()
                 except (TypeError, AttributeError):
                     pass  # Sygnał może być już odłączony
-                self.data_processing_worker.stop()
+                self.data_processing_worker.interrupt()
 
             # Zakończ poprzedni wątek
             self.data_processing_thread.quit()
@@ -169,33 +170,41 @@ class WorkerManager:
                 self.data_processing_thread.terminate()
                 self.data_processing_thread.wait()
 
-        self.data_processing_thread = QThread()
+        # UNIFIED: Używamy UnifiedBaseWorker z QThreadPool
+        from PyQt6.QtCore import QThreadPool
+
+        from src.ui.delegates.workers.processing_workers import DataProcessingWorker
+
         self.data_processing_worker = DataProcessingWorker(
             self.main_window.controller.current_directory, file_pairs
         )
-        self.data_processing_worker.moveToThread(self.data_processing_thread)
 
         # Podłączenie sygnałów
-        self.data_processing_worker.tile_data_ready.connect(
+        self.data_processing_worker.signals.tile_data_ready.connect(
             self.main_window.gallery_manager.create_tile_widget_for_pair
         )
         # NOWY: obsługa batch processing kafelków
-        self.data_processing_worker.tiles_batch_ready.connect(
+        self.data_processing_worker.signals.tiles_batch_ready.connect(
             self.main_window.tile_manager.create_tile_widgets_batch
         )
         # NOWY: obsługa odświeżania istniejących kafelków po wczytaniu metadanych
-        self.data_processing_worker.tiles_refresh_needed.connect(
+        self.data_processing_worker.signals.tiles_refresh_needed.connect(
             self.main_window.tile_manager.refresh_existing_tiles
         )
-        self.data_processing_worker.finished.connect(
+        self.data_processing_worker.signals.finished.connect(
             self.main_window._on_tile_data_processed
         )
         # NAPRAWKA: Podłącz sygnały postępu do pasków postępu
-        self.data_processing_worker.progress.connect(self.main_window._show_progress)
-        self.data_processing_worker.error.connect(self.main_window._handle_worker_error)
-        self.data_processing_thread.started.connect(self.data_processing_worker.run)
+        self.data_processing_worker.signals.progress.connect(
+            self.main_window._show_progress
+        )
+        self.data_processing_worker.signals.error.connect(
+            self.main_window._handle_worker_error
+        )
 
-        self.data_processing_thread.start()
+        # UNIFIED: Uruchom przez QThreadPool
+        QThreadPool.globalInstance().start(self.data_processing_worker)
+
         self.logger.info(
             f"Uruchomiono nowy worker do przetwarzania {len(file_pairs)} par plików"
         )
@@ -224,10 +233,10 @@ class WorkerManager:
             # Przerwij poprzedni worker
             if self.data_processing_worker:
                 try:
-                    self.data_processing_worker.finished.disconnect()
+                    self.data_processing_worker.signals.finished.disconnect()
                 except (TypeError, AttributeError):
                     pass  # Sygnał może być już odłączony
-                self.data_processing_worker.stop()
+                self.data_processing_worker.interrupt()
 
             # Zakończ poprzedni wątek
             self.data_processing_thread.quit()
@@ -238,34 +247,42 @@ class WorkerManager:
                 self.data_processing_thread.terminate()
                 self.data_processing_thread.wait()
 
-        self.data_processing_thread = QThread()
+        # UNIFIED: Używamy UnifiedBaseWorker z QThreadPool
+        from PyQt6.QtCore import QThreadPool
+
+        from src.ui.delegates.workers.processing_workers import DataProcessingWorker
+
         self.data_processing_worker = DataProcessingWorker(
             self.main_window.controller.current_directory, file_pairs
         )
-        self.data_processing_worker.moveToThread(self.data_processing_thread)
 
         # Podłączenie sygnałów
-        self.data_processing_worker.tile_data_ready.connect(
+        self.data_processing_worker.signals.tile_data_ready.connect(
             self.main_window.gallery_manager.create_tile_widget_for_pair
         )
         # NOWY: obsługa batch processing kafelków
-        self.data_processing_worker.tiles_batch_ready.connect(
+        self.data_processing_worker.signals.tiles_batch_ready.connect(
             self.main_window.tile_manager.create_tile_widgets_batch
         )
         # NOWY: obsługa odświeżania istniejących kafelków po wczytaniu metadanych
-        self.data_processing_worker.tiles_refresh_needed.connect(
+        self.data_processing_worker.signals.tiles_refresh_needed.connect(
             self.main_window.tile_manager.refresh_existing_tiles
         )
         # RÓŻNICA: Podłącz do metody BEZ resetowania drzewa (wrapper ignoruje listę)
-        self.data_processing_worker.finished.connect(
+        self.data_processing_worker.signals.finished.connect(
             self.main_window._on_tile_data_processed
         )
         # NAPRAWKA: Podłącz sygnały postępu do pasków postępu
-        self.data_processing_worker.progress.connect(self.main_window._show_progress)
-        self.data_processing_worker.error.connect(self.main_window._handle_worker_error)
-        self.data_processing_thread.started.connect(self.data_processing_worker.run)
+        self.data_processing_worker.signals.progress.connect(
+            self.main_window._show_progress
+        )
+        self.data_processing_worker.signals.error.connect(
+            self.main_window._handle_worker_error
+        )
 
-        self.data_processing_thread.start()
+        # UNIFIED: Uruchom przez QThreadPool
+        QThreadPool.globalInstance().start(self.data_processing_worker)
+
         self.logger.info(
             f"Uruchomiono nowy worker do przetwarzania {len(file_pairs)} "
             "par plików (bez resetowania drzewa)"
@@ -364,6 +381,8 @@ class WorkerManager:
             self.logger.warning("Skanowanie katalogu jest już w toku.")
             return
 
+        from PyQt6.QtCore import QThreadPool
+
         from src.ui.delegates.workers.scan_workers import ScanDirectoryWorker
 
         # Przerwij stary worker jeśli istnieje
@@ -371,9 +390,8 @@ class WorkerManager:
             self.scan_thread.quit()
             self.scan_thread.wait()
 
-        self.scan_thread = QThread()
+        # UNIFIED: Używamy UnifiedBaseWorker z QThreadPool
         self.scan_worker = ScanDirectoryWorker(directory_path)
-        self.scan_worker.moveToThread(self.scan_thread)
 
         # Podłącz sygnały
         self.scan_worker.signals.finished.connect(
@@ -381,8 +399,8 @@ class WorkerManager:
         )
         self.scan_worker.signals.progress.connect(self.main_window._show_progress)
         self.scan_worker.signals.error.connect(self.main_window._handle_worker_error)
-        self.scan_thread.started.connect(self.scan_worker.run)
-        self.scan_thread.finished.connect(self.scan_thread.deleteLater)
 
-        self.scan_thread.start()
+        # UNIFIED: Uruchom przez QThreadPool
+        QThreadPool.globalInstance().start(self.scan_worker)
+
         self.logger.info(f"Uruchomiono asynchroniczne skanowanie dla: {directory_path}")

@@ -50,8 +50,8 @@ class FileTileWidgetCleanupManager:
                     try:
                         if hasattr(self.widget._event_bus, "unsubscribe"):
                             self.widget._event_bus.unsubscribe(event_type, handler)
-                    except Exception as e:
-                        self.logger.warning(f"Event unsubscribe failed: {e}")
+                    except Exception:
+                        pass  # cichy cleanup
 
                 self.widget._event_subscriptions.clear()
 
@@ -69,13 +69,13 @@ class FileTileWidgetCleanupManager:
                             signal = getattr(component, signal_name)
                             if hasattr(signal, "disconnect") and connection:
                                 signal.disconnect(connection)
-                    except Exception as e:
-                        self.logger.warning(f"Signal disconnect failed: {e}")
+                    except Exception:
+                        pass  # cichy cleanup
 
                 self.widget._signal_connections.clear()
 
-        except Exception as e:
-            self.logger.warning(f"Event subscriptions cleanup error: {e}")
+        except Exception:
+            pass  # cichy cleanup
 
     def cleanup_event_filters(self):
         """Enhanced cleanup wszystkich tracked event filters."""
@@ -86,12 +86,12 @@ class FileTileWidgetCleanupManager:
                         if widget:
                             widget.removeEventFilter(self.widget)
                     except Exception:
-                        pass
+                        pass  # cichy cleanup
 
                 self.widget._event_filters.clear()
 
-        except Exception as e:
-            self.logger.warning(f"Event filters cleanup error: {e}")
+        except Exception:
+            pass  # cichy cleanup
 
     def cleanup_components(self):
         """Czyści komponenty tile."""
@@ -106,10 +106,8 @@ class FileTileWidgetCleanupManager:
                 if component and hasattr(component, "cleanup"):
                     try:
                         component.cleanup()
-                    except Exception as e:
-                        self.logger.warning(
-                            f"Component cleanup error {component_name}: {e}"
-                        )
+                    except Exception:
+                        pass  # cichy cleanup
 
     def cleanup_resources(self):
         """Czyści zasoby z resource manager."""
@@ -121,7 +119,7 @@ class FileTileWidgetCleanupManager:
                 ):
                     self.widget._resource_manager.unregister_tile(self.widget)
                     self.widget._is_registered = False
-            except Exception as e:
-                self.logger.warning(f"Resource cleanup error: {e}")
+            except Exception:
+                pass  # cichy cleanup
 
         self.widget.file_pair = None

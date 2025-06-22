@@ -4,137 +4,92 @@ Workery do przetwarzania i generowania danych (miniaturek, metadanych).
 
 import logging
 import os
-import time
 from typing import List, Tuple
 
-from PyQt6.QtCore import QObject, QThreadPool, QTimer, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QPixmap
-
-from src.logic.metadata_manager import MetadataManager
 from src.models.file_pair import FilePair
-from src.utils.image_utils import create_thumbnail_from_file
 
 from .base_workers import AsyncUnifiedBaseWorker, UnifiedBaseWorker, WorkerPriority
-
-# Usuwamy import ThumbnailCache z poziomu modułu
-# from src.ui.widgets.thumbnail_cache import ThumbnailCache
 
 logger = logging.getLogger(__name__)
 
 
 class ThumbnailGenerationWorker(UnifiedBaseWorker):
     """
-    Worker do generowania miniaturek w tle z optymalizacjami.
-
-    Ta klasa jest zoptymalizowaną wersją, która:
-    1. Używa proper context management dla obiektów PIL.Image
-    2. Ogranicza nadmierne logowanie
-    3. Sprawdza cache tylko raz przed tworzeniem miniatury
-    4. Używa resource protection dla thumbnail cache
-    5. Obsługuje timeout dla długotrwałych operacji
+    UNIFIED: Worker do generowania miniaturek z simplified architecture.
     """
 
     def __init__(
         self, path: str, width: int, height: int, priority: int = WorkerPriority.NORMAL
     ):
-        """
-        Inicjalizuje worker do generowania miniaturek.
-
-        Args:
-            path: Ścieżka do pliku graficznego
-            width: Pożądana szerokość miniaturki
-            height: Pożądana wysokość miniaturki
-            priority: Priorytet workera
-        """
-        # Timeout 30s dla pojedynczej miniaturki
         super().__init__(timeout_seconds=30, priority=priority)
         self.path = path
         self.width = width
         self.height = height
+        # Pre-validate inputs in constructor for fail-fast behavior
+        self._validate_inputs()
 
     def _validate_inputs(self):
-        """Waliduje parametry wejściowe."""
-        if not self.path or not os.path.exists(self.path):
-            raise ValueError(f"Plik nie istnieje: {self.path}")
+        """Enhanced validation with detailed error messages."""
+        if not self.path:
+            raise ValueError("Path cannot be empty")
+        if not os.path.exists(self.path):
+            raise ValueError(f"File does not exist: {self.path}")
         if self.width <= 0 or self.height <= 0:
-            raise ValueError(
-                f"Nieprawidłowe wymiary miniaturki: {self.width}x{self.height}"
-            )
+            raise ValueError(f"Invalid dimensions: {self.width}x{self.height}")
 
-    def emit_finished(self, pixmap: QPixmap):
-        """Emituje sygnał zakończenia generowania miniaturki."""
-        logger.debug(f"Miniatura wygenerowana: {self.path}")
-        self.signals.thumbnail_finished.emit(pixmap, self.path, self.width, self.height)
-
-    def emit_error(self, message: str):
-        """Emituje sygnał błędu generowania miniaturki."""
-        logger.error(f"Błąd generowania miniatury: {message}")
-        self.signals.thumbnail_error.emit(message, self.path, self.width, self.height)
+        # Check file size for large files (>50MB)
+        try:
+            file_size = os.path.getsize(self.path)
+            if file_size > 50 * 1024 * 1024:  # 50MB
+                logger.warning(
+                    f"Large file detected: {file_size//1024//1024}MB - {self.path}"
+                )
+        except OSError:
+            pass
 
     def _run_implementation(self):
-        """Generuje miniaturkę dla określonego pliku."""
+        """OPTIMIZED: Single cache check pattern."""
+        from src.ui.widgets.thumbnail_cache import ThumbnailCache
+        from src.utils.image_utils import create_thumbnail_from_file
+
+        cache = ThumbnailCache.get_instance()
+
+        # SINGLE CACHE CHECK - reduce overhead
+        cached_pixmap = cache.get_thumbnail(self.path, self.width, self.height)
+        if cached_pixmap is not None:
+            self.signals.thumbnail_finished.emit(
+                cached_pixmap, self.path, self.width, self.height
+            )
+            return
+
+        # Generate thumbnail with progress reporting
+        self.emit_progress(25, f"Loading {os.path.basename(self.path)}...")
+
         try:
-            self._validate_inputs()
+            pixmap = create_thumbnail_from_file(self.path, self.width, self.height)
 
-            # Opóźniony import ThumbnailCache
-            from src.ui.widgets.thumbnail_cache import ThumbnailCache
+            if pixmap.isNull():
+                raise ValueError("Failed to create thumbnail - invalid image")
 
-            # Sprawdź w cache z resource protection
-            def get_from_cache():
-                cache = ThumbnailCache.get_instance()
-                return cache.get_thumbnail(self.path, self.width, self.height)
+            # Add to cache atomically
+            cache.add_thumbnail(self.path, self.width, self.height, pixmap)
 
-            cached_pixmap = self.with_thumbnail_cache_lock(get_from_cache)
-
-            if cached_pixmap is not None:
-                logger.debug(
-                    f"Użyto miniatury z cache dla {os.path.basename(self.path)}"
-                )
-                self.emit_finished(cached_pixmap)
-                return
-
-            # Nie znaleziono w cache, generuj miniaturkę
-            self.emit_progress(
-                10, f"Generowanie miniatury dla {os.path.basename(self.path)}..."
+            self.emit_progress(100, "Thumbnail generated successfully")
+            self.signals.thumbnail_finished.emit(
+                pixmap, self.path, self.width, self.height
             )
 
-            # Sprawdź timeout przed długotrwałą operacją
-            if self.check_interruption():
-                return
-
-            # Generowanie miniaturki z proper context management
-            try:
-                pixmap = create_thumbnail_from_file(self.path, self.width, self.height)
-
-                if pixmap.isNull():
-                    self.emit_error(f"Nie udało się utworzyć miniatury dla {self.path}")
-                    return
-
-                # Zapisz do cache z resource protection
-                def save_to_cache():
-                    cache = ThumbnailCache.get_instance()
-                    cache.add_thumbnail(self.path, self.width, self.height, pixmap)
-
-                self.with_thumbnail_cache_lock(save_to_cache)
-
-                self.emit_progress(100, "Miniatura wygenerowana pomyślnie.")
-                self.emit_finished(pixmap)
-
-            except Exception as e:
-                self.emit_error(f"Błąd podczas generowania miniatury: {str(e)}")
-
-        except ValueError as ve:
-            self.emit_error(f"Błąd walidacji: {str(ve)}")
         except Exception as e:
-            self.emit_error(f"Nieoczekiwany błąd: {str(e)}")
+            error_msg = f"Thumbnail generation failed: {str(e)}"
+            self.signals.thumbnail_error.emit(
+                error_msg, self.path, self.width, self.height
+            )
+            raise
 
 
 class BatchThumbnailWorker(UnifiedBaseWorker):
     """
-    Worker do generowania wielu miniaturek jednocześnie z optymalizacjami.
-
-    Optymalizuje wydajność przetwarzając wiele miniaturek w jednym zadaniu,
-    co eliminuje overhead tworzenia nowych wątków dla każdej miniaturki.
+    UNIFIED: Worker do generowania wielu miniaturek jednocześnie z adaptive batch size.
     """
 
     def __init__(
@@ -142,380 +97,127 @@ class BatchThumbnailWorker(UnifiedBaseWorker):
         thumbnail_requests: List[Tuple[str, int, int]],
         priority: int = WorkerPriority.HIGH,
     ):
-        """
-        Inicjalizuje worker do generowania wsadowego miniaturek.
-
-        Args:
-            thumbnail_requests: Lista krotek (ścieżka, szerokość, wysokość)
-            priority: Priorytet workera (domyślnie HIGH dla batch operations)
-        """
-        # Timeout 5 minut dla batch operations
         super().__init__(timeout_seconds=300, priority=priority)
         self.thumbnail_requests = thumbnail_requests
+        self._validate_inputs()
 
     def _validate_inputs(self):
-        """Waliduje parametry wejściowe."""
         if not self.thumbnail_requests:
             raise ValueError("Lista żądań miniaturek jest pusta")
 
-    def emit_finished(self, pixmap, path, width, height):
-        """Emituje sygnał zakończenia generowania pojedynczej miniaturki."""
-        logger.debug(f"Miniatura wygenerowana w batch: {path}")
-        self.signals.thumbnail_finished.emit(pixmap, path, width, height)
-
-    def emit_error(self, message, path, width, height):
-        """Emituje sygnał błędu generowania pojedynczej miniaturki."""
-        logger.error(f"Błąd generowania miniatury w batch: {message}")
-        self.signals.thumbnail_error.emit(message, path, width, height)
-
     def _run_implementation(self):
-        """Generuje wszystkie miniaturki z listy żądań."""
-        try:
-            self._validate_inputs()
+        from src.ui.widgets.thumbnail_cache import ThumbnailCache
+        from src.utils.image_utils import create_thumbnail_from_file
 
-            # Opóźniony import ThumbnailCache
-            from src.ui.widgets.thumbnail_cache import ThumbnailCache
-
-            total_requests = len(self.thumbnail_requests)
-            self.emit_progress(
-                0, f"Rozpoczęto generowanie {total_requests} miniatur..."
-            )
-
-            processed_count = 0
-
-            for idx, (path, width, height) in enumerate(self.thumbnail_requests):
-                if self.check_interruption():
-                    return
-
-                # Emituj progress co 10% lub co 5 miniaturek
-                if idx % max(1, total_requests // 10) == 0 or idx % 5 == 0:
-                    percent = int((idx / total_requests) * 100)
-                    self.emit_progress(
-                        percent, f"Generowanie miniatur: {idx}/{total_requests}..."
-                    )
-
+        cache = ThumbnailCache.get_instance()
+        total_requests = len(self.thumbnail_requests)
+        self.emit_progress(0, f"Rozpoczęto generowanie {total_requests} miniatur...")
+        batch_size = self._calculate_adaptive_batch_size(total_requests)
+        processed_count = 0
+        for idx, (path, width, height) in enumerate(self.thumbnail_requests):
+            if self.check_interruption():
+                return
+            cached_pixmap = cache.get_thumbnail(path, width, height)
+            if cached_pixmap is not None:
+                self.signals.thumbnail_finished.emit(cached_pixmap, path, width, height)
+            else:
                 try:
-                    # Sprawdź w cache z resource protection
-                    def get_from_cache():
-                        cache = ThumbnailCache.get_instance()
-                        return cache.get_thumbnail(path, width, height)
-
-                    cached_pixmap = self.with_thumbnail_cache_lock(get_from_cache)
-
-                    if cached_pixmap is not None:
-                        self.emit_finished(cached_pixmap, path, width, height)
-                        processed_count += 1
-                        continue
-
-                    # Generuj miniaturkę
-                    if not os.path.exists(path):
-                        self.emit_error(f"Plik nie istnieje", path, width, height)
-                        continue
-
                     pixmap = create_thumbnail_from_file(path, width, height)
-
                     if pixmap.isNull():
-                        self.emit_error(
-                            "Nie udało się utworzyć miniatury", path, width, height
-                        )
-                        continue
-
-                    # Zapisz do cache z resource protection
-                    def save_to_cache():
-                        cache = ThumbnailCache.get_instance()
-                        cache.add_thumbnail(path, width, height, pixmap)
-
-                    self.with_thumbnail_cache_lock(save_to_cache)
-
-                    # Wyemituj sygnał dla każdej miniaturki osobno
-                    self.emit_finished(pixmap, path, width, height)
-                    processed_count += 1
-
+                        raise ValueError("Failed to create thumbnail - invalid image")
+                    cache.add_thumbnail(path, width, height, pixmap)
+                    self.signals.thumbnail_finished.emit(pixmap, path, width, height)
                 except Exception as e:
-                    self.emit_error(f"Błąd: {str(e)}", path, width, height)
+                    error_msg = f"Thumbnail generation failed: {str(e)}"
+                    self.signals.thumbnail_error.emit(error_msg, path, width, height)
+            processed_count += 1
+            if processed_count % batch_size == 0 or processed_count == total_requests:
+                percent = int((processed_count / total_requests) * 100)
+                self.emit_progress(
+                    percent, f"Processed {processed_count}/{total_requests} thumbnails"
+                )
 
-            # Zakończ cały worker
-            self.emit_progress(
-                100,
-                f"Zakończono generowanie miniatur. "
-                f"Sukces: {processed_count}/{total_requests}",
-            )
-            self.emit_finished(processed_count)
-
-        except ValueError as ve:
-            self.emit_error(f"Błąd walidacji: {str(ve)}", "", 0, 0)
-        except Exception as e:
-            self.emit_error(f"Nieoczekiwany błąd: {str(e)}", "", 0, 0)
+    def _calculate_adaptive_batch_size(self, total: int) -> int:
+        if total <= 50:
+            return 5
+        elif total <= 500:
+            return 20
+        elif total <= 2000:
+            return 50
+        else:
+            return 100
 
 
-class DataProcessingWorker(QObject):
+class DataProcessingWorker(UnifiedBaseWorker):
     """
-    Worker do przetwarzania danych w tle. Odpowiedzialny za:
-    1. Zastosowanie metadanych do par plików (operacja I/O).
-    2. Emitowanie sygnałów do tworzenia kafelków w głównym wątku.
-
-    UWAGA: Ta klasa nadal dziedziczy po QObject dla kompatybilności z moveToThread.
-    W przyszłości powinna zostać zunifikowana z UnifiedBaseWorker.
+    UNIFIED: Data processing worker converted to UnifiedBaseWorker.
+    Eliminates QObject moveToThread pattern for better performance.
     """
 
-    # Bezpośrednie sygnały
-    tile_data_ready = pyqtSignal(FilePair)
-    tiles_batch_ready = pyqtSignal(list)  # NOWY: sygnał dla batch'y kafelków
-    tiles_refresh_needed = pyqtSignal(
-        list
-    )  # NOWY: sygnał do odświeżenia istniejących kafelków
-    finished = pyqtSignal(list)
-    error = pyqtSignal(str)
-    progress = pyqtSignal(int, str)
-    interrupted = pyqtSignal()
-    timeout = pyqtSignal(str)  # Nowy sygnał timeout
+    tile_data_ready = None  # sygnały będą podpinane dynamicznie przez signals
+    tiles_batch_ready = None
+    tiles_refresh_needed = None
 
     def __init__(
-        self,
-        working_directory: str,
-        file_pairs: list[FilePair],
-        timeout_seconds: int = 1800,  # NAPRAWKA: 30 minut timeout dla dużych folderów
+        self, working_directory: str, file_pairs: List, timeout_seconds: int = 300
     ):
-        """
-        Inicjalizuje worker do przetwarzania danych.
-
-        Args:
-            working_directory: Katalog roboczy aplikacji
-            file_pairs: Lista par plików do przetworzenia
-            timeout_seconds: Timeout dla całej operacji (domyślnie 10 minut)
-        """
-        super().__init__()
+        super().__init__(timeout_seconds=timeout_seconds, priority=WorkerPriority.HIGH)
         self.working_directory = working_directory
-        self.file_pairs = file_pairs
-        self._interrupted = False
-        self._last_progress_time = 0
-        self._progress_interval_ms = 50  # NAPRAWKA PROGRESS BAR: Zmniejszony odstęp dla płynniejszego progress bara
-        self._start_time = None
-        self._timeout_seconds = timeout_seconds
+        self.file_pairs = file_pairs or []
+        self._metadata_loaded = False
+        self._validate_inputs()
 
-    def check_interruption(self) -> bool:
-        """
-        Sprawdza czy worker został przerwany lub przekroczył timeout.
+    def _validate_inputs(self):
+        if not self.working_directory:
+            raise ValueError("Working directory cannot be empty")
+        if not self.file_pairs:
+            raise ValueError("File pairs list cannot be empty")
 
-        Returns:
-            True jeśli przerwano lub timeout, False w przeciwnym razie
-        """
-        if self._interrupted:
-            logger.debug("DataProcessingWorker: Operacja przerwana")
-            self.interrupted.emit()
-            return True
+    def _run_implementation(self):
+        total_pairs = len(self.file_pairs)
+        batch_size = self._calculate_adaptive_batch_size(total_pairs)
+        self.emit_progress(0, f"Processing {total_pairs} file pairs...")
+        processed_pairs = []
+        current_batch = []
+        for i, file_pair in enumerate(self.file_pairs):
+            if self.check_interruption():
+                return
+            current_batch.append(file_pair)
+            processed_pairs.append(file_pair)
+            if len(current_batch) >= batch_size:
+                self._emit_batch_with_metadata(current_batch.copy())
+                current_batch.clear()
+                progress = int((i / total_pairs) * 90)
+                self.emit_progress(progress, f"Processed {i+1}/{total_pairs} pairs")
+        if current_batch:
+            self._emit_batch_with_metadata(current_batch)
+        self.emit_progress(100, f"Completed processing {total_pairs} file pairs")
+        self.signals.finished.emit(processed_pairs)
 
-        # Sprawdź timeout
-        if self._timeout_seconds and self._start_time:
-            elapsed = time.time() - self._start_time
-            if elapsed > self._timeout_seconds:
-                logger.warning(
-                    f"DataProcessingWorker: Przekroczono timeout "
-                    f"({self._timeout_seconds}s)"
-                )
-                self.timeout.emit(
-                    f"Przetwarzanie danych przekroczyło limit czasu "
-                    f"({self._timeout_seconds}s)"
-                )
-                return True
-
-        return False
-
-    def interrupt(self):
-        """Przerywa wykonywanie workera."""
-        self._interrupted = True
-        logger.debug("DataProcessingWorker: Otrzymano żądanie przerwania")
-
-    def emit_progress(self, percent: int, message: str):
-        """Emituje sygnał postępu z logowaniem."""
-        logger.debug(f"DataProcessingWorker: Postęp {percent}% - {message}")
-        self.progress.emit(percent, message)
-
-    def emit_progress_batched(self, current: int, total: int, message: str):
-        """NAPRAWKA PROGRESS BAR: Emituje postęp z inteligentnym throttling dla wydajności."""
-        # Oblicz realny procent postępu
-        percent = int((current / max(total, 1)) * 100)
-
-        if total <= 100:
-            # Małe foldery: emituj co 5 kafelków dla płynnego progress bara
-            should_emit = current == 1 or current == total or current % 5 == 0
-        elif total <= 500:
-            # Średnie foldery: emituj co 10 kafelków
-            should_emit = current == 1 or current == total or current % 10 == 0
+    def _calculate_adaptive_batch_size(self, total_pairs: int) -> int:
+        if total_pairs <= 50:
+            return 5
+        elif total_pairs <= 500:
+            return 20
+        elif total_pairs <= 2000:
+            return 50
         else:
-            # Duże foldery: emituj co 25 kafelków ale minimum co 2% postępu
-            progress_step = max(25, total // 50)  # Minimum 25, maksimum co 2%
-            should_emit = (
-                current == 1 or current == total or current % progress_step == 0
-            )
+            return 100
 
-        if should_emit:
-            self.emit_progress(percent, message)
+    def _emit_batch_with_metadata(self, batch: List):
+        self.signals.tiles_batch_ready.emit(batch)
+        self._load_metadata_async(batch)
 
-    def emit_error(self, message: str, exception: Exception = None):
-        """Emituje sygnał błędu z logowaniem."""
-        if exception:
-            logger.error(f"DataProcessingWorker: {message}", exc_info=True)
-        else:
-            logger.error(f"DataProcessingWorker: {message}")
-        self.error.emit(message)
-
-    def emit_finished(self, result=None):
-        """Emituje sygnał zakończenia z logowaniem."""
-        if self._start_time:
-            elapsed = time.time() - self._start_time
-            logger.debug(f"DataProcessingWorker: OK w {elapsed:.2f}s")
-        else:
-            logger.debug("DataProcessingWorker: OK")
-        self.finished.emit(result)
-
-    @pyqtSlot()
-    def run(self):
-        """Przetwarza dane i emituje sygnały dla kafelków."""
-        self._start_time = time.time()
-
-        try:
-            # NAPRAWKA PROGRESS BAR: Wymuś progress 0% na samym początku
-            self.emit_progress(0, "Rozpoczynanie ładowania...")
-
-            # NAPRAWKA PERFORMANCE: Szybkie ładowanie galerii bez metadanych
-            self.emit_progress(
-                0, f"Szybkie ładowanie {len(self.file_pairs)} kafelków..."
-            )
-
-            # NAPRAWKA PERFORMANCE: POMIŃ metadane podczas ładowania galerii!
-            # Metadane będą załadowane asynchronicznie w tle przez osobny worker
-            # To drastycznie przyspiesza ładowanie galerii po refaktoryzacji MetadataManager
-            logger.debug(
-                f"DataProcessingWorker: Pomijam metadane dla szybkiego ładowania {len(self.file_pairs)} par"
-            )
-            metadata_applied = True  # Symuluj sukces żeby nie blokować UI
-
-            processed_pairs = []
-            total_pairs = len(self.file_pairs)
-
-            # NAPRAWKA PERFORMANCE: Dynamiczny batch size w zależności od liczby kafelków
-            # Dla małych folderów (do 100 par) - batch_size = 5
-            # Dla średnich folderów (100-500 par) - batch_size = 20
-            # Dla dużych folderów (500+ par) - batch_size = 50
-            if total_pairs <= 100:
-                batch_size = 5
-            elif total_pairs <= 500:
-                batch_size = 20
-            else:
-                batch_size = 50  # Większy batch dla dużych folderów żeby zmniejszyć liczbę sygnałów
-            current_batch = []
-
-            # Tuż przed pętlą - zastosuj metadane do wszystkich par
-            self._load_metadata_sync()
-
-            for i, file_pair in enumerate(self.file_pairs):
-                if self.check_interruption():
-                    return
-
-                # OPTYMALIZACJA: Emituj progress rzadziej (co 25 kafelków)
-                if (i + 1) % 25 == 0:
-                    self.emit_progress_batched(
-                        i + 1,
-                        total_pairs,
-                        f"Przygotowywanie danych: {i + 1}/{total_pairs}...",
-                    )
-
-                # Dodaj do batch'a
-                current_batch.append(file_pair)
-                processed_pairs.append(file_pair)
-
-                # Wyemituj batch gdy osiągnie odpowiedni rozmiar
-                if len(current_batch) >= batch_size:
-                    self.tiles_batch_ready.emit(current_batch.copy())
-                    current_batch.clear()
-
-            # Wyemituj pozostałe pliki w batch'u
-            if current_batch:
-                self.tiles_batch_ready.emit(current_batch)
-
-            # NAPRAWKA PROGRESS BAR: NIE ustawiaj na 100% tutaj!
-            # Kafelki są tworzone dopiero w _create_tile_widgets_batch
-            self.emit_progress(
-                90,
-                f"Przygotowano {len(processed_pairs)} par plików. Tworzenie kafelków...",
-            )
-            # NAPRAWKA METADANYCH: Wczytaj metadane PRZED emit_finished żeby UI miało aktualne dane
-            self._load_metadata_sync()
-
-            self.emit_finished(processed_pairs)
-
-        except Exception as e:
-            self.emit_error(f"Błąd podczas przetwarzania danych: {str(e)}", e)
-
-    def _load_metadata_sync(self):
-        """Wczytuje metadane synchronicznie PRZED tworzeniem UI."""
+    def _load_metadata_async(self, file_pairs: List):
         try:
             from src.logic.metadata_manager import MetadataManager
 
             metadata_manager = MetadataManager.get_instance(self.working_directory)
-
-            # DEBUG: Sprawdź ile plików ma metadane przed załadowaniem
-            files_with_stars_before = sum(
-                1 for fp in self.file_pairs if fp.get_stars() > 0
-            )
-            files_with_colors_before = sum(
-                1 for fp in self.file_pairs if fp.get_color_tag()
-            )
-            logger.debug(
-                f"SYNC LOAD BEFORE: {files_with_stars_before} plików z gwiazdkami, "
-                f"{files_with_colors_before} z kolorami"
-            )
-
-            metadata_applied = metadata_manager.apply_metadata_to_file_pairs(
-                self.file_pairs
-            )
-
-            # DEBUG: Sprawdź ile plików ma metadane po załadowaniu
-            files_with_stars_after = sum(
-                1 for fp in self.file_pairs if fp.get_stars() > 0
-            )
-            files_with_colors_after = sum(
-                1 for fp in self.file_pairs if fp.get_color_tag()
-            )
-            logger.debug(
-                f"SYNC LOAD AFTER: {files_with_stars_after} plików z gwiazdkami, "
-                f"{files_with_colors_after} z kolorami. Applied: {metadata_applied}"
-            )
-
-            # NAPRAWKA: Emituj sygnał odświeżenia kafelków jeśli metadane zostały załadowane
-            if metadata_applied and (
-                files_with_stars_after > 0 or files_with_colors_after > 0
-            ):
-                self.tiles_refresh_needed.emit(self.file_pairs)
-                logger.debug(
-                    "SYNC: Wysłano sygnał odświeżenia kafelków po załadowaniu metadanych"
-                )
-
+            metadata_applied = metadata_manager.apply_metadata_to_file_pairs(file_pairs)
+            if metadata_applied:
+                self.signals.tiles_refresh_needed.emit(file_pairs)
         except Exception as e:
-            logger.error(f"Błąd synchronicznego ładowania metadanych: {e}")
-
-    def _load_metadata_async(self, file_pairs):
-        """Asynchronicznie ładuje metadane dla listy par plików."""
-        try:
-            metadata_manager = MetadataManager.get_instance()
-            metadata_manager.apply_metadata_to_file_pairs(file_pairs)
-            QTimer.singleShot(0, lambda: self.tiles_batch_ready.emit(file_pairs))
-        except Exception as e:
-            logger.error(f"Błąd podczas ładowania metadanych: {e}")
-
-    def _save_metadata_async(self, file_pairs):
-        """Asynchronicznie zapisuje metadane dla listy par plików."""
-        try:
-            metadata_manager = MetadataManager.get_instance()
-            metadata_manager.save_metadata()
-            metadata_manager.force_save()
-        except Exception as e:
-            logger.error(f"Błąd podczas zapisywania metadanych: {e}")
-
-    def stop(self):
-        """Zatrzymuje worker - kompatybilność z main_window."""
-        self.interrupt()
+            logger.error(f"Async metadata loading failed: {e}")
 
 
 class SaveMetadataWorker(AsyncUnifiedBaseWorker):
@@ -600,3 +302,39 @@ class SaveMetadataWorker(AsyncUnifiedBaseWorker):
             self.emit_error(f"Błąd walidacji: {str(ve)}")
         except Exception as e:
             self.emit_error(f"Błąd podczas zapisywania metadanych: {str(e)}", e)
+
+
+class StreamingMetadataWorker(AsyncUnifiedBaseWorker):
+    """
+    NEW: Streaming metadata worker for non-blocking metadata operations.
+    """
+
+    def __init__(self, working_directory: str, file_pairs: List, chunk_size: int = 50):
+        super().__init__(timeout_seconds=300, priority=WorkerPriority.HIGH)
+        self.working_directory = working_directory
+        self.file_pairs = file_pairs or []
+        self.chunk_size = chunk_size
+        self._validate_inputs()
+
+    def _validate_inputs(self):
+        if not self.working_directory:
+            raise ValueError("Working directory cannot be empty")
+        if not self.file_pairs:
+            raise ValueError("File pairs list cannot be empty")
+        if self.chunk_size <= 0:
+            raise ValueError("Chunk size must be positive")
+
+    def _run_implementation(self):
+        from src.logic.metadata_manager import MetadataManager
+
+        total = len(self.file_pairs)
+        processed = 0
+        metadata_manager = MetadataManager.get_instance(self.working_directory)
+        while processed < total:
+            chunk = self.file_pairs[processed : processed + self.chunk_size]
+            metadata_dict = metadata_manager.get_metadata_for_file_pairs(chunk)
+            self.signals.metadata_chunk_ready.emit(chunk, metadata_dict)
+            processed += len(chunk)
+            percent = int((processed / total) * 100)
+            self.emit_progress(percent, f"Załadowano metadane: {processed}/{total}")
+        self.signals.metadata_streaming_finished.emit(total)

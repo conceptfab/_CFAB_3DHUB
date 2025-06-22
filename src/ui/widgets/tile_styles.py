@@ -1,11 +1,10 @@
 """
 Centralizacja stylów dla kafelków plików.
 
-Ten moduł definiuje style i ich parametry dla FileTileWidget i powiązanych komponentów.
-Pozwala na spójne zarządzanie wyglądem kafelków w całej aplikacji.
+Ten moduł definiuje style i ich parametry dla FileTileWidget i powiązanych
+komponentów. Pozwala na spójne zarządzanie wyglądem kafelków w całej
+aplikacji.
 """
-
-from PyQt6.QtGui import QColor
 
 
 class TileColorScheme:
@@ -73,7 +72,8 @@ class TileStylesheet:
 
     @staticmethod
     def get_thumbnail_frame_stylesheet(color_hex=""):
-        """Zwraca stylesheet dla ramki miniatury, opcjonalnie z kolorowym obramowaniem."""
+        """Zwraca stylesheet dla ramki miniatury, opcjonalnie z kolorowym
+        obramowaniem."""
         if color_hex and color_hex.strip():
             return f"""
                 QFrame {{
@@ -112,7 +112,8 @@ class TileStylesheet:
 
     @staticmethod
     def get_filename_label_stylesheet(font_size=12):
-        """Zwraca stylesheet dla etykiety nazwy pliku z dynamicznym rozmiarem czcionki."""
+        """Zwraca stylesheet dla etykiety nazwy pliku z dynamicznym rozmiarem
+        czcionki."""
         return f"""
             QLabel {{
                 color: {TileColorScheme.TEXT};
@@ -120,7 +121,7 @@ class TileStylesheet:
                 font-size: {font_size}px;
                 font-family: "Segoe UI", Arial, sans-serif;
                 padding: 4px 2px;
-                border-radius: 0px;
+                border-radius: 3px;
                 background-color: transparent;
                 text-align: center;
                 border: none;
@@ -128,8 +129,8 @@ class TileStylesheet:
 
             QLabel:hover {{
                 color: {TileColorScheme.TEXT_HOVER};
-                font-weight: 400;
-                background-color: transparent;
+                font-weight: 500;
+                text-decoration: underline;
             }}
         """
 
