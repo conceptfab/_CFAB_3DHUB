@@ -1,81 +1,135 @@
 """
 Kafelek wyświetlający miniaturę podglądu, nazwę i rozmiar pliku archiwum.
-Zrefaktoryzowany jako controller integrujący komponenty.
+Zrefaktoryzowany z simplified architecture - eliminacja over-engineering.
 
-ETAP 9: BACKWARD COMPATIBILITY
-Zachowanie 100% kompatybilności API z legacy code.
+ETAP 5: SIMPLIFIED ARCHITECTURE
+- Konsolidacja komponentów do głównej klasy
+- TileState pattern zamiast over-engineered komponentów
+- Pooling pattern dla resource management
+- Batch UI updates
 """
 
 # Standard library imports
 import logging
-import os
 import threading
 import warnings
+import weakref
 from typing import Optional, Tuple
 
 # Third-party imports
-from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import (
-    QAction,
-    QColor,
-    QDesktopServices,
-    QDrag,
-    QFont,
-    QPainter,
-    QPixmap,
-)
-from PyQt6.QtWidgets import (
-    QApplication,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QMenu,
-    QSizePolicy,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtCore import QEvent, Qt, pyqtSignal
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 # Local imports
 from src.models.file_pair import FilePair
 from src.ui.widgets.metadata_controls_widget import MetadataControlsWidget
 from src.ui.widgets.thumbnail_cache import ThumbnailCache
 
-# Import new component architecture
-from src.ui.widgets.tile_config import TileConfig, TileEvent
-from src.ui.widgets.tile_event_bus import TileEventBus
-from src.ui.widgets.tile_interaction_component import TileInteractionComponent
-from src.ui.widgets.tile_metadata_component import TileMetadataComponent
-from src.ui.widgets.tile_resource_manager import (
-    get_resource_manager,
-    with_resource_management,
-)
+# Import simplified architecture
+from src.ui.widgets.tile_config import TileConfig
 from src.ui.widgets.tile_styles import (
     TileColorScheme,
     TileSizeConstants,
     TileStylesheet,
 )
-from src.ui.widgets.tile_thumbnail_component import ThumbnailComponent
-
-from .file_tile_widget_cleanup import FileTileWidgetCleanupManager
-from .file_tile_widget_compatibility import CompatibilityAdapter
-from .file_tile_widget_events import FileTileWidgetEventManager
-from .file_tile_widget_performance import get_performance_metric
-from .file_tile_widget_thumbnail import ThumbnailOperations
-from .file_tile_widget_ui_manager import FileTileWidgetUIManager
 
 logger = logging.getLogger(__name__)
 
 
-class CompatibilityAdapter:
-    """Adapter dla zachowania kompatybilności wstecznej."""
+class TileState:
+    """Lightweight state container dla kafelka."""
+
+    __slots__ = [
+        "file_pair",
+        "size",
+        "selected",
+        "stars",
+        "color_tag",
+        "thumbnail_loaded",
+    ]
+
+    def __init__(self, file_pair: Optional[FilePair], size: Tuple[int, int]):
+        self.file_pair = file_pair
+        self.size = size
+        self.selected = False
+        self.stars = file_pair.get_stars() if file_pair else 0
+        self.color_tag = file_pair.get_color_tag() if file_pair else ""
+        self.thumbnail_loaded = False
+
+    def update_from_file_pair(self, file_pair: Optional[FilePair]):
+        """Aktualizuje state z file_pair."""
+        self.file_pair = file_pair
+        if file_pair:
+            self.stars = file_pair.get_stars()
+            self.color_tag = file_pair.get_color_tag()
+        else:
+            self.stars = 0
+            self.color_tag = ""
+
+
+class TileResourcePool:
+    """Centralized resource management z pooling pattern."""
+
+    _active_tiles = weakref.WeakSet()
+    _thumbnail_cache = {}
+    _max_active_tiles = 3000
+    _lock = threading.RLock()
+
+    @classmethod
+    def register(cls, tile):
+        """Register tile z automatic cleanup."""
+        with cls._lock:
+            if len(cls._active_tiles) >= cls._max_active_tiles:
+                cls._cleanup_oldest()
+            cls._active_tiles.add(tile)
+            return True
+
+    @classmethod
+    def unregister(cls, tile):
+        """Unregister tile."""
+        with cls._lock:
+            cls._active_tiles.discard(tile)
+
+    @classmethod
+    def _cleanup_oldest(cls):
+        """LRU cleanup gdy pool jest pełny."""
+        # Simple cleanup - remove oldest tiles
+        tiles_list = list(cls._active_tiles)
+        if tiles_list:
+            # WeakSet order is not guaranteed, but simple approach
+            oldest_tile = tiles_list[0]
+            cls._active_tiles.discard(oldest_tile)
+
+    @classmethod
+    def get_thumbnail(cls, path: str, size: Tuple[int, int]) -> Optional[QPixmap]:
+        """Centralized thumbnail caching."""
+        cache_key = f"{path}:{size}"
+        if cache_key not in cls._thumbnail_cache:
+            try:
+                # Load thumbnail using existing cache
+                thumbnail_cache = ThumbnailCache.get_instance()
+                cls._thumbnail_cache[cache_key] = thumbnail_cache.get_thumbnail(
+                    path, size
+                )
+            except Exception as e:
+                logger.warning(f"Failed to load thumbnail {path}: {e}")
+                return None
+        return cls._thumbnail_cache[cache_key]
+
+
+class LegacyAPIBridge:
+    """Minimal legacy support bez overhead."""
 
     def __init__(self, widget):
         self.widget = widget
-        self._deprecation_warnings_shown = set()
+        self._warning_shown = set()
 
-    def show_deprecation_warning(self, old_method_name, new_method_name=None):
-        """Pokazuje ostrzeżenie o przestarzałej metodzie."""
-        if old_method_name in self._deprecation_warnings_shown:
+    def show_deprecation_warning(
+        self, old_method_name: str, new_method_name: str = None
+    ):
+        """Pokazuje ostrzeżenie o przestarzałej metodzie tylko raz."""
+        if old_method_name in self._warning_shown:
             return
 
         if new_method_name:
@@ -90,38 +144,43 @@ class CompatibilityAdapter:
             )
 
         warnings.warn(message, DeprecationWarning, stacklevel=3)
-        self._deprecation_warnings_shown.add(old_method_name)
+        self._warning_shown.add(old_method_name)
 
-    def update_data_legacy(self, file_pair):
+    def update_data(self, file_pair):
+        """Legacy method z single warning."""
         self.show_deprecation_warning("update_data", "set_file_pair")
         self.widget.set_file_pair(file_pair)
 
-    def change_thumbnail_size_legacy(self, size):
+    def change_thumbnail_size(self, size):
+        """Legacy method z single warning."""
         self.show_deprecation_warning("change_thumbnail_size", "set_thumbnail_size")
         self.widget.set_thumbnail_size(size)
 
-    def refresh_thumbnail_legacy(self):
+    def refresh_thumbnail(self):
+        """Legacy method z single warning."""
         self.show_deprecation_warning("refresh_thumbnail", "reload_thumbnail")
         self.widget.reload_thumbnail()
 
-    def get_file_data_legacy(self):
+    def get_file_data(self):
+        """Legacy method z single warning."""
         self.show_deprecation_warning("get_file_data", "file_pair property")
         return self.widget.file_pair
 
-    def set_selection_legacy(self, selected):
+    def set_selection(self, selected):
+        """Legacy method z single warning."""
         self.show_deprecation_warning("set_selection", "set_selected")
         self.widget.set_selected(selected)
 
 
 class FileTileWidget(QWidget):
     """
-    Controller widget dla kafelka pary plików.
+    Simplified widget kafelka pary plików.
 
-    Nowa architektura komponentowa:
-    - TileThumbnailComponent: zarządzanie miniaturami
-    - TileMetadataComponent: zarządzanie metadanymi (gwiazdki, tagi)
-    - TileInteractionComponent: obsługa interakcji użytkownika
-    - TileEventBus: komunikacja między komponentami
+    Nowa architektura:
+    - TileState: Lightweight state container
+    - TileResourcePool: Centralized resource management
+    - Batch UI updates: Single-pass updates
+    - Minimal legacy API: Graceful migration
     """
 
     # Sygnały dla kompatybilności wstecznej
@@ -145,7 +204,7 @@ class FileTileWidget(QWidget):
         parent: Optional[QWidget] = None,
     ):
         """
-        Inicjalizuje widget kafelka jako controller komponentów.
+        Inicjalizuje widget kafelka z simplified architecture.
 
         Args:
             file_pair: Obiekt pary plików lub None.
@@ -154,403 +213,202 @@ class FileTileWidget(QWidget):
         """
         super().__init__(parent)
 
-        # Resource management registration
-        self._resource_manager = get_resource_manager()
-        self._is_registered = self._resource_manager.register_tile(self)
-        if not self._is_registered:
-            logger.warning(
-                "Failed to register tile in resource manager - tile limit reached"
-            )
+        # Lightweight state object
+        self._state = TileState(file_pair, default_thumbnail_size)
 
         # Podstawowe właściwości
         self.file_pair = file_pair
         self.thumbnail_size = default_thumbnail_size
         self.is_selected = False
         self._is_cleanup_done = False
-        self._cleanup_lock = threading.RLock()  # Thread-safe cleanup
+        self._cleanup_lock = threading.RLock()
         self._cleanup_in_progress = False
 
-        # ETAP 2: Enhanced event tracking dla memory leak prevention
-        self._event_subscriptions = []  # Track event bus subscriptions
-        self._signal_connections = []  # Track Qt signal connections
-        self._event_filters = []  # Track installed event filters
+        # Resource management - pooling pattern
+        self._is_registered = TileResourcePool.register(self)
+        if not self._is_registered:
+            logger.warning(
+                "Failed to register tile in resource pool - tile limit reached"
+            )
 
-        # Konfiguracja komponentu
+        # Legacy API bridge
+        self._legacy_bridge = LegacyAPIBridge(self)
+
+        # Konfiguracja
         self._config = TileConfig(thumbnail_size=default_thumbnail_size)
 
-        # Inicjalizacja komponentów FIRST
-        self._initialize_components()
+        # Setup minimal UI
+        self._setup_minimal_ui()
 
-        # ETAP 5: Inicjalizacja WSZYSTKICH wydzielonych modułów - PRZED setup_ui()!
-        self._compatibility_adapter = CompatibilityAdapter(self)
-        self._thumbnail_ops = ThumbnailOperations(self)
-        self._ui_manager = FileTileWidgetUIManager(self)
-        self._event_manager = FileTileWidgetEventManager(self)
-        self._cleanup_manager = FileTileWidgetCleanupManager(self)
-
-        # ETAP 8: Performance optimization integration
-        self._setup_performance_optimization()
-
-        # Konfiguracja UI - AFTER managers are ready
-        self._setup_ui()
-
-        # Połączenie sygnałów - AFTER UI is created
+        # Connect signals
         self._connect_signals()
 
-        # Instalacja event filters
+        # Install event filters
         self._install_event_filters()
 
-        # Aktualizacja danych
+        # Initial UI update
         if file_pair:
-            self.update_data(file_pair)
+            self._update_ui_batch()
 
-        logger.debug(
-            f"FileTileWidget initialized (resource managed: {self._is_registered})"
+    def _setup_minimal_ui(self):
+        """Setup minimal UI elements."""
+        # Main layout
+        self.setLayout(QVBoxLayout())
+        self.layout().setContentsMargins(2, 2, 2, 2)
+        self.layout().setSpacing(2)
+
+        # Thumbnail frame
+        self.thumbnail_frame = QFrame()
+        self.thumbnail_frame.setFrameStyle(QFrame.Shape.Box)
+        self.thumbnail_frame.setLineWidth(2)
+        self.thumbnail_frame.setStyleSheet(
+            TileStylesheet.get_thumbnail_frame_stylesheet("")
         )
 
-    def _initialize_components(self):
-        """Inicjalizuje wszystkie komponenty."""
-        # Event bus dla komunikacji między komponentami
-        self._event_bus = TileEventBus()
-
-        # Komponent miniatur
-        self._thumbnail_component = ThumbnailComponent(
-            config=self._config, event_bus=self._event_bus, parent=self
+        # Thumbnail label
+        self.thumbnail_label = QLabel()
+        self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.thumbnail_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        if self._is_registered:
-            self._resource_manager.register_component(
-                "thumbnail", self._thumbnail_component
-            )
+        self.thumbnail_label.setMinimumSize(80, 80)
+        self.thumbnail_label.setText("?")
 
-        # Komponent metadanych
-        self._metadata_component = TileMetadataComponent(
-            config=self._config, event_bus=self._event_bus
+        # Filename label
+        self.filename_label = QLabel()
+        self.filename_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.filename_label.setWordWrap(True)
+        self.filename_label.setStyleSheet(
+            TileStylesheet.get_filename_label_stylesheet(12)
         )
-        if self._is_registered:
-            self._resource_manager.register_component(
-                "metadata", self._metadata_component
-            )
 
-        # Komponent interakcji
-        self._interaction_component = TileInteractionComponent(
-            config=self._config, event_bus=self._event_bus, parent_widget=self
-        )
-        if self._is_registered:
-            self._resource_manager.register_component(
-                "interaction", self._interaction_component
-            )
+        # Metadata controls
+        self.metadata_controls = MetadataControlsWidget()
+        self.metadata_controls.setEnabled(False)
 
-    def _setup_performance_optimization(self):
-        """Setup performance optimization."""
-        try:
-            if self._resource_manager:
-                self._performance_monitor = (
-                    self._resource_manager.get_performance_monitor()
-                )
-                self._cache_optimizer = self._resource_manager.get_cache_optimizer()
-                self._async_ui_manager = self._resource_manager.get_async_ui_manager()
+        # Layout setup
+        self.thumbnail_frame.setLayout(QVBoxLayout())
+        self.thumbnail_frame.layout().addWidget(self.thumbnail_label)
 
-                if self._cache_optimizer:
-                    self._cache_optimizer.register_cache_user(self)
-            else:
-                self._performance_monitor = None
-                self._cache_optimizer = None
-                self._async_ui_manager = None
+        self.layout().addWidget(self.thumbnail_frame)
+        self.layout().addWidget(self.filename_label)
+        self.layout().addWidget(self.metadata_controls)
 
-        except Exception as e:
-            logger.warning(f"Failed to setup performance optimization: {e}")
-            self._performance_monitor = None
-            self._cache_optimizer = None
-            self._async_ui_manager = None
+        # Set fixed size
+        self.setFixedSize(self.thumbnail_size[0], self.thumbnail_size[1])
 
-    def _setup_ui(self):
-        """UI setup delegate to UI manager."""
-        self._ui_manager.setup_ui()
+    def _connect_signals(self):
+        """Connect signals dla simplified architecture."""
+        # Metadata controls signals
+        if hasattr(self.metadata_controls, "stars_changed"):
+            self.metadata_controls.stars_changed.connect(self._on_stars_changed)
+        if hasattr(self.metadata_controls, "color_tag_changed"):
+            self.metadata_controls.color_tag_changed.connect(self._on_color_tag_changed)
 
-    def _on_thumbnail_component_loaded(self, path: str, pixmap: QPixmap):
-        """Callback gdy thumbnail component załadował miniaturę."""
-        if pixmap and not pixmap.isNull():
-            self.thumbnail_label.setPixmap(pixmap)
+    def _install_event_filters(self):
+        """Install event filters dla thumbnail i filename labels."""
+        self.thumbnail_label.installEventFilter(self)
+        self.filename_label.installEventFilter(self)
 
-    def _on_thumbnail_loaded(self, pixmap, path, width, height):
-        """Obsługuje załadowaną miniaturę - dla TileManager."""
-        if pixmap and not pixmap.isNull():
-            if hasattr(self, "thumbnail_label"):
-                self.thumbnail_label.setPixmap(pixmap)
+    def _update_ui_batch(self):
+        """Single-pass UI update żeby zapobiec flickering."""
+        if not self._state.file_pair:
+            self._reset_ui()
+            return
 
-            if self.file_pair:
-                color_tag = self.file_pair.get_color_tag()
-                if color_tag and color_tag.strip():
-                    self._update_thumbnail_border_color(color_tag)
-        else:
-            if hasattr(self, "thumbnail_label"):
-                self.thumbnail_label.setText("Błąd ładowania")
+        # Collect all updates
+        updates = {
+            "filename": self._state.file_pair.get_base_name(),
+            "stars": self._state.stars,
+            "color_tag": self._state.color_tag,
+            "enabled": True,
+        }
 
-    def _on_thumbnail_component_error(self, path: str, error_msg: str):
-        """Obsługa błędów ładowania miniatur."""
-        self.thumbnail_label.setText("Błąd")
-        if not ("does not exist" in error_msg or "File not found" in error_msg):
-            logger.warning(f"Thumbnail error: {error_msg}")
+        # Apply all updates in single repaint
+        self.setUpdatesEnabled(False)
+        self._apply_ui_updates(updates)
+        self.setUpdatesEnabled(True)
 
-    def _on_metadata_stars_changed(self, stars: int):
-        """Callback dla zmian gwiazdek z UI."""
-        if self._metadata_component:
-            self._metadata_component.set_stars(stars)
+    def _apply_ui_updates(self, updates: dict):
+        """Apply multiple UI updates efficiently."""
+        if "filename" in updates:
+            self.filename_label.setText(updates["filename"])
 
-        # Natychmiastowa aktualizacja UI gwiazdek
-        if hasattr(self, "metadata_controls"):
-            self.metadata_controls.update_stars_display(stars)
+        if "enabled" in updates:
+            self.metadata_controls.setEnabled(updates["enabled"])
+            if updates["enabled"]:
+                self.metadata_controls.set_file_pair(self._state.file_pair)
 
-        # Emituj główny sygnał dla MainWindow
-        if self.file_pair:
-            self.stars_changed.emit(self.file_pair, stars)
-            self.file_pair_updated.emit(self.file_pair)
-            logging.debug(f"Stars changed: {self.file_pair.get_base_name()} → {stars}")
+        if "stars" in updates:
+            self.metadata_controls.update_stars_display(updates["stars"])
 
-    def _on_metadata_color_changed(self, color_hex: str):
-        """Callback dla zmian kolorów z UI."""
-        if self._metadata_component:
-            self._metadata_component.set_color_tag(color_hex)
-            self._update_thumbnail_border_color(color_hex)
+        if "color_tag" in updates:
+            self.metadata_controls.update_color_tag_display(updates["color_tag"])
+            self._update_thumbnail_border_color(updates["color_tag"])
 
-        # Natychmiastowa aktualizacja UI kolorów
-        if hasattr(self, "metadata_controls"):
-            self.metadata_controls.update_color_tag_display(color_hex)
-
-        # Emituj główny sygnał dla MainWindow
-        if self.file_pair:
-            self.color_tag_changed.emit(self.file_pair, color_hex)
-            self.file_pair_updated.emit(self.file_pair)
-            logging.debug(
-                f"Color changed: {self.file_pair.get_base_name()} → {color_hex}"
-            )
-
-    def _on_tile_selection_changed(self, is_selected: bool):
-        """Callback dla zmian selekcji kafelka."""
-        if self._metadata_component:
-            self._metadata_component.set_selection(is_selected)
-        if self.file_pair:
-            self.tile_selected.emit(self.file_pair, is_selected)
+    def _reset_ui(self):
+        """Reset UI state dla None file_pair."""
+        self.filename_label.setText("Brak danych")
+        self.thumbnail_label.clear()
+        self.thumbnail_label.setText("?")
+        self.metadata_controls.set_file_pair(None)
+        self.metadata_controls.setEnabled(False)
+        self._update_thumbnail_border_color("")
 
     def _update_thumbnail_border_color(self, color_hex: str):
         """Aktualizuje kolor obwódki wokół miniatury."""
         self.thumbnail_frame.setStyleSheet(
             TileStylesheet.get_thumbnail_frame_stylesheet(color_hex)
         )
-        if color_hex and color_hex.strip():
-            logging.debug(f"Ustawiono kolor obwódki na: {color_hex}")
-        else:
-            logging.debug("Usunięto obwódkę - przezroczysta")
-
-    def _connect_signals(self):
-        """DELEGACJA: Signal connection przeniesiony do Event Managera."""
-        self._event_manager.connect_signals()
-
-    def _install_event_filters(self):
-        """DELEGACJA: Event filters przeniesione do Event Managera."""
-        self._event_manager.install_event_filters()
-
-    # Event handlers with delegacja to Event Manager
-    def _on_thumbnail_loaded_event(self, *args, **kwargs):
-        """DELEGACJA: Event handler w Event Managerze."""
-        self._event_manager.on_thumbnail_loaded_event(*args, **kwargs)
-
-    def _on_metadata_changed_event(self, *args, **kwargs):
-        """DELEGACJA: Event handler w Event Managerze."""
-        self._event_manager.on_metadata_changed_event(*args, **kwargs)
-
-    def _on_user_interaction_event(self, *args, **kwargs):
-        """DELEGACJA: Event handler w Event Managerze."""
-        self._event_manager.on_user_interaction_event(*args, **kwargs)
-
-    def _on_size_changed_event(self, *args, **kwargs):
-        """DELEGACJA: Event handler w Event Managerze."""
-        self._event_manager.on_size_changed_event(*args, **kwargs)
-
-    # USUNIĘTE: ~120 linii event handling kodu przeniesione do FileTileWidgetEventManager
-
-    def _on_context_menu_requested(self, file_pair, widget, event):
-        """Obsługuje żądanie menu kontekstowego."""
-        if file_pair:
-            self.tile_context_menu_requested.emit(file_pair, widget, event)
-
-    # === KOMPATYBILNOŚĆ WSTECZNA ===
-
-    def update_data(self, file_pair: Optional[FilePair]):
-        """
-        Aktualizuje dane kafelka z nowym file_pair.
-        ETAP 9: BACKWARD COMPATIBILITY - z deprecation warning.
-        """
-        # Show deprecation warning only after initialization
-        if hasattr(self, "_compatibility_adapter"):
-            self._compatibility_adapter.show_deprecation_warning(
-                "update_data", "set_file_pair"
-            )
-
-        self.file_pair = file_pair
-
-        if file_pair:
-            # Delegacja do komponentów
-            if hasattr(self, "_thumbnail_component") and file_pair.preview_path:
-                self._thumbnail_component.load_thumbnail(file_pair.preview_path)
-
-            if hasattr(self, "_metadata_component"):
-                self._metadata_component.set_file_pair(file_pair)
-
-            if hasattr(self, "_interaction_component"):
-                self._interaction_component.set_file_pair(file_pair)
-
-            # Event bus notification
-            if hasattr(self, "_event_bus"):
-                self._event_bus.emit_event(TileEvent.DATA_UPDATED, file_pair)
-
-            # Update display
-            self._update_ui_from_file_pair()
-
-            logging.debug(
-                f"FileTileWidget: Dane zaktualizowane dla {file_pair.get_base_name()}"
-            )
-        else:
-            # Reset dla None file_pair
-            self._reset_ui_state()
-
-    def set_file_pair(self, file_pair: Optional[FilePair]):
-        """KOMPATYBILNOŚĆ: Alias dla update_data()."""
-        self.update_data(file_pair)
-
-    def set_thumbnail_size(self, new_size):
-        """
-        KOMPATYBILNOŚĆ: Ustawia nowy rozmiar kafelka.
-        Deleguje do komponentów.
-        """
-        if isinstance(new_size, int):
-            size_tuple = (new_size, new_size)
-        else:
-            size_tuple = new_size
-
-        if self.thumbnail_size != size_tuple:
-            old_size = self.thumbnail_size
-            self.thumbnail_size = size_tuple
-
-            # Aktualizacja konfiguracji
-            self._config.thumbnail_size = size_tuple
-
-            # Aktualizacja UI
-            self.setFixedSize(size_tuple[0], size_tuple[1])
-
-            # Aktualizacja rozmiaru thumbnail label
-            if hasattr(self, "thumbnail_label"):
-                thumb_size = min(
-                    size_tuple[0] - TileSizeConstants.TILE_PADDING * 2,
-                    size_tuple[1]
-                    - TileSizeConstants.FILENAME_MAX_HEIGHT
-                    - TileSizeConstants.METADATA_MAX_HEIGHT,
-                )
-                thumb_size = max(thumb_size, TileSizeConstants.MIN_THUMBNAIL_WIDTH)
-                self.thumbnail_label.setFixedSize(thumb_size, thumb_size)
-
-            # Przeładuj miniaturę z nowym rozmiarem
-            if self.file_pair and self.file_pair.preview_path:
-                self._thumbnail_component.set_thumbnail_size(size_tuple, immediate=True)
-
-            self._update_font_size()
-
-            # Informowanie komponentów o zmianie
-            self._event_bus.emit_event(
-                TileEvent.SIZE_CHANGED, {"old_size": old_size, "new_size": size_tuple}
-            )
-
-            logging.debug(
-                f"FileTileWidget: Rozmiar zmieniony z {old_size} na {size_tuple}"
-            )
-
-    def _update_filename_display(self):
-        """Aktualizuje wyświetlanie nazwy pliku."""
-        if self.file_pair and hasattr(self, "filename_label"):
-            display_name = self.file_pair.get_base_name() or "Nieznany plik"
-            self.filename_label.setText(display_name)
-
-    def _update_ui_from_file_pair(self):
-        """Aktualizuje UI na podstawie danych z file_pair."""
-        if not self.file_pair:
-            return
-
-        # Aktualizacja nazwy pliku
-        self._update_filename_display()
-
-        # Aktualizacja metadata controls
-        if hasattr(self, "metadata_controls"):
-            self.metadata_controls.setEnabled(True)
-            self.metadata_controls.set_file_pair(self.file_pair)
-            self.metadata_controls.update_selection_display(False)
-            self.metadata_controls.update_stars_display(self.file_pair.get_stars())
-
-            # Aktualizacja koloru
-            color_tag = self.file_pair.get_color_tag()
-            self.metadata_controls.update_color_tag_display(color_tag)
-            self._update_thumbnail_border_color(color_tag)
-
-    def _reset_ui_state(self):
-        """Resetuje stan UI dla None file_pair."""
-        if hasattr(self, "filename_label"):
-            self.filename_label.setText("Brak danych")
-        if hasattr(self, "thumbnail_label"):
-            self.thumbnail_label.clear()
-            self.thumbnail_label.setText("?")
-        if hasattr(self, "metadata_controls"):
-            self.metadata_controls.set_file_pair(None)
-            self.metadata_controls.setEnabled(False)
-
-        self._update_thumbnail_border_color("")
-
-    def _update_font_size(self):
-        """Aktualizuje rozmiar czcionki w zależności od rozmiaru kafelka."""
-        if isinstance(self.thumbnail_size, int):
-            width = self.thumbnail_size
-        else:
-            width = self.thumbnail_size[0]
-
-        base_font_size = max(8, min(18, int(width / 12)))
-
-        if hasattr(self, "filename_label"):
-            self.filename_label.setStyleSheet(
-                TileStylesheet.get_filename_label_stylesheet(base_font_size)
-            )
-
-    # === DELEGACJA DO KOMPONENTÓW ===
 
     def _on_stars_changed(self, stars: int):
-        """Deleguje sygnał gwiazdek."""
+        """Callback dla zmian gwiazdek."""
+        self._state.stars = stars
         if self.file_pair:
             self.stars_changed.emit(self.file_pair, stars)
+            self.file_pair_updated.emit(self.file_pair)
 
     def _on_color_tag_changed(self, color_hex: str):
-        """Deleguje sygnał tagów kolorów."""
+        """Callback dla zmian kolorów."""
+        self._state.color_tag = color_hex
+        self._update_thumbnail_border_color(color_hex)
         if self.file_pair:
             self.color_tag_changed.emit(self.file_pair, color_hex)
+            self.file_pair_updated.emit(self.file_pair)
 
-    # === PRZEKIEROWANIE ZDARZEŃ DO INTERACTION COMPONENT ===
+    def _on_thumbnail_loaded(self, pixmap, path, width, height):
+        """Obsługuje załadowaną miniaturę - dla TileManager."""
+        if pixmap and not pixmap.isNull():
+            self.thumbnail_label.setPixmap(pixmap)
+            self._state.thumbnail_loaded = True
+
+            if self.file_pair:
+                color_tag = self.file_pair.get_color_tag()
+                if color_tag and color_tag.strip():
+                    self._update_thumbnail_border_color(color_tag)
+        else:
+            self.thumbnail_label.setText("Błąd ładowania")
+            self._state.thumbnail_loaded = False
+
+    def eventFilter(self, obj, event):
+        """Obsługuje zdarzenia na etykietach miniatury i nazwy."""
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.LeftButton:
+                if obj == self.thumbnail_label and self.file_pair:
+                    self.preview_image_requested.emit(self.file_pair)
+                    return True
+                elif obj == self.filename_label and self.file_pair:
+                    self.archive_open_requested.emit(self.file_pair)
+                    return True
+        return super().eventFilter(obj, event)
 
     def mousePressEvent(self, event):
-        """Przekierowuje do interaction component."""
-        if hasattr(self, "_interaction_component"):
-            self._interaction_component.handle_mouse_press(event)
-        else:
-            super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        """Przekierowuje do interaction component."""
-        if hasattr(self, "_interaction_component"):
-            self._interaction_component.handle_mouse_move(event)
-        else:
-            super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        """Przekierowuje do interaction component."""
-        if hasattr(self, "_interaction_component"):
-            self._interaction_component.handle_mouse_release(event)
-        else:
-            super().mouseReleaseEvent(event)
+        """Obsługuje kliknięcie myszy."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.set_selected(True)
+            if self.file_pair:
+                self.tile_selected.emit(self.file_pair, True)
+        super().mousePressEvent(event)
 
     def contextMenuEvent(self, event):
         """Obsługuje menu kontekstowe."""
@@ -559,78 +417,91 @@ class FileTileWidget(QWidget):
         else:
             super().contextMenuEvent(event)
 
-    def keyPressEvent(self, event):
-        """Przekierowuje do interaction component."""
-        if hasattr(self, "_interaction_component"):
-            self._interaction_component.handle_key_press(event)
-        else:
-            super().keyPressEvent(event)
+    # === PUBLIC API ===
 
-    def eventFilter(self, obj, event):
-        """Obsługuje zdarzenia na etykietach miniatury i nazwy."""
-        from PyQt6.QtCore import QEvent
+    def set_file_pair(self, file_pair: Optional[FilePair]):
+        """Ustawia nowy file_pair i aktualizuje UI."""
+        self.file_pair = file_pair
+        self._state.update_from_file_pair(file_pair)
 
-        if event.type() == QEvent.Type.MouseButtonPress:
-            from PyQt6.QtCore import Qt
+        if file_pair and file_pair.preview_path:
+            self._load_thumbnail(file_pair.preview_path)
 
-            if event.button() == Qt.MouseButton.LeftButton:
-                if obj == self.thumbnail_label and self.file_pair:
-                    self.preview_image_requested.emit(self.file_pair)
-                    return True
-                elif obj == self.filename_label and self.file_pair:
-                    self.archive_open_requested.emit(self.file_pair)
-                    return True
+        self._update_ui_batch()
 
-        return super().eventFilter(obj, event)
+    def set_thumbnail_size(self, new_size):
+        """Ustawia nowy rozmiar miniatur."""
+        if isinstance(new_size, int):
+            new_size = (new_size, new_size)
 
-    # === ETAP 9: BACKWARD COMPATIBILITY API ===
+        self.thumbnail_size = new_size
+        self._state.size = new_size
+        self.setFixedSize(new_size[0], new_size[1])
+
+        # Update font size
+        self._update_font_size()
+
+        # Reload thumbnail if needed
+        if self.file_pair and self.file_pair.preview_path:
+            self._load_thumbnail(self.file_pair.preview_path)
+
+    def set_selected(self, selected: bool):
+        """Ustawia status selekcji kafelka."""
+        self.is_selected = self._state.selected = selected
+        if self.file_pair:
+            self.tile_selected.emit(self.file_pair, selected)
+
+    def reload_thumbnail(self):
+        """Odświeża miniaturę."""
+        if self.file_pair and self.file_pair.preview_path:
+            self._load_thumbnail(self.file_pair.preview_path)
+
+    def _load_thumbnail(self, path: str):
+        """Load thumbnail z cache."""
+        try:
+            thumbnail = TileResourcePool.get_thumbnail(path, self.thumbnail_size)
+            if thumbnail and not thumbnail.isNull():
+                self.thumbnail_label.setPixmap(thumbnail)
+                self._state.thumbnail_loaded = True
+            else:
+                self.thumbnail_label.setText("Błąd")
+                self._state.thumbnail_loaded = False
+        except Exception as e:
+            logger.warning(f"Failed to load thumbnail {path}: {e}")
+            self.thumbnail_label.setText("Błąd")
+            self._state.thumbnail_loaded = False
+
+    def _update_font_size(self):
+        """Aktualizuje rozmiar czcionki w zależności od rozmiaru kafelka."""
+        width = self.thumbnail_size[0]
+        base_font_size = max(8, min(18, int(width / 12)))
+        self.filename_label.setStyleSheet(
+            TileStylesheet.get_filename_label_stylesheet(base_font_size)
+        )
+
+    # === LEGACY API COMPATIBILITY ===
+
+    def update_data(self, file_pair: Optional[FilePair]):
+        """LEGACY API: Aktualizuje dane kafelka."""
+        return self._legacy_bridge.update_data(file_pair)
 
     def change_thumbnail_size(self, size):
-        """
-        LEGACY API: Zmienia rozmiar miniatur.
-
-        Mapowane na set_thumbnail_size() z deprecation warning.
-
-        Args:
-            size: Nowy rozmiar (int lub tuple)
-        """
-        if hasattr(self, "_compatibility_adapter"):
-            return self._compatibility_adapter.change_thumbnail_size_legacy(size)
+        """LEGACY API: Zmienia rozmiar miniatur."""
+        return self._legacy_bridge.change_thumbnail_size(size)
 
     def refresh_thumbnail(self):
-        """
-        LEGACY API: Odświeża miniaturę.
-
-        Mapowane na reload_current() z deprecation warning.
-        """
-        if hasattr(self, "_compatibility_adapter"):
-            return self._compatibility_adapter.refresh_thumbnail_legacy()
+        """LEGACY API: Odświeża miniaturę."""
+        return self._legacy_bridge.refresh_thumbnail()
 
     def get_file_data(self):
-        """
-        LEGACY API: Pobiera dane pliku.
-
-        Mapowane na file_pair property z deprecation warning.
-
-        Returns:
-            FilePair: Obiekt pary plików
-        """
-        if hasattr(self, "_compatibility_adapter"):
-            return self._compatibility_adapter.get_file_data_legacy()
+        """LEGACY API: Pobiera dane pliku."""
+        return self._legacy_bridge.get_file_data()
 
     def set_selection(self, selected: bool):
-        """
-        LEGACY API: Ustawia status selekcji.
+        """LEGACY API: Ustawia status selekcji."""
+        return self._legacy_bridge.set_selection(selected)
 
-        Mapowane na set_selected() z deprecation warning.
-
-        Args:
-            selected: Czy kafelek jest zaznaczony
-        """
-        if hasattr(self, "_compatibility_adapter"):
-            return self._compatibility_adapter.set_selection_legacy(selected)
-
-    # === Getters/Setters dla kompatybilności ===
+    # === Getters dla kompatybilności ===
 
     def get_thumbnail_size(self) -> Tuple[int, int]:
         """Zwraca aktualny rozmiar miniatur."""
@@ -643,15 +514,6 @@ class FileTileWidget(QWidget):
     def is_tile_selected(self) -> bool:
         """Sprawdza czy kafelek jest zaznaczony."""
         return self.is_selected
-
-    def reload_thumbnail(self):
-        """NOWE API: Odświeża miniaturę."""
-        if hasattr(self, "_thumbnail_component") and self.file_pair:
-            preview_path = self.file_pair.get_preview_path()
-            if preview_path:
-                self._thumbnail_component.load_thumbnail(
-                    preview_path, self.thumbnail_size
-                )
 
     # === LEGACY METHODS DLA KOMPATYBILNOŚCI ===
 
@@ -671,36 +533,31 @@ class FileTileWidget(QWidget):
             "FileTileWidget: Właściwości pliku - funkcjonalność do implementacji"
         )
 
-    # === LIFECYCLE MANAGEMENT ===
-
-    # USUNIĘTE: ~150 linii thumbnail loading kodu przeniesione do ThumbnailOperations
+    # === Cleanup ===
 
     def cleanup(self):
-        """DELEGACJA: Cleanup przeniesiony do Cleanup Managera."""
-        self._cleanup_manager.cleanup()
+        """Cleanup resources."""
+        with self._cleanup_lock:
+            if self._cleanup_in_progress:
+                return
+            self._cleanup_in_progress = True
 
-    # USUNIĘTE: ~90 linii cleanup kodu przeniesione do FileTileWidgetCleanupManager
+        try:
+            # Unregister from resource pool
+            TileResourcePool.unregister(self)
+
+            # Clear references
+            self.file_pair = None
+            self._state = None
+
+            self._is_cleanup_done = True
+
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+        finally:
+            self._cleanup_in_progress = False
 
     def __del__(self):
-        """Destruktor - automatyczny cleanup."""
-        try:
-            if not self._is_cleanup_done:
-                self.cleanup()
-        except Exception:
-            # Ignoruj błędy w destruktorze
-            pass
-
-    # --- NOWE API ---
-
-    def set_selected(self, selected: bool):
-        """
-        NOWE API: Ustawia status selekcji.
-
-        Args:
-            selected: Czy kafelek jest zaznaczony
-        """
-        if self.is_selected != selected:
-            self.is_selected = selected
-            # Emit sygnał o zmianie selekcji
-            if self.file_pair:
-                self.tile_selected.emit(self.file_pair, selected)
+        """Destructor z cleanup."""
+        if not self._is_cleanup_done:
+            self.cleanup()
