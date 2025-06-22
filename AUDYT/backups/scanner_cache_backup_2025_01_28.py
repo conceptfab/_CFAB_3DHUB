@@ -7,7 +7,6 @@ folderów i parowania plików.
 
 import logging
 import os
-import sys
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -118,7 +117,7 @@ class Cache(Generic[K, V]):
         """Pobiera wartość z cache, aktualizując jej pozycję."""
         with self.lock:
             self.total_requests += 1
-
+            
             if key not in self.cache:
                 self.cache_misses += 1
                 return None
@@ -211,205 +210,86 @@ class ThreadSafeCache:
             self.scan_result_cache.clear()
         logger.info("Wyczyszczono cache skanowania")
 
-    def remove_entry(self, directory: str, pattern_match: bool = False):
-        """Usuwa wpis z cache z obsługą pattern matching - ROZSZERZONA."""
+    def remove_entry(self, directory: str):
+        """Usuwa konkretny wpis z cache."""
         normalized_dir = normalize_path(directory)
-        removed_count = 0
-
         with self._lock:
-            if pattern_match:
-                # Pattern-based removal
-                keys_to_remove = set()
-
-                # Zbierz klucze pasujące do wzorca
-                for key in self.file_map_cache.cache:
-                    if normalized_dir in key:
-                        keys_to_remove.add(key)
-
-                for key in self.scan_result_cache.cache:
-                    if normalized_dir in key:
-                        keys_to_remove.add(key)
-
-                # Batch removal
-                for key in keys_to_remove:
-                    if key in self.file_map_cache.cache:
-                        del self.file_map_cache.cache[key]
-                        removed_count += 1
-                    if key in self.scan_result_cache.cache:
-                        del self.scan_result_cache.cache[key]
-                        removed_count += 1
-
-                if removed_count > 0:
-                    logger.debug(
-                        f"Pattern removal: usunięto {removed_count} wpisów dla pattern '{directory}'"
-                    )
-            else:
-                # Exact match removal
-                if normalized_dir in self.file_map_cache.cache:
-                    del self.file_map_cache.cache[normalized_dir]
-                    removed_count += 1
-
-                if normalized_dir in self.scan_result_cache.cache:
-                    del self.scan_result_cache.cache[normalized_dir]
-                    removed_count += 1
-
-                if removed_count > 0:
-                    logger.debug(
-                        f"Exact removal: usunięto wpis cache dla '{directory}'"
-                    )
+            if normalized_dir in self.file_map_cache.cache:
+                del self.file_map_cache.cache[normalized_dir]
+                logger.debug(f"Usunięto wpis cache: {directory}")
+            if normalized_dir in self.scan_result_cache.cache:
+                del self.scan_result_cache.cache[normalized_dir]
+                logger.debug(f"Usunięto wpis cache: {directory}")
 
     def _cleanup_old_entries(self):
         """Usuwa stare wpisy z cache (wywołane pod lockiem) - optymalizacja single pass."""
         current_time = time.time()
-
+        
         # Pojedyncze przejście dla file_map_cache
         self._cleanup_cache_by_age_and_size(
             self.file_map_cache, current_time, "file_map"
         )
-
+        
         # Pojedyncze przejście dla scan_result_cache
         self._cleanup_cache_by_age_and_size(
             self.scan_result_cache, current_time, "scan_result"
         )
 
     def _cleanup_cache_by_age_and_size(self, cache_obj, current_time, cache_name):
-        """Single-pass cleanup z O(n) complexity - OPTYMALIZOWANA."""
-        to_remove_age = set()
-        valid_entries = []
-
-        # Single pass - segregacja wpisów O(n)
-        for key, (timestamp, value) in cache_obj.cache.items():
+        """Optymalizowane cleanup w jednym przejściu."""
+        to_remove = []
+        
+        # Zbierz wszystkie klucze do usunięcia (wiek + nadmiar)
+        for key, (timestamp, _) in cache_obj.cache.items():
             if current_time - timestamp > MAX_CACHE_AGE_SECONDS:
-                to_remove_age.add(key)
-            else:
-                valid_entries.append((key, timestamp))
-
-        # Sort tylko valid entries jeśli potrzeba usunąć nadmiar
-        to_remove_size = set()
-        if len(valid_entries) > MAX_CACHE_ENTRIES:
-            valid_entries.sort(key=lambda x: x[1])  # Sortuj według timestamp
-            size_limit = MAX_CACHE_ENTRIES
-            to_remove_size = {key for key, _ in valid_entries[:-size_limit]}
-
-        # Batch removal - O(k) gdzie k to liczba elementów do usunięcia
-        all_to_remove = to_remove_age | to_remove_size
-        removed_count = 0
-        for key in all_to_remove:
+                to_remove.append((key, timestamp, "age"))
+        
+        # Jeśli nadal za dużo wpisów, dodaj najstarsze
+        if len(cache_obj.cache) - len(to_remove) > MAX_CACHE_ENTRIES:
+            # Zbierz pozostałe wpisy, posortuj według wieku
+            remaining_items = [
+                (key, timestamp) for key, (timestamp, _) in cache_obj.cache.items()
+                if key not in [item[0] for item in to_remove]
+            ]
+            remaining_items.sort(key=lambda x: x[1])  # Sortuj według timestamp
+            
+            # Dodaj najstarsze do usunięcia
+            num_to_remove = len(cache_obj.cache) - len(to_remove) - MAX_CACHE_ENTRIES
+            for key, timestamp in remaining_items[:num_to_remove]:
+                to_remove.append((key, timestamp, "size"))
+        
+        # Usuń wszystkie wpisy jednocześnie
+        for key, _, reason in to_remove:
             if key in cache_obj.cache:
                 del cache_obj.cache[key]
-                removed_count += 1
+                logger.debug(f"Usunięto wpis z {cache_name} cache ({reason}): {key}")
 
-        if removed_count > 0:
-            logger.debug(
-                f"Usunięto {removed_count} wpisów z {cache_name} cache "
-                f"(age: {len(to_remove_age)}, size: {len(to_remove_size)})"
-            )
-
-    def get_statistics(self) -> Dict[str, any]:
-        """Kompleksowe statystyki obu cache - ROZSZERZONA FUNKCJONALNOŚĆ."""
+    def get_statistics(self) -> Dict[str, float]:
+        """Zwraca statystyki cache z rozszerzonym monitoringiem."""
         with self._lock:
-            # Statystyki file_map_cache
-            file_map_stats = self._get_cache_stats(self.file_map_cache, "file_map")
-
-            # Statystyki scan_result_cache
-            scan_result_stats = self._get_cache_stats(
-                self.scan_result_cache, "scan_result"
-            )
-
-            # Agregacja statystyk
-            total_requests = (
-                file_map_stats["total_requests"] + scan_result_stats["total_requests"]
-            )
-            combined_hit_ratio = 0
+            hit_ratio = 0
+            total_requests = self.file_map_cache.cache_hits + self.file_map_cache.cache_misses
+            
             if total_requests > 0:
-                total_hits = (
-                    file_map_stats["cache_hits"] + scan_result_stats["cache_hits"]
-                )
-                combined_hit_ratio = (total_hits / total_requests) * 100
+                hit_ratio = (self.file_map_cache.cache_hits / total_requests) * 100
 
-            return {
-                "file_map": file_map_stats,
-                "scan_result": scan_result_stats,
-                "combined": {
-                    "total_entries": file_map_stats["entries"]
-                    + scan_result_stats["entries"],
-                    "total_requests": total_requests,
-                    "combined_hit_ratio": round(combined_hit_ratio, 2),
-                    "memory_usage": self.get_cache_memory_usage(),
-                },
-            }
-
-    def _get_cache_stats(self, cache_obj, cache_name: str) -> Dict[str, any]:
-        """Pobiera statystyki dla pojedynczego cache."""
-        total_requests = cache_obj.cache_hits + cache_obj.cache_misses
-        hit_ratio = 0
-        if total_requests > 0:
-            hit_ratio = (cache_obj.cache_hits / total_requests) * 100
-
-        return {
-            "entries": len(cache_obj.cache),
-            "cache_hits": cache_obj.cache_hits,
-            "cache_misses": cache_obj.cache_misses,
-            "total_requests": total_requests,
-            "hit_ratio": round(hit_ratio, 2),
-            "cache_name": cache_name,
-        }
-
-    def get_cache_memory_usage(self) -> Dict[str, float]:
-        """Monitoring pamięci cache - NOWA FUNKCJONALNOŚĆ."""
-        with self._lock:
-            file_map_size = 0
-            scan_result_size = 0
-
-            # Szacowanie rozmiaru file_map_cache
-            for key, (_, value) in self.file_map_cache.cache.items():
-                file_map_size += sys.getsizeof(key)
-                file_map_size += sys.getsizeof(value)
-                if isinstance(value, dict):
-                    for k, v in value.items():
-                        file_map_size += sys.getsizeof(k) + sys.getsizeof(v)
-                        if isinstance(v, list):
-                            file_map_size += sum(sys.getsizeof(item) for item in v)
-
-            # Szacowanie rozmiaru scan_result_cache
-            for key, (_, value) in self.scan_result_cache.cache.items():
-                scan_result_size += sys.getsizeof(key)
-                scan_result_size += self._estimate_scan_result_size(value)
-
-            total_size = file_map_size + scan_result_size
-            return {
-                "file_map_memory_mb": round(file_map_size / (1024 * 1024), 2),
-                "scan_result_memory_mb": round(scan_result_size / (1024 * 1024), 2),
-                "total_memory_mb": round(total_size / (1024 * 1024), 2),
-                "file_map_entries": len(self.file_map_cache.cache),
+            stats = {
+                "cache_entries": len(self.file_map_cache.cache),
+                "cache_hits": self.file_map_cache.cache_hits,
+                "cache_misses": self.file_map_cache.cache_misses,
+                "total_requests": total_requests,
+                "hit_ratio": hit_ratio,
                 "scan_result_entries": len(self.scan_result_cache.cache),
             }
-
-    def _estimate_scan_result_size(self, value) -> int:
-        """Szacuje rozmiar wyniku skanowania w pamięci."""
-        if not isinstance(value, tuple) or len(value) != 4:
-            return sys.getsizeof(value)
-
-        file_pairs, unpaired_archives, unpaired_previews, special_folders = value
-        size = sys.getsizeof(value)
-
-        # Szacowanie rozmiaru list
-        size += sys.getsizeof(file_pairs)
-        if unpaired_archives:
-            size += sys.getsizeof(unpaired_archives) + sum(
-                sys.getsizeof(s) for s in unpaired_archives
-            )
-        if unpaired_previews:
-            size += sys.getsizeof(unpaired_previews) + sum(
-                sys.getsizeof(s) for s in unpaired_previews
-            )
-        size += sys.getsizeof(special_folders)
-
-        # Szacowanie rozmiaru FilePair objects (przybliżone)
-        for fp in file_pairs:
-            size += sys.getsizeof(fp) + 200  # Przybliżony rozmiar FilePair
-
-        return size
+            
+            # Automatyczny monitoring wydajności (jeśli dostępny)
+            try:
+                from .cache_monitor import monitor_cache_performance
+                monitor_cache_performance(self)
+            except ImportError:
+                pass  # Monitor nie jest wymagany
+            
+            return stats
 
 
 # Globalna instancja cache
