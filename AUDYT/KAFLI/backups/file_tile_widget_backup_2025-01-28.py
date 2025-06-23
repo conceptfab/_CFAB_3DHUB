@@ -146,10 +146,8 @@ class FileTileWidget(QWidget):
             return self._is_destroyed
 
     def _quick_destroyed_check(self) -> bool:
-        """Thread-safe sprawdzenie destroyed state z lightweight locking."""
-        # NAPRAWKA: Thread safety dla hot paths z read lock
-        with self._destroy_lock:
-            return self._is_destroyed
+        """Szybkie sprawdzenie destroyed state dla hot paths (bez lock)."""
+        return self._is_destroyed
 
     def _initialize_components(self):
         """Inicjalizuje wszystkie komponenty."""
@@ -704,38 +702,8 @@ class FileTileWidget(QWidget):
     # === LIFECYCLE MANAGEMENT ===
 
     def cleanup(self):
-        """Cleanup delegate to Cleanup Manager + memory leak prevention."""
+        """Cleanup delegate to Cleanup Manager."""
         self._is_destroyed = True
-        # Memory leak prevention: czyść event subscriptions
-        if hasattr(self, "_event_subscriptions"):
-            for subscription in self._event_subscriptions[:]:
-                try:
-                    if hasattr(subscription, "disconnect"):
-                        subscription.disconnect()
-                    elif hasattr(subscription, "unsubscribe"):
-                        subscription.unsubscribe()
-                except Exception:
-                    pass
-            self._event_subscriptions.clear()
-        # Czyść signal connections
-        if hasattr(self, "_signal_connections"):
-            for connection in self._signal_connections[:]:
-                try:
-                    if hasattr(connection, "disconnect"):
-                        connection.disconnect()
-                except Exception:
-                    pass
-            self._signal_connections.clear()
-        # Czyść event filters
-        if hasattr(self, "_event_filters"):
-            for event_filter in self._event_filters[:]:
-                try:
-                    if hasattr(event_filter, "removeEventFilter"):
-                        event_filter.removeEventFilter(self)
-                except Exception:
-                    pass
-            self._event_filters.clear()
-        # Deleguj do cleanup managera
         self._cleanup_manager.cleanup()
 
     def __del__(self):
