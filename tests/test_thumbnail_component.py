@@ -3,10 +3,14 @@
 TESTY ETAP 3: ThumbnailComponent
 """
 
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
 
 # Add src to path
 project_root = Path(__file__).parent.parent
@@ -22,6 +26,7 @@ try:
     )
     from src.ui.widgets.tile_config import TileConfig, TileState, create_testing_config
     from src.ui.widgets.tile_event_bus import create_event_bus
+    from src.ui.widgets.tile_thumbnail_component import PathValidator
 except ImportError as e:
     print(f"Import error: {e}")
     sys.exit(1)
@@ -155,6 +160,22 @@ class TestThumbnailComponent(unittest.TestCase):
         self.assertGreater(size, 0)
 
         print("✅ Config integration OK")
+
+    def test_windows_absolute_path_is_valid(self):
+        # Tworzymy tymczasowy plik z absolutną ścieżką Windows
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            # Patch os.access na True (bo plik może być zamknięty)
+            orig_access = os.access
+            os.access = lambda path, mode: True
+            is_valid, error = PathValidator.validate_path(tmp_path)
+            assert (
+                is_valid
+            ), f"Windows absolute path should be valid, got error: {error}"
+        finally:
+            os.access = orig_access
+            os.remove(tmp_path)
 
 
 if __name__ == "__main__":
