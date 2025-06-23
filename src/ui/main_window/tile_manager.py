@@ -1,6 +1,5 @@
 """
 Tile Manager - zarządzanie kafelkami w galerii.
-Przeniesione z MainWindow w ramach refaktoryzacji.
 """
 
 import logging
@@ -12,7 +11,6 @@ from src.models.file_pair import FilePair
 class TileManager:
     """
     Zarządza kafelkami w galerii - tworzenie, aktualizacja, obsługa zdarzeń.
-    Przeniesione z MainWindow w ramach refaktoryzacji.
     """
 
     def __init__(
@@ -24,19 +22,19 @@ class TileManager:
         data_manager=None,
     ):
         """
-        DEPENDENCY INJECTION: Inicjalizuje TileManager z wstrzykniętymi zależnościami.
+        Inicjalizuje TileManager z wstrzykniętymi zależnościami.
 
         Args:
             main_window: Referencja do głównego okna
-            gallery_manager: Opcjonalny gallery manager (DI pattern)
-            progress_manager: Opcjonalny progress manager (DI pattern)
-            worker_manager: Opcjonalny worker manager (DI pattern)
-            data_manager: Opcjonalny data manager (DI pattern)
+            gallery_manager: Opcjonalny gallery manager
+            progress_manager: Opcjonalny progress manager
+            worker_manager: Opcjonalny worker manager
+            data_manager: Opcjonalny data manager
         """
         self.main_window = main_window
         self.logger = logging.getLogger(__name__)
 
-        # DEPENDENCY INJECTION: Use injected managers or fallback to main_window
+        # Use injected managers or fallback to main_window
         self._gallery_manager = gallery_manager or getattr(
             main_window, "gallery_manager", None
         )
@@ -55,23 +53,23 @@ class TileManager:
         self._creation_lock = threading.RLock()
 
         # Batch processing optimization
-        self._batch_size = 50  # Optimized batch size
-        self._memory_threshold_mb = 500  # Memory pressure monitoring
+        self._batch_size = 50
+        self._memory_threshold_mb = 500
 
     def create_tile_widget_for_pair(self, file_pair: FilePair) -> Optional[object]:
         """
         Tworzy pojedynczy kafelek dla pary plików.
         """
-        # Walidacja danych wejściowych - Problem #4
         if not file_pair:
-            logging.warning("Otrzymano None zamiast FilePair")
+            self.logger.warning("Otrzymano None zamiast FilePair")
             return None
 
         if not hasattr(file_pair, "archive_path") or not file_pair.archive_path:
-            logging.error(f"Nieprawidłowy FilePair - brak archive_path: {file_pair}")
+            self.logger.error(
+                f"Nieprawidłowy FilePair - brak archive_path: {file_pair}"
+            )
             return None
 
-        # DEPENDENCY INJECTION: Use injected gallery manager
         gallery_manager = self._gallery_manager or self.main_window.gallery_manager
         tile = gallery_manager.create_tile_widget_for_pair(file_pair, self.main_window)
         if tile:
@@ -97,7 +95,6 @@ class TileManager:
                         try:
                             tile.thumbnail_label.isVisible()
                             result = original_on_thumbnail_loaded(*args, **kwargs)
-                            # DEPENDENCY INJECTION: Use injected progress manager
                             progress_mgr = (
                                 self._progress_manager
                                 or self.main_window.progress_manager
@@ -105,15 +102,11 @@ class TileManager:
                             progress_mgr.on_thumbnail_progress()
                             return result
                         except RuntimeError:
-                            logging.debug("Thumbnail callback: Widget usunięty")
                             return None
                     else:
-                        logging.debug(
-                            "Thumbnail callback: thumbnail_label nie istnieje"
-                        )
                         return None
                 except Exception as e:
-                    logging.warning(f"Błąd w thumbnail callback: {e}")
+                    self.logger.warning(f"Błąd w thumbnail callback: {e}")
                     return None
 
             tile._on_thumbnail_loaded = thumbnail_loaded_callback
@@ -144,26 +137,22 @@ class TileManager:
 
                 gc.collect()
         except Exception:
-            pass  # Fallback if psutil unavailable
+            pass
 
         self.main_window.gallery_manager.tiles_container.setUpdatesEnabled(False)
-        self.logger.debug(f"Batch creation start: {len(file_pairs)} kafli")
 
-        # DEPENDENCY INJECTION: Use injected worker manager
         worker_mgr = self._worker_manager or self.main_window.worker_manager
         worker_mgr.start_data_processing_worker(file_pairs)
 
     def create_tile_widgets_batch(self, file_pairs_batch: list):
         """
-        Tworzy kafelki dla batch'a par plików - OPTYMALIZACJA dla wydajności.
+        Tworzy kafelki dla batch'a par plików.
         Zamiast tworzyć po jednym kafelku, tworzy je grupami aby zmniejszyć obciążenie UI.
 
         Args:
             file_pairs_batch: Lista obiektów FilePair do przetworzenia w tym batch'u
         """
-        # TRUE BATCH PROCESSING: Memory monitoring dla dużych batch'y
         batch_size = len(file_pairs_batch)
-        self.logger.debug(f"Batch processing: {batch_size} kafli")
 
         # Memory pressure check before processing large batches
         if batch_size > 100:
@@ -175,7 +164,6 @@ class TileManager:
                     import gc
 
                     gc.collect()
-                    self.logger.debug(f"GC triggered: {memory_mb:.1f}MB")
             except Exception:
                 pass
 
@@ -187,18 +175,18 @@ class TileManager:
         try:
             created_count = 0
 
-            # NAPRAWKA KRYTYCZNA: Oblicz geometrię layoutu żeby dodać kafelki w odpowiednich pozycjach
+            # Oblicz geometrię layoutu żeby dodać kafelki w odpowiednich pozycjach
             gallery_manager = self.main_window.gallery_manager
             geometry = gallery_manager._get_cached_geometry()
             cols = geometry["cols"]
 
-            # NAPRAWKA KRYTYCZNA: Pobierz aktualną liczbę kafelków w layoutu żeby kontynuować numerację
+            # Pobierz aktualną liczbę kafelków w layoutu żeby kontynuować numerację
             current_tile_count = len(gallery_manager.gallery_tile_widgets)
 
             for idx, file_pair in enumerate(file_pairs_batch):
                 tile = self.create_tile_widget_for_pair(file_pair)
                 if tile:
-                    # NAPRAWKA KRYTYCZNA: DODAJ KAFELEK DO LAYOUTU!
+                    # Dodaj kafelek do layoutu
                     total_position = current_tile_count + idx
                     row = total_position // cols
                     col = total_position % cols
@@ -209,30 +197,19 @@ class TileManager:
                     # Pokaż kafelek
                     tile.setVisible(True)
 
-                    # NAPRAWKA: Ustaw numer kafelka NA KOŃCU gdy już jest dodany do layoutu
+                    # Ustaw numer kafelka
                     tile_number = total_position + 1
                     total_tiles = len(self.main_window.controller.current_file_pairs)
 
-                    self.logger.debug(
-                        f"🔧 Setting tile number {tile_number}/{total_tiles} for tile at ({row}, {col})"
-                    )
                     tile.set_tile_number(tile_number, total_tiles)
 
-                    # NAPRAWKA: Wymuś aktualizację display
+                    # Wymuś aktualizację display
                     if hasattr(tile, "_update_filename_display"):
                         tile._update_filename_display()
 
                     created_count += 1
 
-                    self.logger.debug(
-                        f"🔧 Tile {tile_number} added to layout at ({row}, {col}) with number display"
-                    )
-
-            self.logger.info(
-                f"🔧 DEBUG: Created {created_count} tiles from batch of {len(file_pairs_batch)} and ADDED TO LAYOUT"
-            )
-
-            # BATCH PROGRESS: Update progress in batches for better performance
+            # Update progress in batches for better performance
             progress_mgr = self._progress_manager or self.main_window.progress_manager
             gallery_mgr = self._gallery_manager or self.main_window.gallery_manager
 
@@ -240,15 +217,14 @@ class TileManager:
             progress_mgr.update_tile_creation_progress(actual_tiles_count)
 
         finally:
-            # NAPRAWKA WYDAJNOŚCI: Wymuś przetworzenie zdarzeń UI po każdym batchu,
-            # aby aplikacja pozostała responsywna i progress bar się aktualizował.
+            # Wymuś przetworzenie zdarzeń UI po każdym batchu
             from PyQt6.QtWidgets import QApplication
 
             QApplication.instance().processEvents()
 
     def refresh_existing_tiles(self, file_pairs_list: list):
         """
-        OPTIMIZED: Hash-based refresh istniejących kafli O(1) lookup.
+        Hash-based refresh istniejących kafli O(1) lookup.
         Nie tworzy nowych kafelków, tylko aktualizuje dane w istniejących.
 
         Args:
@@ -257,9 +233,7 @@ class TileManager:
         if not file_pairs_list:
             return
 
-        self.logger.debug(f"Hash-based refresh: {len(file_pairs_list)} kafli")
-
-        # OPTIMIZATION: Create hash map for O(1) lookup instead of O(n²)
+        # Create hash map for O(1) lookup instead of O(n²)
         file_pairs_map = {
             fp.archive_path: fp
             for fp in file_pairs_list
@@ -273,12 +247,9 @@ class TileManager:
         for tile in existing_tiles:
             if hasattr(tile, "file_pair") and tile.file_pair:
                 archive_path = tile.file_pair.archive_path
-                # O(1) hash lookup instead of O(n) linear search
                 if archive_path in file_pairs_map:
                     tile.update_data(file_pairs_map[archive_path])
                     refreshed_count += 1
-
-        self.logger.debug(f"Hash refresh complete: {refreshed_count} kafli")
 
         # Wymuś odświeżenie UI
         if hasattr(self.main_window.gallery_manager, "tiles_container"):
@@ -291,22 +262,18 @@ class TileManager:
         with self._creation_lock:
             self._is_creating_tiles = False
 
-        self.logger.debug("Zakończono tworzenie wszystkich kafelków.")
-
         # Włącz aktualizacje UI i wymuś odświeżenie
         self.main_window.gallery_manager.tiles_container.setUpdatesEnabled(True)
         self.main_window.gallery_manager.tiles_container.update()
 
-        self.logger.debug("UI enabled, creation finished.")
-
-        # NAPRAWKA PROGRESS BAR: Oznacz zakończenie tworzenia kafelków (50%)
+        # Oznacz zakończenie tworzenia kafelków (50%)
         self.main_window.progress_manager.finish_tile_creation()
 
         # Delegacja do managera zamiast wywołania nieistniejącej metody
         if hasattr(self.main_window, "unpaired_files_tab_manager"):
             self.main_window.unpaired_files_tab_manager.update_unpaired_files_lists()
 
-        # NAJPIERW: Przygotuj dane, w tym specjalne foldery
+        # Przygotuj dane, w tym specjalne foldery
         if (
             hasattr(self.main_window.controller, "special_folders")
             and self.main_window.controller.special_folders
@@ -314,11 +281,8 @@ class TileManager:
             self.main_window.gallery_manager.prepare_special_folders(
                 self.main_window.controller.special_folders
             )
-            self.logger.info(
-                f"Przygotowano {len(self.main_window.controller.special_folders)} specjalnych folderów do wyświetlenia"
-            )
 
-        # POTEM: Zastosuj filtry i odśwież widok RAZ, mając już wszystkie dane
+        # Zastosuj filtry i odśwież widok
         self.main_window.data_manager.apply_filters_and_update_view()
 
         # Pokaż interfejs
@@ -326,8 +290,7 @@ class TileManager:
         is_gallery_populated = bool(self.main_window.gallery_manager.file_pairs_list)
         self.main_window.size_control_panel.setVisible(is_gallery_populated)
 
-        # KRYTYCZNA NAPRAWKA: Jeśli galeria jest pusta po filtracji, nie można czekać
-        # na ładowanie miniaturek, które nigdy się nie rozpocznie.
+        # Jeśli galeria jest pusta po filtracji, zakończ proces
         if not is_gallery_populated:
             self.logger.warning(
                 "Galeria pusta po zastosowaniu filtrów. Kończenie procesu ładowania."
@@ -338,17 +301,11 @@ class TileManager:
             from PyQt6.QtCore import QTimer
 
             QTimer.singleShot(500, self.main_window.progress_manager.hide_progress)
-            # Zakończ metodę tutaj, aby nie pokazywać nieprawidłowych komunikatów o załadowaniu.
             return
 
         # Upewnij się że drzewo folderów jest widoczne
         if hasattr(self.main_window, "folder_tree"):
             self.main_window.folder_tree.setVisible(True)
-            self.logger.debug(
-                f"Drzewo folderów widoczne: "
-                f"{self.main_window.folder_tree.isVisible()}"
-            )
-            self.logger.debug(f"Splitter rozmiary: {self.main_window.splitter.sizes()}")
 
         # Przywróć przycisk
         self.main_window.select_folder_button.setText("Wybierz Folder Roboczy")
@@ -371,11 +328,6 @@ class TileManager:
 
         QTimer.singleShot(500, self.main_window.progress_manager.hide_progress)
 
-        self.logger.debug(
-            f"Widok zaktualizowany. Wyświetlono po filtracji: "
-            f"{len(self.main_window.gallery_manager.file_pairs_list)}."
-        )
-
     def update_thumbnail_size(self):
         """
         Aktualizuje rozmiar miniatur na podstawie wartości suwaka.
@@ -383,7 +335,7 @@ class TileManager:
         # Deleguj do gallery_tab_manager
         self.main_window.gallery_tab_manager.update_thumbnail_size()
 
-        # NAPRAWKA: Deleguj również do unpaired_files_tab_manager dla skalowania
+        # Deleguj również do unpaired_files_tab_manager dla skalowania
         if (
             hasattr(self.main_window, "unpaired_files_tab_manager")
             and self.main_window.unpaired_files_tab_manager
