@@ -37,7 +37,7 @@ class MemoryUsageStats:
 
 @dataclass
 class ResourceLimits:
-    """Limity zasobów dla systemu z enhanced validation."""
+    """Limity zasobów dla systemu."""
 
     max_tiles: int = 1000
     max_memory_mb: int = 4000
@@ -47,67 +47,9 @@ class ResourceLimits:
     memory_check_interval_seconds: int = 30
     cache_cleanup_threshold_ratio: float = 0.7
 
-    def __post_init__(self):
-        """NAPRAWKA: Enhanced validation z sensible defaults."""
-        # Validate and correct limits
-        if self.max_tiles <= 0:
-            logger.warning("Invalid max_tiles, setting to default 1000")
-            self.max_tiles = 1000
-        elif self.max_tiles > 10000:
-            logger.warning("max_tiles too high, capping at 10000")
-            self.max_tiles = 10000
-
-        if self.max_memory_mb <= 0:
-            logger.warning("Invalid max_memory_mb, setting to default 4000")
-            self.max_memory_mb = 4000
-        elif self.max_memory_mb > 32000:  # 32GB limit
-            logger.warning("max_memory_mb too high, capping at 32000")
-            self.max_memory_mb = 32000
-
-        if self.max_memory_per_tile_mb <= 0:
-            logger.warning("Invalid max_memory_per_tile_mb, setting to default 10")
-            self.max_memory_per_tile_mb = 10
-        elif self.max_memory_per_tile_mb > 100:
-            logger.warning("max_memory_per_tile_mb too high, capping at 100")
-            self.max_memory_per_tile_mb = 100
-
-        if self.max_concurrent_workers <= 0:
-            logger.warning("Invalid max_concurrent_workers, setting to default 8")
-            self.max_concurrent_workers = 8
-        elif self.max_concurrent_workers > 32:
-            logger.warning("max_concurrent_workers too high, capping at 32")
-            self.max_concurrent_workers = 32
-
-        if self.cleanup_interval_seconds < 30:
-            logger.warning("cleanup_interval_seconds too low, setting to minimum 30")
-            self.cleanup_interval_seconds = 30
-        elif self.cleanup_interval_seconds > 3600:
-            logger.warning("cleanup_interval_seconds too high, capping at 3600")
-            self.cleanup_interval_seconds = 3600
-
-        if self.memory_check_interval_seconds < 5:
-            logger.warning(
-                "memory_check_interval_seconds too low, setting to minimum 5"
-            )
-            self.memory_check_interval_seconds = 5
-        elif self.memory_check_interval_seconds > 300:
-            logger.warning("memory_check_interval_seconds too high, capping at 300")
-            self.memory_check_interval_seconds = 300
-
-        if self.cache_cleanup_threshold_ratio < 0.1:
-            logger.warning(
-                "cache_cleanup_threshold_ratio too low, setting to minimum 0.1"
-            )
-            self.cache_cleanup_threshold_ratio = 0.1
-        elif self.cache_cleanup_threshold_ratio > 0.9:
-            logger.warning("cache_cleanup_threshold_ratio too high, capping at 0.9")
-            self.cache_cleanup_threshold_ratio = 0.9
-
-        logger.debug(f"ResourceLimits validated: {self}")
-
 
 class MemoryMonitor(QObject):
-    """Monitor użycia pamięci z alertami i adaptive optimization."""
+    """Monitor użycia pamięci z alertami."""
 
     # Sygnały
     memory_warning = pyqtSignal(str, float)  # message, usage_mb
@@ -121,30 +63,20 @@ class MemoryMonitor(QObject):
         self._memory_history: List[float] = []
         self._max_history = 100
 
-        # NAPRAWKA: Adaptive memory monitoring
-        self._check_interval = limits.memory_check_interval_seconds
-        self._last_memory_mb = 0.0
-        self._memory_trend = "stable"
-        self._consecutive_high_usage = 0
-        self._adaptive_mode = False
-
         # Timer dla periodic checks
         self._check_timer = QTimer()
         self._check_timer.timeout.connect(self._check_memory_usage)
-        self._check_timer.start(self._check_interval * 1000)
+        self._check_timer.start(limits.memory_check_interval_seconds * 1000)
 
-        logger.debug(f"MemoryMonitor initialized with adaptive limits: {limits}")
+        logger.debug(f"MemoryMonitor initialized with limits: {limits}")
 
     def _check_memory_usage(self):
-        """Sprawdza aktuelne usage i emituje alerty z adaptive optimization."""
+        """Sprawdza aktuelne usage i emituje alerty."""
         try:
             import psutil
 
             process = psutil.Process()
             memory_mb = process.memory_info().rss / 1024 / 1024
-
-            # NAPRAWKA: Adaptive check interval based on memory trend
-            self._update_adaptive_interval(memory_mb)
 
             # Dodaj do historii
             self._memory_history.append(memory_mb)
@@ -153,23 +85,18 @@ class MemoryMonitor(QObject):
 
             # Sprawdź limity
             warning_threshold = self.limits.max_memory_mb * 0.8  # Warning przy 80%
-            critical_threshold = self.limits.max_memory_mb * 0.95  # Critical przy 95%
+            critical_threshold = self.limits.max_memory_mb * 0.95  # NAPRAWKA: Critical przy 95% zamiast 80%
 
             if memory_mb > critical_threshold:
-                self._consecutive_high_usage += 1
                 self.memory_critical.emit(
                     f"Critical memory usage: {memory_mb:.1f}MB", memory_mb
                 )
                 self.cleanup_needed.emit()
             elif memory_mb > warning_threshold:
-                self._consecutive_high_usage += 1
                 self.memory_warning.emit(
                     f"High memory usage: {memory_mb:.1f}MB", memory_mb
                 )
-            else:
-                self._consecutive_high_usage = 0
 
-            self._last_memory_mb = memory_mb
             self._last_check_time = time.time()
 
         except ImportError:
@@ -177,54 +104,18 @@ class MemoryMonitor(QObject):
         except Exception as e:
             logger.error(f"Memory check error: {e}")
 
-    def _update_adaptive_interval(self, current_memory_mb: float):
-        """NAPRAWKA: Adaptive check interval based on memory pressure."""
-        if len(self._memory_history) < 3:
-            return
-
-        # Calculate trend
-        recent = self._memory_history[-3:]
-        if recent[-1] > recent[0] * 1.05:  # 5% increase
-            self._memory_trend = "increasing"
-        elif recent[-1] < recent[0] * 0.95:  # 5% decrease
-            self._memory_trend = "decreasing"
-        else:
-            self._memory_trend = "stable"
-
-        # Adjust interval based on conditions
-        base_interval = self.limits.memory_check_interval_seconds
-
-        if self._consecutive_high_usage >= 3:
-            # High pressure - check more frequently
-            new_interval = max(5, base_interval // 3)  # Min 5s
-            self._adaptive_mode = True
-        elif self._memory_trend == "increasing":
-            # Memory growing - moderate frequency
-            new_interval = max(10, base_interval // 2)  # Min 10s
-            self._adaptive_mode = True
-        elif self._memory_trend == "stable" and self._adaptive_mode:
-            # Return to normal if stable
-            new_interval = base_interval
-            self._adaptive_mode = False
-        else:
-            new_interval = base_interval
-
-        # Update timer if interval changed
-        if new_interval != self._check_interval:
-            self._check_interval = new_interval
-            self._check_timer.setInterval(new_interval * 1000)
-            logger.debug(f"Memory check interval adjusted to {new_interval}s")
-
-    def cleanup(self):
-        """NAPRAWKA: Proper cleanup dla timer leak prevention."""
-        if hasattr(self, "_check_timer"):
-            self._check_timer.stop()
-            self._check_timer.deleteLater()
-            logger.debug("MemoryMonitor timer cleaned up")
-
     def get_memory_trend(self) -> str:
         """Zwraca trend użycia pamięci."""
-        return self._memory_trend
+        if len(self._memory_history) < 3:
+            return "insufficient_data"
+
+        recent = self._memory_history[-3:]
+        if recent[-1] > recent[0] * 1.1:
+            return "increasing"
+        elif recent[-1] < recent[0] * 0.9:
+            return "decreasing"
+        else:
+            return "stable"
 
     def get_current_memory_mb(self) -> float:
         """Zwraca aktuelne usage w MB."""
@@ -356,50 +247,55 @@ class TileResourceManager(QObject):
     # === PERFORMANCE OPTIMIZATION ===
 
     def _initialize_performance_components(self):
-        """Inicjalizuje komponenty performance optimization z enhanced error handling."""
+        """Inicjalizuje komponenty performance optimization."""
         if not self._performance_enabled:
             return
 
-        # NAPRAWKA: Enhanced error handling z retry mechanisms
-        max_retries = 3
-        retry_delay = 0.1  # 100ms
+        try:
+            # Import performance components (lazy loading)
+            from .tile_async_ui_manager import get_async_ui_manager
+            from .tile_cache_optimizer import get_cache_optimizer
+            from .tile_performance_monitor import get_performance_monitor
 
-        for attempt in range(max_retries):
-            try:
-                # Import performance components (lazy loading)
-                from .tile_async_ui_manager import get_async_ui_manager
-                from .tile_cache_optimizer import get_cache_optimizer
-                from .tile_performance_monitor import get_performance_monitor
+            # Initialize components
+            self._performance_monitor = get_performance_monitor(enable_monitoring=True)
+            self._cache_optimizer = get_cache_optimizer(
+                max_size_mb=self.limits.max_memory_mb * 0.3  # 30% całości dla cache
+            )
+            self._async_ui_manager = get_async_ui_manager(
+                max_concurrent_tasks=self.limits.max_concurrent_workers
+            )
 
-                # Initialize components z proper error handling
-                self._performance_monitor = get_performance_monitor()
-                self._cache_optimizer = get_cache_optimizer()
-                self._async_ui_manager = get_async_ui_manager()
-
-                logger.debug("Performance components initialized successfully")
-                break  # Success - exit retry loop
-
-            except ImportError as e:
-                logger.warning(
-                    f"Performance component import failed (attempt {attempt + 1}): {e}"
-                )
-                if attempt == max_retries - 1:
-                    logger.error("Failed to import performance components - disabling")
-                    self._performance_enabled = False
-                else:
-                    time.sleep(retry_delay)
-
-            except Exception as e:
-                logger.error(
-                    f"Performance component initialization error (attempt {attempt + 1}): {e}"
-                )
-                if attempt == max_retries - 1:
-                    logger.error(
-                        "Failed to initialize performance components - disabling"
+            # Connect signals
+            if self._performance_monitor:
+                self._performance_monitor.performance_alert.connect(
+                    lambda metric, value: self.resource_warning.emit(
+                        f"Performance alert: {metric} = {value}"
                     )
-                    self._performance_enabled = False
-                else:
-                    time.sleep(retry_delay)
+                )
+
+            if self._cache_optimizer:
+                self._cache_optimizer.memory_pressure_detected.connect(
+                    lambda usage_mb: self._on_memory_warning(
+                        f"Cache memory pressure", usage_mb
+                    )
+                )
+
+            if self._async_ui_manager:
+                self._async_ui_manager.performance_warning.connect(
+                    lambda warning_type, value: self.resource_warning.emit(
+                        f"UI performance: {warning_type} = {value}"
+                    )
+                )
+
+            logger.info("Performance optimization components initialized successfully")
+
+        except ImportError as e:
+            logger.warning(f"Performance components not available: {e}")
+            self._performance_enabled = False
+        except Exception as e:
+            logger.error(f"Failed to initialize performance components: {e}")
+            self._performance_enabled = False
 
     def get_performance_monitor(self):
         """Zwraca performance monitor."""
@@ -513,119 +409,62 @@ class TileResourceManager(QObject):
             self.cleanup_performed.emit(cleaned_count)
 
     def perform_emergency_cleanup(self):
-        """Wykonuje emergency cleanup przy krytycznym usage - BEZPIECZNY."""
+        """Wykonuje emergency cleanup przy krytycznym usage - MNIEJ AGRESYWNY."""
         logger.warning("Performing emergency cleanup due to high memory usage")
 
         with self._lock:
-            start_time = time.time()
-            cleaned_count = 0
-
-            # NAPRAWKA: Safe emergency cleanup - nie usuwaj Qt obiektów bezpośrednio
-            # Step 1: Regular cleanup first
+            # NAPRAWKA: Mniej agresywne cleanup - nie usuwaj Qt obiektów bezpośrednio
             self.perform_cleanup()
 
-            # Step 2: Worker pool cleanup
+            # NAPRAWKA: NIE wywołuj tile.cleanup() - to usuwa Qt obiekty!
+            # Zamiast tego tylko wymuś garbage collection
+            # for tile in list(self._active_tiles):
+            #     if hasattr(tile, "cleanup"):
+            #         try:
+            #             tile.cleanup()
+            #         except Exception as e:
+            #             logger.error(f"Emergency tile cleanup error: {e}")
+
+            # Worker pool cleanup
             self._worker_pool.force_cleanup()
 
-            # Step 3: NAPRAWKA: Safe component cleanup bez Qt object removal
-            for component_type, component_set in self._active_components.items():
-                # NAPRAWKA: Safe iteration over WeakSet
-                components_to_cleanup = []
-                try:
-                    components_to_cleanup = list(component_set)
-                except RuntimeError:
-                    logger.warning(f"WeakSet iteration failed for {component_type}")
-                    continue
-
-                for component in components_to_cleanup:
-                    if component is None:
-                        continue
-
-                    # NAPRAWKA: Safe cleanup - tylko clear cache, nie usuwaj Qt obiektów
-                    try:
-                        if hasattr(component, "clear_cache"):
-                            component.clear_cache()
-                        elif hasattr(component, "clear"):
-                            component.clear()
-                        # NIE wywołuj component.cleanup() - może usunąć Qt obiekty!
-                    except Exception as e:
-                        logger.debug(f"Safe component cleanup error: {e}")
-
-            # Step 4: NAPRAWKA: Aggressive garbage collection
-            for _ in range(10):  # Zwiększone z 8 na 10
+            # NAPRAWKA: Jeszcze bardziej agresywne garbage collection
+            for _ in range(8):  # Zwiększone z 5 na 8
                 collected = gc.collect()
                 if collected == 0:
                     break  # Brak więcej do zebrania
 
-            # Step 5: NAPRAWKA: Safe performance components cleanup
+            # NAPRAWKA: Bardziej ostrożne cleanup performance components
             if self._performance_enabled:
                 try:
                     if self._cache_optimizer:
-                        # Tylko clear cache, nie cleanup()
-                        if hasattr(self._cache_optimizer, "clear_cache"):
-                            self._cache_optimizer.clear_cache()
-                        elif hasattr(self._cache_optimizer, "clear"):
-                            self._cache_optimizer.clear()
-
+                        self._cache_optimizer.clear()  # Tylko clear cache, nie cleanup()
                     if self._async_ui_manager:
-                        # Tylko cancel pending tasks, nie cleanup()
-                        if hasattr(self._async_ui_manager, "cancel_pending_tasks"):
-                            self._async_ui_manager.cancel_pending_tasks()
+                        pass  # Nie wywołuj cleanup() - może usunąć Qt obiekty
                 except Exception as e:
-                    logger.error(f"Performance components safe cleanup error: {e}")
+                    logger.error(f"Performance components cleanup error: {e}")
 
-            cleanup_time = time.time() - start_time
-            logger.warning(f"Emergency cleanup completed in {cleanup_time:.3f}s")
+            logger.warning("Emergency cleanup completed")
 
     def _update_statistics(self):
-        """Aktualizuje statystyki użycia z performance optimization."""
-        # NAPRAWKA: Performance optimization - cache statistics
-        current_time = time.time()
-
-        # Check if we need to update (avoid too frequent updates)
-        if (
-            hasattr(self, "_last_stats_update")
-            and current_time - self._last_stats_update < 2.0
-        ):  # Min 2s between updates
-            return
-
+        """Aktualizuje statystyki użycia."""
         stats = MemoryUsageStats()
-        stats.timestamp = current_time
+        stats.timestamp = time.time()
 
         with self._lock:
             stats.total_tiles = len(self._active_tiles)
             stats.active_tiles = stats.total_tiles  # Wszystkie są aktywne w WeakSet
             stats.worker_count = self._worker_pool.get_active_count()
 
-            # NAPRAWKA: Cached memory stats
-            if (
-                not hasattr(self, "_cached_memory_mb")
-                or current_time - getattr(self, "_last_memory_check", 0) > 5.0
-            ):
-                stats.total_memory_mb = self._memory_monitor.get_current_memory_mb()
-                self._cached_memory_mb = stats.total_memory_mb
-                self._last_memory_check = current_time
-            else:
-                stats.total_memory_mb = self._cached_memory_mb
-
+            # Memory stats
+            stats.total_memory_mb = self._memory_monitor.get_current_memory_mb()
             if stats.total_tiles > 0:
                 stats.memory_per_tile_mb = stats.total_memory_mb / stats.total_tiles
 
-            # NAPRAWKA: Optimized cache stats calculation
+            # Cache stats z performance optimization
             if self._cache_optimizer:
                 try:
-                    # NAPRAWKA: Cache cache stats to avoid frequent calls
-                    if (
-                        not hasattr(self, "_cached_cache_stats")
-                        or current_time - getattr(self, "_last_cache_check", 0) > 10.0
-                    ):
-
-                        cache_stats = self._cache_optimizer.get_performance_summary()
-                        self._cached_cache_stats = cache_stats
-                        self._last_cache_check = current_time
-                    else:
-                        cache_stats = self._cached_cache_stats
-
+                    cache_stats = self._cache_optimizer.get_performance_summary()
                     stats.cache_hit_ratio = cache_stats.get("overall_hit_rate", 0.0)
                     # Estimate hits/misses z hit rate
                     total_operations = 100  # Base na recent activity
@@ -643,12 +482,11 @@ class TileResourceManager(QObject):
                 stats.cache_misses = 0
                 stats.cache_hit_ratio = 0.0
 
-        # NAPRAWKA: Optimized history management
+        # Dodaj do historii
         self._stats_history.append(stats)
-        if len(self._stats_history) > 50:  # Reduced from 100 to 50
+        if len(self._stats_history) > 100:
             self._stats_history.pop(0)
 
-        self._last_stats_update = current_time
         self.stats_updated.emit(stats)
 
     def _on_memory_warning(self, message: str, usage_mb: float):
@@ -711,16 +549,14 @@ class TileResourceManager(QObject):
         }
 
     def cleanup(self):
-        """Cleanup resource manager z proper timer cleanup."""
+        """Cleanup resource manager."""
         logger.info("Cleaning up TileResourceManager...")
 
-        # NAPRAWKA: Proper timer cleanup dla MemoryMonitor
+        # Stop timers
         if hasattr(self, "_cleanup_timer"):
             self._cleanup_timer.stop()
-            self._cleanup_timer.deleteLater()
-
         if hasattr(self, "_memory_monitor"):
-            self._memory_monitor.cleanup()  # NAPRAWKA: Proper MemoryMonitor cleanup
+            self._memory_monitor._check_timer.stop()
 
         # Cleanup performance components
         if self._performance_enabled:
@@ -755,18 +591,13 @@ _resource_manager_lock = threading.Lock()
 def get_resource_manager(
     limits: Optional[ResourceLimits] = None,
 ) -> TileResourceManager:
-    """Singleton access do TileResourceManager z proper double-checked locking."""
+    """Singleton access do TileResourceManager."""
     global _resource_manager_instance
 
-    # NAPRAWKA: Proper double-checked locking dla thread safety
-    if _resource_manager_instance is None:
-        with _resource_manager_lock:
-            # Double-check po acquire lock
-            if _resource_manager_instance is None:
-                _resource_manager_instance = TileResourceManager(limits)
-                logger.debug("TileResourceManager singleton instance created")
-
-    return _resource_manager_instance
+    with _resource_manager_lock:
+        if _resource_manager_instance is None:
+            _resource_manager_instance = TileResourceManager(limits)
+        return _resource_manager_instance
 
 
 def cleanup_resource_manager():

@@ -1,0 +1,45 @@
+2025-06-23 21:50:33,668 - root - INFO - Tryb debugowania w³¹czony - szczegó³owe logi skanowania
+2025-06-23 21:50:33,668 - __main__ - INFO - Root projektu: C:\_cloud\_CFAB_3DHUB
+2025-06-23 21:50:33,736 - root - INFO - System logowania skonfigurowany
+2025-06-23 21:50:34,104 - root - INFO - Stosowanie stylów (8086 znaków)
+21:50:34 - MainWindow - INFO - Rozpoczynam inicjalizacjê aplikacji przez Orchestrator
+2025-06-23 21:50:34,175 - MainWindow - INFO - Rozpoczynam inicjalizacjê aplikacji przez Orchestrator
+2025-06-23 21:50:35,064 - src.ui.directory_tree.manager - INFO - Ustawiono drzewo katalogów bez rozwijania: C:\_cloud\___TEST_FOLDER
+21:50:35 - MainWindow - INFO - Inicjalizacja aplikacji ukoñczona pomyœlnie
+2025-06-23 21:50:35,064 - MainWindow - INFO - Inicjalizacja aplikacji ukoñczona pomyœlnie
+21:50:35 - MainWindow - INFO - G³ówne okno aplikacji zosta³o zainicjalizowane
+2025-06-23 21:50:35,065 - MainWindow - INFO - G³ówne okno aplikacji zosta³o zainicjalizowane
+2025-06-23 21:50:35,151 - src.ui.widgets.tile_resource_manager - INFO - TileResourceManager initialized with limits: ResourceLimits(max_tiles=1000, max_memory_mb=4000, max_memory_per_tile_mb=10, max_concurrent_workers=8, cleanup_interval_seconds=180, memory_check_interval_seconds=30, cache_cleanup_threshold_ratio=0.7)
+2025-06-23 21:50:35,169 - src.ui.widgets.tile_performance_monitor - INFO - TilePerformanceMonitor initialized (monitoring: True)
+2025-06-23 21:50:35,169 - src.ui.widgets.tile_cache_optimizer - INFO - TileCacheOptimizer initialized (max_size: 300.0MB, max_entries: 1000, strategy: ADAPTIVE)
+2025-06-23 21:50:35,170 - src.ui.widgets.tile_async_ui_manager - INFO - TileAsyncUIManager initialized (concurrent_tasks: 5, batching: True)
+2025-06-23 21:50:35,290 - root - INFO - Aplikacja gotowa
+2025-06-23 21:50:35,291 - root - INFO - Uruchamianie g³ównej pêtli aplikacji
+2025-06-23 21:50:37,313 - src.ui.main_window.scan_results_handler - INFO - Zmiana katalogu na: C:/_cloud/___TEST_FOLDER/Tree Grass etc (bez resetu drzewa)
+2025-06-23 21:50:37,316 - src.services.scanning_service - INFO - Rozpoczynam skanowanie: C:/_cloud/___TEST_FOLDER/Tree Grass etc (strategy: first_match)
+2025-06-23 21:50:37,316 - src.logic.scanner - DEBUG - Rozpoczêto pe³ne skanowanie z parowaniem: scan_folder_for_pairs
+2025-06-23 21:50:37,317 - src.logic.scanner_core - INFO - [641dad4f] Rozpoczêto streaming zbieranie plików z katalogu: C:/_cloud/___TEST_FOLDER/Tree Grass etc
+2025-06-23 21:50:37,320 - src.logic.scanner_core - INFO - [641dad4f] SCAN_COMPLETED: C:/_cloud/___TEST_FOLDER/Tree Grass etc | files=350 | folders=1 | time=0.00s | rate=118101.9files/s, 337.4folders/s
+2025-06-23 21:50:37,328 - src.logic.scanner_core - INFO - Skanowanie zakoñczone dla C:/_cloud/___TEST_FOLDER/Tree Grass etc. Znaleziono 175 par.
+2025-06-23 21:50:37,329 - src.logic.scanner - DEBUG - Zakoñczono pe³ne skanowanie z parowaniem: scan_folder_for_pairs
+2025-06-23 21:50:37,329 - src.services.scanning_service - INFO - Skanowanie zakoñczone: 175 par, 0 niesparowanych archiwów, 0 niesparowanych podgl¹dów, 0 specjalnych folderów
+2025-06-23 21:50:37,329 - src.ui.main_window.scan_results_handler - CRITICAL - DIAGNOSTYKA CHANGE_DIRECTORY: Otrzymano 0 folderów specjalnych ze skanera: []
+2025-06-23 21:50:37,637 - root - INFO - FileExplorer: Root path set to: C:/_cloud/___TEST_FOLDER/Tree Grass etc
+2025-06-23 21:50:37,642 - src.ui.main_window.worker_manager - INFO - Uruchomiono nowy worker do przetwarzania 175 par plików (bez resetowania drzewa)
+2025-06-23 21:50:37,643 - src.ui.main_window.scan_results_handler - INFO - Zmiana katalogu na: C:/_cloud/___TEST_FOLDER/Tree Grass etc (bez resetu drzewa)
+2025-06-23 21:50:37,643 - src.services.scanning_service - INFO - Rozpoczynam skanowanie: C:/_cloud/___TEST_FOLDER/Tree Grass etc (strategy: first_match)
+2025-06-23 21:50:37,643 - src.logic.scanner - DEBUG - Rozpoczêto pe³ne skanowanie z parowaniem: scan_folder_for_pairs
+2025-06-23 21:50:37,644 - src.logic.scanner - DEBUG - Zakoñczono pe³ne skanowanie z parowaniem: scan_folder_for_pairs
+2025-06-23 21:50:37,645 - src.services.scanning_service - INFO - Skanowanie zakoñczone: 175 par, 0 niesparowanych archiwów, 0 niesparowanych podgl¹dów, 0 specjalnych folderów
+2025-06-23 21:50:37,646 - src.ui.main_window.scan_results_handler - CRITICAL - DIAGNOSTYKA CHANGE_DIRECTORY: Otrzymano 0 folderów specjalnych ze skanera: []
+2025-06-23 21:50:37,829 - root - INFO - FileExplorer: Root path set to: C:/_cloud/___TEST_FOLDER/Tree Grass etc
+2025-06-23 21:50:37,830 - src.ui.main_window.worker_manager - INFO - Uruchomiono nowy worker do przetwarzania 175 par plików (bez resetowania drzewa)
+21:51:03 - MainWindow - INFO - Rozpoczynam cleanup managerów...
+2025-06-23 21:51:03,662 - MainWindow - INFO - Rozpoczynam cleanup managerów...
+21:51:03 - MainWindow - INFO - Cleanup managerów ukoñczony
+2025-06-23 21:51:03,662 - MainWindow - INFO - Cleanup managerów ukoñczony
+21:51:03 - MainWindow - INFO - Rozpoczynam shutdown aplikacji...
+2025-06-23 21:51:03,662 - MainWindow - INFO - Rozpoczynam shutdown aplikacji...
+21:51:03 - MainWindow - INFO - Shutdown ukoñczony pomyœlnie
+2025-06-23 21:51:03,663 - MainWindow - INFO - Shutdown ukoñczony pomyœlnie
+2025-06-23 21:51:03,664 - src.ui.main_window.event_handler - INFO - Zamykanie aplikacji...
