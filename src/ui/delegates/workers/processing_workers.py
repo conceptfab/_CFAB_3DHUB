@@ -176,29 +176,33 @@ class DataProcessingWorker(UnifiedBaseWorker):
     def _run_implementation(self):
         total_pairs = len(self.file_pairs)
         batch_size = self._calculate_adaptive_batch_size(total_pairs)
-        
-        logger.info(f"🔧 DEBUG: DataProcessingWorker starting with {total_pairs} pairs, batch_size={batch_size}")
-        
+
+        logger.debug(
+            f"DataProcessingWorker starting with {total_pairs} pairs, batch_size={batch_size}"
+        )
+
         self.emit_progress(0, f"Processing {total_pairs} file pairs...")
         processed_pairs = []
         current_batch = []
         for i, file_pair in enumerate(self.file_pairs):
             if self.check_interruption():
-                logger.warning(f"🔧 DEBUG: DataProcessingWorker INTERRUPTED at index {i}")
+                logger.debug(f"DataProcessingWorker INTERRUPTED at index {i}")
                 return
             current_batch.append(file_pair)
             processed_pairs.append(file_pair)
             if len(current_batch) >= batch_size:
-                logger.info(f"🔧 DEBUG: Emitting batch {len(current_batch)} items at index {i}")
+                logger.debug(f"Emitting batch {len(current_batch)} items at index {i}")
                 self._emit_batch_with_metadata(current_batch.copy())
                 current_batch.clear()
                 progress = int((i / total_pairs) * 90)
                 self.emit_progress(progress, f"Processed {i+1}/{total_pairs} pairs")
         if current_batch:
-            logger.info(f"🔧 DEBUG: Emitting final batch with {len(current_batch)} items")
+            logger.debug(f"Emitting final batch with {len(current_batch)} items")
             self._emit_batch_with_metadata(current_batch)
-        
-        logger.info(f"🔧 DEBUG: DataProcessingWorker COMPLETED - processed {len(processed_pairs)} pairs")
+
+        logger.debug(
+            f"DataProcessingWorker COMPLETED - processed {len(processed_pairs)} pairs"
+        )
         self.emit_progress(100, f"Completed processing {total_pairs} file pairs")
         self.signals.finished.emit(processed_pairs)
 

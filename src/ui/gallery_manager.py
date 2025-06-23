@@ -77,6 +77,7 @@ class LayoutGeometry:
                 self.scroll_area.width() - self.scroll_area.verticalScrollBar().width()
             )
             tile_width_spacing = thumbnail_size + self.tiles_layout.spacing() + 10
+            # Używamy y + x dla spójności z nowym algorytmem wysokości
             tile_height_spacing = thumbnail_size + self.tiles_layout.spacing() + 40
             cols = max(1, math.ceil(container_width / tile_width_spacing))
 
@@ -533,11 +534,17 @@ class GalleryManager:
                 self.tiles_container.setMinimumHeight(0)
                 return
 
-            total_rows = math.ceil(total_items / cols)
-            tile_height_with_spacing = (
-                self.current_thumbnail_size + self.tiles_layout.spacing() + 40
-            )
-            total_height = total_rows * tile_height_with_spacing
+            # NOWY ALGORYTM wg propozycji użytkownika:
+            # n = total_items, k = cols, y = current_thumbnail_size, x = spacing + 40
+            n = total_items  # ilość par w folderze
+            k = cols  # ilość kolumn
+            y = self.current_thumbnail_size  # wysokość kafla (thumbnail)
+            x = (
+                self.tiles_layout.spacing() + 40
+            )  # przerwa między kaflami (spacing + margines na tekst)
+
+            z = math.ceil(n / k)  # ilość par w kolumnie (zaokrąglony w górę)
+            total_height = z * (y + x)  # A = z * (y + x) - usunięto +y
 
             # 3. Ustaw rozmiar kontenera, aby scrollbary działały poprawnie
             self.tiles_container.setMinimumHeight(total_height)
@@ -860,10 +867,15 @@ class GalleryManager:
                     except Exception:
                         pass
 
-            # Ustaw wysokość kontenera
-            total_rows = math.ceil(len(all_items) / cols)
-            tile_height_spacing = geometry["tile_height_spacing"]
-            total_height = total_rows * tile_height_spacing
+            # Ustaw wysokość kontenera - NOWY ALGORYTM wg propozycji użytkownika
+            # n = len(all_items), k = cols, y = current_thumbnail_size, x = spacing + 40
+            n = len(all_items)  # ilość par w folderze
+            k = cols  # ilość kolumn
+            y = self.current_thumbnail_size  # wysokość kafla (thumbnail)
+            x = self.tiles_layout.spacing() + 40  # przerwa między kaflami
+
+            z = math.ceil(n / k)  # ilość par w kolumnie (zaokrąglony w górę)
+            total_height = z * (y + x)  # A = z * (y + x) - usunięto +y
             self.tiles_container.setMinimumHeight(total_height)
             self.tiles_container.adjustSize()
             self.tiles_container.updateGeometry()
