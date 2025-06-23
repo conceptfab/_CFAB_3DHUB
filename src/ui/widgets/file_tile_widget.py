@@ -184,17 +184,30 @@ class FileTileWidget(QWidget):
             )
 
     def _setup_performance_optimization(self):
-        """Setup performance optimization."""
+        """Setup performance optimization z bezpieczną walidacją komponentów."""
         try:
             if self._resource_manager:
-                self._performance_monitor = (
-                    self._resource_manager.get_performance_monitor()
-                )
-                self._cache_optimizer = self._resource_manager.get_cache_optimizer()
-                self._async_ui_manager = self._resource_manager.get_async_ui_manager()
+                # Bezpieczna walidacja komponentów przed użyciem
+                perf_monitor = self._resource_manager.get_performance_monitor()
+                cache_optimizer = self._resource_manager.get_cache_optimizer()
+                async_ui_manager = self._resource_manager.get_async_ui_manager()
 
-                if self._cache_optimizer:
+                # Walidacja czy komponenty mają wymagane metody
+                if perf_monitor and hasattr(perf_monitor, "record_metric"):
+                    self._performance_monitor = perf_monitor
+                else:
+                    self._performance_monitor = None
+
+                if cache_optimizer and hasattr(cache_optimizer, "register_cache_user"):
+                    self._cache_optimizer = cache_optimizer
                     self._cache_optimizer.register_cache_user(self)
+                else:
+                    self._cache_optimizer = None
+
+                if async_ui_manager and hasattr(async_ui_manager, "schedule_ui_update"):
+                    self._async_ui_manager = async_ui_manager
+                else:
+                    self._async_ui_manager = None
             else:
                 self._performance_monitor = None
                 self._cache_optimizer = None
