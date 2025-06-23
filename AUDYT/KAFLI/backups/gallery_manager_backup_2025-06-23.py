@@ -6,20 +6,11 @@ import logging
 import math
 import os
 import threading
-import time
-import weakref
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices, QPixmap
-from PyQt6.QtWidgets import (
-    QApplication,
-    QGridLayout,
-    QLabel,
-    QSizePolicy,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtWidgets import QApplication, QGridLayout, QSizePolicy, QWidget
 
 from src import app_config
 from src.controllers.gallery_controller import GalleryController
@@ -33,45 +24,25 @@ logger = logging.getLogger(__name__)
 
 
 class LayoutGeometry:
-    """Thread-safe klasa pomocnicza do obliczeń geometrii layoutu."""
+    """Klasa pomocnicza do obliczeń geometrii layoutu."""
 
     def __init__(self, scroll_area, tiles_layout):
         self.scroll_area = scroll_area
         self.tiles_layout = tiles_layout
+        self._cache = {}
+        self._cache_lock = threading.Lock()
 
-        # Thread-safe cache z timestamps
-        self._cache: Dict[Tuple, Dict[str, Any]] = {}
-        self._cache_lock = threading.RLock()  # Reentrant lock dla nested calls
-        self._cache_timestamps: Dict[Tuple, float] = {}
-        self._cache_ttl = 5.0  # Cache TTL w sekundach
-
-        # Cache statistics dla monitoring
-        self._cache_stats = {"hits": 0, "misses": 0, "invalidations": 0}
-
-    def get_layout_params(self, thumbnail_size: int) -> Dict[str, Any]:
-        """Thread-safe zwracanie parametrów layoutu z intelligent caching."""
-        current_time = time.time()
-
-        cache_key = (
-            self.scroll_area.width(),
-            self.scroll_area.height(),
-            thumbnail_size,
-        )
-
+    def get_layout_params(self, thumbnail_size):
+        """Zwraca parametry layoutu dla danego rozmiaru miniatur."""
         with self._cache_lock:
-            # Check cache validity z TTL
-            if (
-                cache_key in self._cache
-                and cache_key in self._cache_timestamps
-                and current_time - self._cache_timestamps[cache_key] < self._cache_ttl
-            ):
+            cache_key = (
+                self.scroll_area.width(),
+                self.scroll_area.height(),
+                thumbnail_size,
+            )
 
-                self._cache_stats["hits"] += 1
-                # Return copy dla thread safety
-                return self._cache[cache_key].copy()
-
-            # Cache miss or expired - calculate new params
-            self._cache_stats["misses"] += 1
+            if cache_key in self._cache:
+                return self._cache[cache_key]
 
             container_width = (
                 self.scroll_area.width() - self.scroll_area.verticalScrollBar().width()
@@ -85,61 +56,19 @@ class LayoutGeometry:
                 "cols": cols,
                 "tile_width_spacing": tile_width_spacing,
                 "tile_height_spacing": tile_height_spacing,
-                "thumbnail_size": thumbnail_size,  # Store dla debugging
-                "calculated_at": current_time,
             }
 
-            # Store w cache z timestamp
             self._cache[cache_key] = params
-            self._cache_timestamps[cache_key] = current_time
+            return params
 
-            # Cleanup expired cache entries
-            self._cleanup_expired_cache(current_time)
-
-            return params.copy()
-
-    def _cleanup_expired_cache(self, current_time: float):
-        """Cleanup expired cache entries (called with lock held)."""
-        expired_keys = [
-            key
-            for key, timestamp in self._cache_timestamps.items()
-            if current_time - timestamp >= self._cache_ttl
-        ]
-
-        for key in expired_keys:
-            self._cache.pop(key, None)
-            self._cache_timestamps.pop(key, None)
-            self._cache_stats["invalidations"] += 1
-
-    def invalidate_cache(self):
-        """Force invalidation całego cache (np. przy resize events)."""
-        with self._cache_lock:
-            cache_size = len(self._cache)
-            self._cache.clear()
-            self._cache_timestamps.clear()
-            self._cache_stats["invalidations"] += cache_size
-
-    def get_cache_stats(self) -> Dict[str, int]:
-        """Zwróć cache statistics dla performance monitoring."""
-        with self._cache_lock:
-            stats = self._cache_stats.copy()
-            stats["cache_size"] = len(self._cache)
-            return stats
-
-    def get_visible_range(
-        self, thumbnail_size: int, total_items: int
-    ) -> Tuple[int, int, Dict[str, Any]]:
-        """Thread-safe obliczanie zakresu widocznych elementów z buffering."""
+    def get_visible_range(self, thumbnail_size, total_items):
+        """Oblicza zakres widocznych elementów."""
         params = self.get_layout_params(thumbnail_size)
 
         viewport_height = self.scroll_area.viewport().height()
         scroll_y = self.scroll_area.verticalScrollBar().value()
 
-        # Intelligent buffering based on scroll speed
-        base_buffer = viewport_height
-        # TODO: Można dodać adaptive buffering based na scroll velocity
-        buffer = base_buffer
-
+        buffer = viewport_height
         visible_start_y = max(0, scroll_y - buffer)
         visible_end_y = scroll_y + viewport_height + buffer
 
@@ -152,103 +81,6 @@ class LayoutGeometry:
         last_visible_item = min((last_visible_row + 1) * params["cols"], total_items)
 
         return first_visible_item, last_visible_item, params
-
-
-class VirtualScrollingMemoryManager:
-    """Memory management dla virtual scrolling kafli."""
-
-    def __init__(self, gallery_manager):
-        self.gallery_manager = gallery_manager
-
-        # Widget tracking
-        self.active_widgets: Dict[int, weakref.ref] = {}  # index -> widget weakref
-        self.disposed_widgets: Set[int] = set()
-
-        # Memory thresholds
-        self.max_active_widgets = 200  # Max widgets in memory
-        self.cleanup_threshold = 150  # Start cleanup when reached
-
-        # Statistics
-        self.stats = {"widgets_created": 0, "widgets_disposed": 0, "memory_cleanups": 0}
-
-    def register_widget(self, index: int, widget):
-        """Register widget dla tracking."""
-        if widget:
-            self.active_widgets[index] = weakref.ref(
-                widget, lambda ref: self._on_widget_destroyed(index)
-            )
-            self.stats["widgets_created"] += 1
-
-            # Check memory pressure
-            if len(self.active_widgets) > self.cleanup_threshold:
-                self._trigger_memory_cleanup()
-
-    def _on_widget_destroyed(self, index: int):
-        """Callback gdy widget został zniszczony."""
-        self.active_widgets.pop(index, None)
-        self.disposed_widgets.add(index)
-
-    def _trigger_memory_cleanup(self):
-        """Trigger memory cleanup when threshold reached."""
-        if not self.gallery_manager._virtualization_enabled:
-            return
-
-        # Get visible range
-        if (
-            hasattr(self.gallery_manager, "file_pairs_list")
-            and self.gallery_manager.file_pairs_list
-        ):
-            total_items = len(self.gallery_manager.file_pairs_list)
-            visible_start, visible_end, _ = (
-                self.gallery_manager._geometry.get_visible_range(
-                    self.gallery_manager._current_size_tuple[0], total_items
-                )
-            )
-
-            # Dispose widgets outside visible range
-            disposed_count = 0
-            for index in list(self.active_widgets.keys()):
-                if index < visible_start or index >= visible_end:
-                    if self._dispose_widget_at_index(index):
-                        disposed_count += 1
-
-            self.stats["memory_cleanups"] += 1
-            self.stats["widgets_disposed"] += disposed_count
-
-            if disposed_count > 0:
-                logging.debug(
-                    f"Memory cleanup: disposed {disposed_count} widgets, "
-                    f"active: {len(self.active_widgets)}"
-                )
-
-    def _dispose_widget_at_index(self, index: int) -> bool:
-        """Dispose widget at specific index."""
-        widget_ref = self.active_widgets.get(index)
-        if widget_ref:
-            widget = widget_ref()
-            if widget:
-                # Remove z layout
-                if hasattr(self.gallery_manager, "tiles_layout"):
-                    self.gallery_manager.tiles_layout.removeWidget(widget)
-
-                # Cleanup widget
-                if hasattr(widget, "cleanup"):
-                    widget.cleanup()
-                elif hasattr(widget, "deleteLater"):
-                    widget.deleteLater()
-
-                # Remove z tracking
-                self.active_widgets.pop(index, None)
-                self.disposed_widgets.add(index)
-                return True
-        return False
-
-    def get_memory_stats(self) -> Dict[str, int]:
-        """Get memory management statistics."""
-        stats = self.stats.copy()
-        stats["active_widgets"] = len(self.active_widgets)
-        stats["disposed_count"] = len(self.disposed_widgets)
-        return stats
 
 
 class GalleryManager:
@@ -309,119 +141,12 @@ class GalleryManager:
         self._virtualization_timer.setSingleShot(True)
         self._virtualization_timer.timeout.connect(self._update_visible_tiles)
 
-        # PATCH 3: Throttling scroll events
-        self._scroll_timer = None
-        self._last_scroll_update = 0
-        self._scroll_throttle_ms = 16  # ~60 FPS for smooth scrolling
-        self._scroll_debounce_ms = 100  # Debounce dla heavy operations
-
-        # Progressive loading state
-        self._progressive_loading = False
-        self._loading_chunks_queue = []
-        self._loading_lock = threading.RLock()
-
         # NAPRAWKA: Podłącz scroll event do wirtualizacji
         if hasattr(self.scroll_area, "verticalScrollBar"):
-            # Replace old scroll handler with throttled version
-            self.scroll_area.verticalScrollBar().valueChanged.connect(
-                self._on_scroll_throttled
-            )
-            self._setup_scroll_throttling()
+            self.scroll_area.verticalScrollBar().valueChanged.connect(self._on_scroll)
 
         # NAPRAWKA KRYTYCZNA: Inicjalizacja flagi wirtualizacji
-        self._virtualization_enabled = False  # ZAWSZE wyłączona
-        logging.info(
-            "Virtualization DISABLED - virtual scrolling turned off to prevent disappearing tiles"
-        )
-
-        # Memory management
-        self.memory_manager = VirtualScrollingMemoryManager(self)
-
-    def _setup_scroll_throttling(self):
-        """Setup throttled scroll event handling."""
-        if self.scroll_area and hasattr(self.scroll_area, "verticalScrollBar"):
-            # Setup timer dla debounced operations
-            self._scroll_timer = QTimer()
-            self._scroll_timer.setSingleShot(True)
-            self._scroll_timer.timeout.connect(self._on_scroll_debounced)
-
-    def _on_scroll_throttled(self, value):
-        """Throttled scroll handler - called at max ~60 FPS."""
-        import time
-
-        current_time = time.time() * 1000  # ms
-
-        if current_time - self._last_scroll_update >= self._scroll_throttle_ms:
-            self._last_scroll_update = current_time
-
-            # Fast operations only - visibility updates
-            self._update_visible_tiles_fast()
-
-            # Schedule debounced heavy operations
-            if self._scroll_timer:
-                self._scroll_timer.stop()
-                self._scroll_timer.start(self._scroll_debounce_ms)
-
-    def _on_scroll_debounced(self):
-        """Debounced scroll handler - heavy operations."""
-        # Heavy operations po zakończeniu scroll
-        self._update_geometry_cache_if_needed()
-        self._cleanup_hidden_tiles()
-        self._trigger_progressive_loading_if_needed()
-
-    def _update_visible_tiles_fast(self):
-        """Szybka aktualizacja widoczności kafli bez heavy operations."""
-        # NAPRAWKA KRYTYCZNA: Wyłączono żeby kafle nie znikały!
-        # Problem: enumerate(gallery_tile_widgets.values()) nie gwarantuje kolejności
-        # TODO: Poprawić implementację w przyszłości
-        return
-
-        if not hasattr(self, "file_pairs_list") or not self.file_pairs_list:
-            return
-
-        total_items = len(self.file_pairs_list)
-        first_visible, last_visible, params = self._geometry.get_visible_range(
-            self._current_size_tuple[0], total_items
-        )
-
-        # Fast visibility updates only - PROBLEM Z KOLEJNOŚCIĄ!
-        for i, widget in enumerate(self.gallery_tile_widgets.values()):
-            if widget and hasattr(widget, "setVisible"):
-                should_be_visible = first_visible <= i < last_visible
-                if widget.isVisible() != should_be_visible:
-                    widget.setVisible(should_be_visible)
-
-    def _update_geometry_cache_if_needed(self):
-        """Update geometry cache jeśli window size się zmienił."""
-        if hasattr(self, "_geometry"):
-            # Check czy trzeba invalidate cache
-            current_size = (self.scroll_area.width(), self.scroll_area.height())
-            if (
-                not hasattr(self, "_last_window_size")
-                or self._last_window_size != current_size
-            ):
-                self._geometry.invalidate_cache()
-                self._last_window_size = current_size
-
-    def _cleanup_hidden_tiles(self):
-        """Cleanup tiles które są poza visible range (called by throttled scroll)."""
-        if not self._virtualization_enabled:
-            return
-
-        # Delegate do memory manager
-        if hasattr(self, "memory_manager"):
-            self.memory_manager._trigger_memory_cleanup()
-
-    def _trigger_progressive_loading_if_needed(self):
-        """Trigger progressive loading jeśli są pending chunks."""
-        with self._loading_lock:
-            if self._loading_chunks_queue and not self._progressive_loading:
-                self._start_progressive_loading()
-
-    def _start_progressive_loading(self):
-        """Start progressive loading - placeholder for now."""
-        # TODO: Implement w następnym patch
-        pass
+        self._virtualization_enabled = True  # Domyślnie włączona wirtualizacja
 
     def _log_diagnostic(self, message: str):
         """Logowanie diagnostyczne - tylko gdy włączone."""
@@ -521,9 +246,8 @@ class GalleryManager:
                 parent_widget,
                 skip_resource_registration=True,
             )
-            # NAPRAWKA KRYTYCZNA: NIE ukrywaj kafli na starcie!
-            # tile.setVisible(False)  # WYŁĄCZONE - powodowało znikanie kafli
-            tile.setVisible(True)  # ZAWSZE widoczne
+            # Ukryj na starcie, update_gallery_view zdecyduje o widoczności
+            tile.setVisible(False)
 
             # Thread-safe dodanie do słownika
             with self._widgets_lock:
@@ -548,35 +272,27 @@ class GalleryManager:
         )
 
         # NAPRAWKA KRYTYCZNA: Zmniejszono próg z 1500 na 200 - duże foldery MUSZĄ używać asynchronicznego DataProcessingWorker!
-        if (
-            total_items <= 200
-        ):  # Tylko małe foldery używają synchronicznego force_create_all_tiles
+        if total_items <= 200:  # Tylko małe foldery używają synchronicznego force_create_all_tiles
             logging.info(f"Using force_create_all_tiles for {total_items} items")
             self.force_create_all_tiles()
             # NAPRAWKA: Wyłącz wirtualizację po force_create_all_tiles
             self._virtualization_enabled = False
             logging.info("Virtualization disabled after force_create_all_tiles")
             return
-
+        
         # NAPRAWKA KRYTYCZNA: Dla folderów >200 kafelków używaj wirtualizacji - DataProcessingWorker już działa!
-        logging.info(
-            f"Large folder ({total_items} items) - DataProcessingWorker already running, proceeding with virtualization layout"
-        )
-
+        logging.info(f"Large folder ({total_items} items) - DataProcessingWorker already running, proceeding with virtualization layout")
+        
         # NAPRAWKA: NIE uruchamiaj dodatkowego DataProcessingWorker - jeden już działa z scan_results_handler!
 
         # Dla dużych folderów używaj wirtualizacji
         logging.info(f"Using virtualization for {total_items} items")
-
+        
         # NAPRAWKA: Sprawdź stan danych przed wirtualizacją
-        logging.info(
-            f"🔍 DEBUG DATA: special_folders_list={len(self.special_folders_list)}, file_pairs_list={len(self.file_pairs_list)}"
-        )
+        logging.info(f"🔍 DEBUG DATA: special_folders_list={len(self.special_folders_list)}, file_pairs_list={len(self.file_pairs_list)}")
         if len(self.file_pairs_list) > 0:
-            logging.info(
-                f"🔍 First file_pair: {self.file_pairs_list[0].get_archive_path()}"
-            )
-
+            logging.info(f"🔍 First file_pair: {self.file_pairs_list[0].get_archive_path()}")
+        
         self.tiles_container.setUpdatesEnabled(False)
         try:
             # 1. Wyczyść stare widgety z layoutu, ale ZACHOWAJ je w pamięci
@@ -611,25 +327,19 @@ class GalleryManager:
             self.scroll_area.ensureVisible(0, 0)
             self.scroll_area.viewport().updateGeometry()
 
-            # NAPRAWKA KRYTYCZNA: NIE włączaj wirtualizacji!
-            # self._virtualization_enabled = True  # WYŁĄCZONE - powodowało znikanie kafli
-            self._virtualization_enabled = False  # ZAWSZE wyłączona
-            logging.info(
-                "Virtualization DISABLED - virtual scrolling turned off to prevent disappearing tiles"
-            )
+            # NAPRAWKA KRYTYCZNA: Włącz wirtualizację!
+            self._virtualization_enabled = True
+            logging.info("Virtualization enabled for large folder")
 
-            # 4. NAPRAWKA: NIE wywołuj _update_visible_tiles() - powoduje znikanie kafli!
-            # logging.info("Forcing first _update_visible_tiles() call")
-            # try:
-            #     self._update_visible_tiles()
-            #     logging.info("✅ _update_visible_tiles() completed successfully")
-            # except Exception as e:
-            #     logging.error(f"🚨 CRITICAL ERROR in _update_visible_tiles(): {e}")
-            #     import traceback
-            #     logging.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
-            logging.info(
-                "Skipping _update_visible_tiles() call - virtual scrolling disabled"
-            )
+            # 4. NAPRAWKA: Wymuś pierwsze wywołanie _update_visible_tiles()
+            logging.info("Forcing first _update_visible_tiles() call")
+            try:
+                self._update_visible_tiles()
+                logging.info("✅ _update_visible_tiles() completed successfully")
+            except Exception as e:
+                logging.error(f"🚨 CRITICAL ERROR in _update_visible_tiles(): {e}")
+                import traceback
+                logging.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
 
         finally:
             self.tiles_container.setUpdatesEnabled(True)
@@ -637,40 +347,28 @@ class GalleryManager:
     def _update_visible_tiles(self):
         """Tworzy/usuwa kafelki w zależności od tego, czy są widoczne."""
 
-        # NAPRAWKA KRYTYCZNA: CAŁKOWICIE WYŁĄCZONE - powodowało znikanie kafli!
-        logging.info(
-            "_update_visible_tiles() DISABLED - virtual scrolling turned off to prevent disappearing tiles"
-        )
-        return
-
         # NAPRAWKA: Wyłącz wirtualizację jeśli jest wyłączona
         if not self._virtualization_enabled:
             logging.info("Virtualization disabled - skipping _update_visible_tiles")
             return
 
         # NAPRAWKA: Agresywne debugging
-        logging.info(
-            f"🚀 _update_visible_tiles() START - virtualization_enabled={self._virtualization_enabled}"
-        )
-
+        logging.info(f"🚀 _update_visible_tiles() START - virtualization_enabled={self._virtualization_enabled}")
+        
         # Sprawdź czy mamy dane
         total_items = len(self.special_folders_list) + len(self.file_pairs_list)
         if total_items == 0:
             logging.warning("🚨 No items to display in _update_visible_tiles")
             return
-
-        logging.info(
-            f"🔍 Processing {total_items} items (special_folders={len(self.special_folders_list)}, file_pairs={len(self.file_pairs_list)})"
-        )
+            
+        logging.info(f"🔍 Processing {total_items} items (special_folders={len(self.special_folders_list)}, file_pairs={len(self.file_pairs_list)})")
 
         # Użyj cache'owanych obliczeń geometrii
         geometry = self._get_cached_geometry()
         cols = geometry["cols"]
         tile_height_spacing = geometry["tile_height_spacing"]
 
-        logging.info(
-            f"🏗️ Layout: cols={cols}, tile_height_spacing={tile_height_spacing}"
-        )
+        logging.info(f"🏗️ Layout: cols={cols}, tile_height_spacing={tile_height_spacing}")
 
         # Określ widoczny obszar
         viewport_height = self.scroll_area.viewport().height()
@@ -709,15 +407,11 @@ class GalleryManager:
 
         # NAPRAWKA: Sprawdź czy zakres jest poprawny
         if first_visible_item_idx >= len(all_items):
-            logging.error(
-                f"🚨 ERROR: first_visible_item_idx ({first_visible_item_idx}) >= total_items ({len(all_items)})"
-            )
+            logging.error(f"🚨 ERROR: first_visible_item_idx ({first_visible_item_idx}) >= total_items ({len(all_items)})")
             return
-
+            
         if last_visible_item_idx <= first_visible_item_idx:
-            logging.error(
-                f"🚨 ERROR: Invalid range: last_visible_item_idx ({last_visible_item_idx}) <= first_visible_item_idx ({first_visible_item_idx})"
-            )
+            logging.error(f"🚨 ERROR: Invalid range: last_visible_item_idx ({last_visible_item_idx}) <= first_visible_item_idx ({first_visible_item_idx})")
             return
 
         # Dodaj widoczne kafelki
@@ -725,11 +419,9 @@ class GalleryManager:
         for i in range(first_visible_item_idx, last_visible_item_idx):
             if i >= len(all_items):
                 break
-
+                
             item = all_items[i]
-            logging.info(
-                f"🔨 Creating tile {i+1}/{len(all_items)}: {type(item).__name__}"
-            )
+            logging.info(f"🔨 Creating tile {i+1}/{len(all_items)}: {type(item).__name__}")
 
             if isinstance(item, SpecialFolder):
                 path = item.get_folder_path()
@@ -738,9 +430,7 @@ class GalleryManager:
                     logging.info(f"📁 Creating new special folder widget for {path}")
                     widget = self.create_folder_widget(item)
                     if not widget:
-                        logging.error(
-                            f"🚨 Failed to create special folder widget for {path}"
-                        )
+                        logging.error(f"🚨 Failed to create special folder widget for {path}")
                         continue
                 visible_items_set.add(path)
             else:  # FilePair
@@ -805,9 +495,7 @@ class GalleryManager:
 
             # NAPRAWKA KRYTYCZNA: Ustaw file_pairs_list PRZED wywołaniem update_gallery_view()!
             self.file_pairs_list = filtered_pairs
-            logging.info(
-                f"🔧 NAPRAWKA: Ustawiono file_pairs_list na {len(filtered_pairs)} par przed update_gallery_view()"
-            )
+            logging.info(f"🔧 NAPRAWKA: Ustawiono file_pairs_list na {len(filtered_pairs)} par przed update_gallery_view()")
 
             # Aktualizuj widok
             self.update_gallery_view()
@@ -820,9 +508,7 @@ class GalleryManager:
             logging.error(f"Błąd podczas aplikowania filtrów: {e}")
             # Fallback: pokaż wszystkie pliki
             self.file_pairs_list = all_file_pairs
-            logging.info(
-                f"🔧 FALLBACK: Ustawiono file_pairs_list na {len(all_file_pairs)} par (wszystkie)"
-            )
+            logging.info(f"🔧 FALLBACK: Ustawiono file_pairs_list na {len(all_file_pairs)} par (wszystkie)")
             self.update_gallery_view()
 
     def update_thumbnail_size(self, new_size):
@@ -1106,52 +792,29 @@ class GalleryManager:
                         # Twórz kafelki par plików
                         file_pair_idx = i - len(self.special_folders_list)
                         file_pair = self.file_pairs_list[file_pair_idx]
-                        # NAPRAWKA: Użyj prawdziwego FileTileWidget zamiast placeholder
-                        widget = self.create_tile_widget_for_pair(
-                            file_pair, self.tiles_container
-                        )
+                        # OPTYMALIZACJA WYDAJNOŚCI: Używaj prostego widgetu-placeholder zamiast pełnego FileTileWidget
+                        widget = self._create_fast_placeholder_widget(file_pair)
+                        
+                        # NAPRAWKA: Podłącz sygnały do kafelka (jak w tile_manager.py)
+                        widget.archive_open_requested.connect(self.main_window.open_archive)
+                        widget.preview_image_requested.connect(self.main_window._show_preview_dialog)
+                        widget.tile_selected.connect(self.main_window._handle_tile_selection_changed)
+                        widget.stars_changed.connect(self.main_window._handle_stars_changed)
+                        widget.color_tag_changed.connect(self.main_window._handle_color_tag_changed)
+                        widget.tile_context_menu_requested.connect(self.main_window._show_file_context_menu)
+                        
+                        if hasattr(widget, "set_tile_number"):
+                            widget.set_tile_number(i + 1, len(self.file_pairs_list))
+                        widget.setObjectName(f"FileTile_{i + 1}")
+                        self.gallery_tile_widgets[file_pair.archive_path] = widget
+                        self.tiles_layout.addWidget(widget, i // cols, i % cols)
 
-                        if widget:
-                            # NAPRAWKA: Podłącz sygnały do kafelka (jak w tile_manager.py)
-                            widget.archive_open_requested.connect(
-                                self.main_window.open_archive
-                            )
-                            widget.preview_image_requested.connect(
-                                self.main_window._show_preview_dialog
-                            )
-                            widget.tile_selected.connect(
-                                self.main_window._handle_tile_selection_changed
-                            )
-                            widget.stars_changed.connect(
-                                self.main_window._handle_stars_changed
-                            )
-                            widget.color_tag_changed.connect(
-                                self.main_window._handle_color_tag_changed
-                            )
-                            widget.tile_context_menu_requested.connect(
-                                self.main_window._show_file_context_menu
-                            )
-
-                            if hasattr(widget, "set_tile_number"):
-                                widget.set_tile_number(i + 1, len(self.file_pairs_list))
-                            widget.setObjectName(f"FileTile_{i + 1}")
-                            self.gallery_tile_widgets[file_pair.archive_path] = widget
-                            self.tiles_layout.addWidget(widget, i // cols, i % cols)
-                        else:
-                            logging.error(
-                                f"Failed to create widget for {file_pair.get_base_name()}"
-                            )
-                            continue
-
-                logging.info(
-                    f"Batch {batch_num + 1} complete: {end_idx} tiles created so far"
-                )
+                logging.info(f"Batch {batch_num + 1} complete: {end_idx} tiles created so far")
 
                 # NAPRAWKA: Rzadsze processEvents - tylko co 5 batchów zamiast każdy
                 if (batch_num + 1) % 5 == 0:  # Co 5 batchów zamiast każdy
                     try:
                         from PyQt6.QtWidgets import QApplication
-
                         QApplication.processEvents()
                     except Exception:
                         pass
@@ -1194,25 +857,44 @@ class GalleryManager:
             # NAPRAWKA: Przywróć limit TileResourceManager
             get_resource_manager().limits.max_tiles = original_max_tiles
 
-    def force_memory_cleanup(self):
-        """Force memory cleanup - dla debug purposes."""
-        if hasattr(self, "memory_manager"):
-            self.memory_manager._trigger_memory_cleanup()
-
-    def get_memory_stats(self) -> Dict[str, Any]:
-        """Get comprehensive memory statistics."""
-        stats = {}
-
-        if hasattr(self, "memory_manager"):
-            stats["memory_manager"] = self.memory_manager.get_memory_stats()
-
-        if hasattr(self, "_geometry"):
-            stats["geometry_cache"] = self._geometry.get_cache_stats()
-
-        # Add widget counts
-        stats["total_widgets"] = len(getattr(self, "gallery_tile_widgets", []))
-        stats["active_widgets"] = len(
-            [w for w in getattr(self, "gallery_tile_widgets", []) if w]
-        )
-
-        return stats
+    def _create_fast_placeholder_widget(self, file_pair: FilePair):
+        """
+        OPTYMALIZACJA: Tworzy szybki placeholder widget zamiast pełnego FileTileWidget.
+        Używane w force_create_all_tiles() dla wydajności.
+        """
+        from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QPixmap
+        
+        # Prosty widget z podstawowym UI
+        widget = QWidget(self.tiles_container)
+        widget.setFixedSize(*self._current_size_tuple)
+        widget.setObjectName("FileTileWidget")  # Dla CSS
+        
+        # Prosty layout
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+        
+        # Placeholder miniaturka
+        thumbnail_label = QLabel(widget)
+        thumbnail_label.setText("Ładowanie...")
+        thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        thumbnail_label.setMinimumSize(200, 200)
+        thumbnail_label.setStyleSheet("background-color: #2D2D30; border: 1px solid #3F3F46; border-radius: 6px;")
+        
+        # Nazwa pliku
+        filename_label = QLabel(f"[{file_pair.get_base_name()}]", widget)
+        filename_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        filename_label.setWordWrap(True)
+        filename_label.setMaximumHeight(35)
+        filename_label.setStyleSheet("color: #CCCCCC; font-size: 11px;")
+        
+        layout.addWidget(thumbnail_label)
+        layout.addWidget(filename_label)
+        
+        # Zapisz referencję do FilePair
+        widget._file_pair = file_pair
+        widget._is_placeholder = True
+        
+        return widget
