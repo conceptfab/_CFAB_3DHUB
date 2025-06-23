@@ -865,3 +865,16 @@ class FileTileWidget(QWidget):
         self._tile_number = number
         self._tile_total = total
         self._update_filename_display()
+
+    def _set_fallback_performance_components(self):
+        """Ustawia fallback components w przypadku błędu."""
+        self._performance_monitor = None
+        self._cache_optimizer = None
+        self._async_ui_manager = None
+        self._components_validated = False
+
+    def _get_current_time_ms(self):
+        """Zwraca aktualny czas w milisekundach dla performance monitoring."""
+        import time
+
+        return time.time() * 1000
