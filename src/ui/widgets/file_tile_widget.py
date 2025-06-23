@@ -585,17 +585,51 @@ class FileTileWidget(QWidget):
             self._current_batch = 0
 
     def _update_metadata_controls_sync(self):
-        """Synchroniczna aktualizacja metadata controls (fallback)."""
-        if hasattr(self, "metadata_controls"):
-            self.metadata_controls.setEnabled(True)
-            self.metadata_controls.set_file_pair(self.file_pair)
-            self.metadata_controls.update_selection_display(False)
-            self.metadata_controls.update_stars_display(self.file_pair.get_stars())
+        """Synchroniczna aktualizacja kontrolek metadanych z graceful degradation."""
+        if self._quick_destroyed_check():
+            return
 
-            # Aktualizacja koloru
-            color_tag = self.file_pair.get_color_tag()
-            self.metadata_controls.update_color_tag_display(color_tag)
-            self._update_thumbnail_border_color(color_tag)
+        if not self.file_pair:
+            return
+
+        # NAPRAWKA: Graceful degradation z fallback mechanisms
+        try:
+            # Główna aktualizacja
+            if hasattr(self, "metadata_controls") and self.metadata_controls:
+                # NAPRAWKA: Bezpieczna walidacja przed aktualizacją
+                if hasattr(self.metadata_controls, "setEnabled"):
+                    self.metadata_controls.setEnabled(True)
+
+                if hasattr(self.metadata_controls, "set_file_pair"):
+                    self.metadata_controls.set_file_pair(self.file_pair)
+
+                if hasattr(self.metadata_controls, "update_selection_display"):
+                    self.metadata_controls.update_selection_display(False)
+
+                # Aktualizacja gwiazdek z fallback
+                if hasattr(self.metadata_controls, "update_stars_display"):
+                    stars = getattr(self.file_pair, "stars", 0)
+                    self.metadata_controls.update_stars_display(stars)
+
+                # Aktualizacja koloru z fallback
+                if hasattr(self.metadata_controls, "update_color_tag_display"):
+                    color_tag = getattr(self.file_pair, "color_tag", None)
+                    self.metadata_controls.update_color_tag_display(color_tag)
+                    self._update_thumbnail_border_color(color_tag)
+            else:
+                # Fallback: logowanie gdy brak kontrolek
+                logger.debug("Metadata controls not available for sync update")
+
+        except Exception as e:
+            # NAPRAWKA: Graceful degradation - logowanie błędu bez crash
+            logger.warning(f"Sync metadata update failed: {e}")
+            # Fallback: próba podstawowej aktualizacji
+            try:
+                if hasattr(self, "metadata_controls") and self.metadata_controls:
+                    if hasattr(self.metadata_controls, "setEnabled"):
+                        self.metadata_controls.setEnabled(True)
+            except Exception:
+                pass  # Ostateczny fallback - cichy fail
 
     def _reset_ui_state(self):
         """Resetuje stan UI dla None file_pair."""
