@@ -2,44 +2,10 @@
 Tile Manager - zarządzanie kafelkami w galerii.
 """
 
-import gc
 import logging
-import threading
-import time
 from typing import Optional
 
-import psutil
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication
-
 from src.models.file_pair import FilePair
-
-
-class MemoryMonitor:
-    """Helper class dla thread-safe memory monitoring."""
-
-    def __init__(self, threshold_mb: int = 500):
-        self.threshold_mb = threshold_mb
-        self._lock = threading.RLock()
-
-    def check_and_cleanup_if_needed(self, logger) -> bool:
-        """Sprawdza pamięć i wykonuje cleanup jeśli potrzeba."""
-        with self._lock:
-            try:
-                memory_usage_mb = (
-                    psutil.Process().memory_info().rss / 1024 / 1024
-                )
-                if memory_usage_mb > self.threshold_mb:
-                    logger.warning(
-                        f"High memory usage: {memory_usage_mb:.1f}MB, "
-                        "performing cleanup"
-                    )
-                    gc.collect()
-                    return True
-                return False
-            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError) as e:
-                logger.warning(f"Cannot monitor memory usage: {e}")
-                return False
 
 
 class TileManager:
@@ -54,8 +20,6 @@ class TileManager:
         progress_manager=None,
         worker_manager=None,
         data_manager=None,
-        batch_size: int = 50,
-        memory_threshold_mb: int = 500,
     ):
         """
         Inicjalizuje TileManager z wstrzykniętymi zależnościami.
@@ -66,8 +30,6 @@ class TileManager:
             progress_manager: Opcjonalny progress manager
             worker_manager: Opcjonalny worker manager
             data_manager: Opcjonalny data manager
-            batch_size: Rozmiar batcha dla processing (domyślnie 50)
-            memory_threshold_mb: Próg pamięci w MB (domyślnie 500)
         """
         self.main_window = main_window
         self.logger = logging.getLogger(__name__)
@@ -82,17 +44,17 @@ class TileManager:
         self._worker_manager = worker_manager or getattr(
             main_window, "worker_manager", None
         )
-        self._data_manager = data_manager or getattr(
-            main_window, "data_manager", None
-        )
+        self._data_manager = data_manager or getattr(main_window, "data_manager", None)
 
         # Thread-safe wskaźnik, czy trwa proces tworzenia kafelków
+        import threading
+
         self._is_creating_tiles = False
         self._creation_lock = threading.RLock()
 
-        # Configurable processing parameters
-        self._batch_size = batch_size
-        self._memory_monitor = MemoryMonitor(memory_threshold_mb)
+        # Batch processing optimization
+        self._batch_size = 50
+        self._memory_threshold_mb = 500
 
     def create_tile_widget_for_pair(self, file_pair: FilePair) -> Optional[object]:
         """
@@ -108,89 +70,54 @@ class TileManager:
             )
             return None
 
-        gallery_manager = (
-            self._gallery_manager or self.main_window.gallery_manager
-        )
-        tile = gallery_manager.create_tile_widget_for_pair(
-            file_pair, self.main_window
-        )
-        
+        gallery_manager = self._gallery_manager or self.main_window.gallery_manager
+        tile = gallery_manager.create_tile_widget_for_pair(file_pair, self.main_window)
         if tile:
-            self._connect_tile_signals(tile)
-            self._setup_thumbnail_callback(tile)
+            # Podłącz sygnały kafelka
+            tile.archive_open_requested.connect(self.main_window.open_archive)
+            tile.preview_image_requested.connect(self.main_window._show_preview_dialog)
+            tile.tile_selected.connect(self.main_window._handle_tile_selection_changed)
+            tile.stars_changed.connect(self.main_window._handle_stars_changed)
+            tile.color_tag_changed.connect(self.main_window._handle_color_tag_changed)
+            tile.tile_context_menu_requested.connect(
+                self.main_window._show_file_context_menu
+            )
 
-        return tile
+            # Podłącz callback do śledzenia ładowania miniaturek
+            original_on_thumbnail_loaded = tile._on_thumbnail_loaded
 
-    def _connect_tile_signals(self, tile):
-        """Łączy sygnały kafelka z handlerami."""
-        signal_handlers = [
-            (tile.archive_open_requested, self.main_window.open_archive),
-            (tile.preview_image_requested, 
-             self.main_window._show_preview_dialog),
-            (tile.tile_selected, 
-             self.main_window._handle_tile_selection_changed),
-            (tile.stars_changed, self.main_window._handle_stars_changed),
-            (tile.color_tag_changed, 
-             self.main_window._handle_color_tag_changed),
-            (tile.tile_context_menu_requested, 
-             self.main_window._show_file_context_menu),
-        ]
-        
-        for signal, handler in signal_handlers:
-            try:
-                signal.connect(handler)
-            except Exception as e:
-                self.logger.warning(
-                    f"Failed to connect signal {signal} to {handler}: {e}"
-                )
-
-    def _setup_thumbnail_callback(self, tile):
-        """Konfiguruje callback dla ładowania miniaturek."""
-        if not hasattr(tile, "_on_thumbnail_loaded"):
-            return
-
-        original_callback = tile._on_thumbnail_loaded
-
-        def enhanced_thumbnail_callback(*args, **kwargs):
-            """Enhanced callback with proper error handling."""
-            try:
-                # Check if tile is still valid
-                if not (hasattr(tile, "thumbnail_label") and tile.thumbnail_label):
+            def thumbnail_loaded_callback(*args, **kwargs):
+                try:
+                    if (
+                        hasattr(tile, "thumbnail_label")
+                        and tile.thumbnail_label is not None
+                    ):
+                        try:
+                            tile.thumbnail_label.isVisible()
+                            result = original_on_thumbnail_loaded(*args, **kwargs)
+                            progress_mgr = (
+                                self._progress_manager
+                                or self.main_window.progress_manager
+                            )
+                            progress_mgr.on_thumbnail_progress()
+                            return result
+                        except RuntimeError:
+                            return None
+                    else:
+                        return None
+                except Exception as e:
+                    self.logger.warning(f"Błąd w thumbnail callback: {e}")
                     return None
 
-                # Check if widget is still accessible
-                tile.thumbnail_label.isVisible()
-                
-                # Call original callback
-                result = original_callback(*args, **kwargs)
-                
-                # Update progress
-                progress_mgr = (
-                    self._progress_manager or self.main_window.progress_manager
-                )
-                progress_mgr.on_thumbnail_progress()
-                
-                return result
-                
-            except RuntimeError:
-                # Widget was destroyed - this is normal during cleanup
-                return None
-            except Exception as e:
-                self.logger.warning(f"Error in thumbnail callback: {e}")
-                return None
+            tile._on_thumbnail_loaded = thumbnail_loaded_callback
 
-        tile._on_thumbnail_loaded = enhanced_thumbnail_callback
+        return tile
 
     def start_tile_creation(self, file_pairs: list):
         """
         Thread-safe rozpoczęcie procesu tworzenia kafelków z memory monitoring.
         """
-        # Try to acquire lock with timeout to prevent deadlock
-        if not self._creation_lock.acquire(timeout=5.0):
-            self.logger.error("Failed to acquire creation lock within timeout")
-            return
-
-        try:
+        with self._creation_lock:
             if self._is_creating_tiles:
                 self.logger.warning(
                     "Próba rozpoczęcia tworzenia kafelków, gdy proces już trwa."
@@ -199,16 +126,23 @@ class TileManager:
 
             self._is_creating_tiles = True
 
-            # Monitor memory usage before batch processing
-            self._memory_monitor.check_and_cleanup_if_needed(self.logger)
+        # Monitor memory usage before batch processing
+        import psutil
 
-            self.main_window.gallery_manager.tiles_container.setUpdatesEnabled(False)
+        try:
+            memory_usage_mb = psutil.Process().memory_info().rss / 1024 / 1024
+            if memory_usage_mb > self._memory_threshold_mb:
+                self.logger.warning(f"High memory usage: {memory_usage_mb:.1f}MB")
+                import gc
 
-            worker_mgr = self._worker_manager or self.main_window.worker_manager
-            worker_mgr.start_data_processing_worker(file_pairs)
+                gc.collect()
+        except Exception:
+            pass
 
-        finally:
-            self._creation_lock.release()
+        self.main_window.gallery_manager.tiles_container.setUpdatesEnabled(False)
+
+        worker_mgr = self._worker_manager or self.main_window.worker_manager
+        worker_mgr.start_data_processing_worker(file_pairs)
 
     def create_tile_widgets_batch(self, file_pairs_batch: list):
         """
@@ -219,10 +153,19 @@ class TileManager:
             file_pairs_batch: Lista obiektów FilePair do przetworzenia w tym batch'u
         """
         batch_size = len(file_pairs_batch)
-        
+
         # Memory pressure check before processing large batches
         if batch_size > 100:
-            self._memory_monitor.check_and_cleanup_if_needed(self.logger)
+            import psutil
+
+            try:
+                memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
+                if memory_mb > self._memory_threshold_mb:
+                    import gc
+
+                    gc.collect()
+            except Exception:
+                pass
 
         # Resetuj liczniki na początku nowej operacji ładowania
         if not self.main_window.progress_manager.is_batch_processing():
@@ -232,14 +175,13 @@ class TileManager:
         try:
             created_count = 0
 
-            # Cache geometry calculation to avoid repeated computation
+            # Oblicz geometrię layoutu żeby dodać kafelki w odpowiednich pozycjach
             gallery_manager = self.main_window.gallery_manager
             geometry = gallery_manager._get_cached_geometry()
             cols = geometry["cols"]
 
             # Pobierz aktualną liczbę kafelków w layoutu żeby kontynuować numerację
             current_tile_count = len(gallery_manager.gallery_tile_widgets)
-            total_tiles = len(self.main_window.controller.current_file_pairs)
 
             for idx, file_pair in enumerate(file_pairs_batch):
                 tile = self.create_tile_widget_for_pair(file_pair)
@@ -257,6 +199,8 @@ class TileManager:
 
                     # Ustaw numer kafelka
                     tile_number = total_position + 1
+                    total_tiles = len(self.main_window.controller.current_file_pairs)
+
                     tile.set_tile_number(tile_number, total_tiles)
 
                     # Wymuś aktualizację display
@@ -266,9 +210,7 @@ class TileManager:
                     created_count += 1
 
             # Update progress in batches for better performance
-            progress_mgr = (
-                self._progress_manager or self.main_window.progress_manager
-            )
+            progress_mgr = self._progress_manager or self.main_window.progress_manager
             gallery_mgr = self._gallery_manager or self.main_window.gallery_manager
 
             actual_tiles_count = len(gallery_mgr.gallery_tile_widgets)
@@ -276,6 +218,8 @@ class TileManager:
 
         finally:
             # Wymuś przetworzenie zdarzeń UI po każdym batchu
+            from PyQt6.QtWidgets import QApplication
+
             QApplication.instance().processEvents()
 
     def refresh_existing_tiles(self, file_pairs_list: list):
@@ -289,43 +233,27 @@ class TileManager:
         if not file_pairs_list:
             return
 
-        start_time = time.time()
-
         # Create hash map for O(1) lookup instead of O(n²)
-        file_pairs_map = {}
-        for fp in file_pairs_list:
-            if fp and hasattr(fp, "archive_path") and fp.archive_path:
-                file_pairs_map[fp.archive_path] = fp
-
-        if not file_pairs_map:
-            self.logger.warning("No valid file pairs to refresh")
-            return
+        file_pairs_map = {
+            fp.archive_path: fp
+            for fp in file_pairs_list
+            if hasattr(fp, "archive_path") and fp.archive_path
+        }
 
         # Pobierz wszystkie istniejące kafelki z galerii
         existing_tiles = self.main_window.gallery_manager.get_all_tile_widgets()
 
         refreshed_count = 0
         for tile in existing_tiles:
-            # Optimize - check if tile has file_pair first
-            if not (hasattr(tile, "file_pair") and tile.file_pair):
-                continue
-                
-            archive_path = tile.file_pair.archive_path
-            if archive_path in file_pairs_map:
-                try:
+            if hasattr(tile, "file_pair") and tile.file_pair:
+                archive_path = tile.file_pair.archive_path
+                if archive_path in file_pairs_map:
                     tile.update_data(file_pairs_map[archive_path])
                     refreshed_count += 1
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to update tile for {archive_path}: {e}"
-                    )
 
         # Wymuś odświeżenie UI
         if hasattr(self.main_window.gallery_manager, "tiles_container"):
             self.main_window.gallery_manager.tiles_container.update()
-
-        elapsed_time = time.time() - start_time
-        self.logger.info(f"Refreshed {refreshed_count} tiles in {elapsed_time:.2f}s")
 
     def on_tile_loading_finished(self):
         """
@@ -334,18 +262,6 @@ class TileManager:
         with self._creation_lock:
             self._is_creating_tiles = False
 
-        try:
-            self._finalize_ui_updates()
-            self._handle_special_folders()
-            self._apply_filters_and_show_results()
-            self._finalize_progress_display()
-        except Exception as e:
-            self.logger.error(f"Error in tile loading finished: {e}")
-            # Ensure UI is restored even if there's an error
-            self._restore_ui_state()
-
-    def _finalize_ui_updates(self):
-        """Finalizuje aktualizacje UI po zakończeniu tworzenia kafli."""
         # Włącz aktualizacje UI i wymuś odświeżenie
         self.main_window.gallery_manager.tiles_container.setUpdatesEnabled(True)
         self.main_window.gallery_manager.tiles_container.update()
@@ -357,8 +273,6 @@ class TileManager:
         if hasattr(self.main_window, "unpaired_files_tab_manager"):
             self.main_window.unpaired_files_tab_manager.update_unpaired_files_lists()
 
-    def _handle_special_folders(self):
-        """Obsługuje przygotowanie specjalnych folderów."""
         # Przygotuj dane, w tym specjalne foldery
         if (
             hasattr(self.main_window.controller, "special_folders")
@@ -368,8 +282,6 @@ class TileManager:
                 self.main_window.controller.special_folders
             )
 
-    def _apply_filters_and_show_results(self):
-        """Stosuje filtry i wyświetla wyniki."""
         # Zastosuj filtry i odśwież widok
         self.main_window.data_manager.apply_filters_and_update_view()
 
@@ -386,6 +298,8 @@ class TileManager:
             self.main_window.progress_manager.show_progress(
                 100, "Filtry nie zwróciły wyników."
             )
+            from PyQt6.QtCore import QTimer
+
             QTimer.singleShot(500, self.main_window.progress_manager.hide_progress)
             return
 
@@ -393,8 +307,6 @@ class TileManager:
         if hasattr(self.main_window, "folder_tree"):
             self.main_window.folder_tree.setVisible(True)
 
-    def _finalize_progress_display(self):
-        """Finalizuje wyświetlanie postępu."""
         # Przywróć przycisk
         self.main_window.select_folder_button.setText("Wybierz Folder Roboczy")
         self.main_window.select_folder_button.setEnabled(True)
@@ -412,16 +324,9 @@ class TileManager:
         )
 
         # Krótkie opóźnienie żeby użytkownik zobaczył 100% przed ukryciem
-        QTimer.singleShot(500, self.main_window.progress_manager.hide_progress)
+        from PyQt6.QtCore import QTimer
 
-    def _restore_ui_state(self):
-        """Przywraca stan UI w przypadku błędu."""
-        try:
-            self.main_window.gallery_manager.tiles_container.setUpdatesEnabled(True)
-            self.main_window.filter_panel.setEnabled(True)
-            self.main_window.select_folder_button.setEnabled(True)
-        except Exception as e:
-            self.logger.error(f"Failed to restore UI state: {e}")
+        QTimer.singleShot(500, self.main_window.progress_manager.hide_progress)
 
     def update_thumbnail_size(self):
         """

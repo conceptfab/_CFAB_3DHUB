@@ -1,39 +1,46 @@
+# PATCH-CODE DLA: TILE_MANAGER.PY
+
+**Powiązany plik z analizą:** `../corrections/tile_manager_correction_kafli.md`
+**Zasady ogólne:** `../../_BASE_/refactoring_rules.md`
+
+---
+
+### PATCH 1: PRZENIESIENIE IMPORTÓW I DODANIE ERROR HANDLING
+
+**Problem:** Importy wewnątrz metod powodują overhead i problemy thread safety
+**Rozwiązanie:** Przeniesienie importów na górę pliku i dodanie proper error handling
+
+```python
 """
 Tile Manager - zarządzanie kafelkami w galerii.
 """
 
 import gc
 import logging
+import psutil
 import threading
 import time
-from typing import Optional
+from typing import Optional, Dict, Any
 
-import psutil
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
-
 from src.models.file_pair import FilePair
 
 
 class MemoryMonitor:
     """Helper class dla thread-safe memory monitoring."""
-
+    
     def __init__(self, threshold_mb: int = 500):
         self.threshold_mb = threshold_mb
         self._lock = threading.RLock()
-
+    
     def check_and_cleanup_if_needed(self, logger) -> bool:
-        """Sprawdza pamięć i wykonuje cleanup jeśli potrzeba."""
+        """Sprawdza pamięć i wykonuje cleanup jeśli potrzeba. Returns True if cleanup was performed."""
         with self._lock:
             try:
-                memory_usage_mb = (
-                    psutil.Process().memory_info().rss / 1024 / 1024
-                )
+                memory_usage_mb = psutil.Process().memory_info().rss / 1024 / 1024
                 if memory_usage_mb > self.threshold_mb:
-                    logger.warning(
-                        f"High memory usage: {memory_usage_mb:.1f}MB, "
-                        "performing cleanup"
-                    )
+                    logger.warning(f"High memory usage: {memory_usage_mb:.1f}MB, performing cleanup")
                     gc.collect()
                     return True
                 return False
@@ -82,9 +89,7 @@ class TileManager:
         self._worker_manager = worker_manager or getattr(
             main_window, "worker_manager", None
         )
-        self._data_manager = data_manager or getattr(
-            main_window, "data_manager", None
-        )
+        self._data_manager = data_manager or getattr(main_window, "data_manager", None)
 
         # Thread-safe wskaźnik, czy trwa proces tworzenia kafelków
         self._is_creating_tiles = False
@@ -93,94 +98,16 @@ class TileManager:
         # Configurable processing parameters
         self._batch_size = batch_size
         self._memory_monitor = MemoryMonitor(memory_threshold_mb)
+```
 
-    def create_tile_widget_for_pair(self, file_pair: FilePair) -> Optional[object]:
-        """
-        Tworzy pojedynczy kafelek dla pary plików.
-        """
-        if not file_pair:
-            self.logger.warning("Otrzymano None zamiast FilePair")
-            return None
+---
 
-        if not hasattr(file_pair, "archive_path") or not file_pair.archive_path:
-            self.logger.error(
-                f"Nieprawidłowy FilePair - brak archive_path: {file_pair}"
-            )
-            return None
+### PATCH 2: REFAKTORYZACJA METODY START_TILE_CREATION
 
-        gallery_manager = (
-            self._gallery_manager or self.main_window.gallery_manager
-        )
-        tile = gallery_manager.create_tile_widget_for_pair(
-            file_pair, self.main_window
-        )
-        
-        if tile:
-            self._connect_tile_signals(tile)
-            self._setup_thumbnail_callback(tile)
+**Problem:** Redundant memory checks i brak timeout dla locków
+**Rozwiązanie:** Użycie MemoryMonitor i dodanie timeout
 
-        return tile
-
-    def _connect_tile_signals(self, tile):
-        """Łączy sygnały kafelka z handlerami."""
-        signal_handlers = [
-            (tile.archive_open_requested, self.main_window.open_archive),
-            (tile.preview_image_requested, 
-             self.main_window._show_preview_dialog),
-            (tile.tile_selected, 
-             self.main_window._handle_tile_selection_changed),
-            (tile.stars_changed, self.main_window._handle_stars_changed),
-            (tile.color_tag_changed, 
-             self.main_window._handle_color_tag_changed),
-            (tile.tile_context_menu_requested, 
-             self.main_window._show_file_context_menu),
-        ]
-        
-        for signal, handler in signal_handlers:
-            try:
-                signal.connect(handler)
-            except Exception as e:
-                self.logger.warning(
-                    f"Failed to connect signal {signal} to {handler}: {e}"
-                )
-
-    def _setup_thumbnail_callback(self, tile):
-        """Konfiguruje callback dla ładowania miniaturek."""
-        if not hasattr(tile, "_on_thumbnail_loaded"):
-            return
-
-        original_callback = tile._on_thumbnail_loaded
-
-        def enhanced_thumbnail_callback(*args, **kwargs):
-            """Enhanced callback with proper error handling."""
-            try:
-                # Check if tile is still valid
-                if not (hasattr(tile, "thumbnail_label") and tile.thumbnail_label):
-                    return None
-
-                # Check if widget is still accessible
-                tile.thumbnail_label.isVisible()
-                
-                # Call original callback
-                result = original_callback(*args, **kwargs)
-                
-                # Update progress
-                progress_mgr = (
-                    self._progress_manager or self.main_window.progress_manager
-                )
-                progress_mgr.on_thumbnail_progress()
-                
-                return result
-                
-            except RuntimeError:
-                # Widget was destroyed - this is normal during cleanup
-                return None
-            except Exception as e:
-                self.logger.warning(f"Error in thumbnail callback: {e}")
-                return None
-
-        tile._on_thumbnail_loaded = enhanced_thumbnail_callback
-
+```python
     def start_tile_creation(self, file_pairs: list):
         """
         Thread-safe rozpoczęcie procesu tworzenia kafelków z memory monitoring.
@@ -209,7 +136,16 @@ class TileManager:
 
         finally:
             self._creation_lock.release()
+```
 
+---
+
+### PATCH 3: OPTYMALIZACJA CREATE_TILE_WIDGETS_BATCH
+
+**Problem:** Redundant memory checks i wielokrotne obliczenia geometrii
+**Rozwiązanie:** Cache geometrii i optymalizacja memory checks
+
+```python
     def create_tile_widgets_batch(self, file_pairs_batch: list):
         """
         Tworzy kafelki dla batch'a par plików.
@@ -266,9 +202,7 @@ class TileManager:
                     created_count += 1
 
             # Update progress in batches for better performance
-            progress_mgr = (
-                self._progress_manager or self.main_window.progress_manager
-            )
+            progress_mgr = self._progress_manager or self.main_window.progress_manager
             gallery_mgr = self._gallery_manager or self.main_window.gallery_manager
 
             actual_tiles_count = len(gallery_mgr.gallery_tile_widgets)
@@ -277,7 +211,16 @@ class TileManager:
         finally:
             # Wymuś przetworzenie zdarzeń UI po każdym batchu
             QApplication.instance().processEvents()
+```
 
+---
+
+### PATCH 4: OPTYMALIZACJA REFRESH_EXISTING_TILES
+
+**Problem:** Redundant hasattr checks i brak optymalizacji
+**Rozwiązanie:** Eliminacja niepotrzebnych sprawdzeń i optymalizacja
+
+```python
     def refresh_existing_tiles(self, file_pairs_list: list):
         """
         Hash-based refresh istniejących kafli O(1) lookup.
@@ -316,9 +259,7 @@ class TileManager:
                     tile.update_data(file_pairs_map[archive_path])
                     refreshed_count += 1
                 except Exception as e:
-                    self.logger.warning(
-                        f"Failed to update tile for {archive_path}: {e}"
-                    )
+                    self.logger.warning(f"Failed to update tile for {archive_path}: {e}")
 
         # Wymuś odświeżenie UI
         if hasattr(self.main_window.gallery_manager, "tiles_container"):
@@ -326,7 +267,16 @@ class TileManager:
 
         elapsed_time = time.time() - start_time
         self.logger.info(f"Refreshed {refreshed_count} tiles in {elapsed_time:.2f}s")
+```
 
+---
+
+### PATCH 5: REFAKTORYZACJA ON_TILE_LOADING_FINISHED
+
+**Problem:** Zbyt duża metoda - należy podzielić na mniejsze metody
+**Rozwiązanie:** Podział na logiczne metody pomocnicze
+
+```python
     def on_tile_loading_finished(self):
         """
         Thread-safe zakończenie tworzenia wszystkich kafelków.
@@ -422,25 +372,135 @@ class TileManager:
             self.main_window.select_folder_button.setEnabled(True)
         except Exception as e:
             self.logger.error(f"Failed to restore UI state: {e}")
+```
 
-    def update_thumbnail_size(self):
-        """
-        Aktualizuje rozmiar miniatur na podstawie wartości suwaka.
-        """
-        # Deleguj do gallery_tab_manager
-        self.main_window.gallery_tab_manager.update_thumbnail_size()
+---
 
-        # Deleguj również do unpaired_files_tab_manager dla skalowania
-        if (
-            hasattr(self.main_window, "unpaired_files_tab_manager")
-            and self.main_window.unpaired_files_tab_manager
-        ):
-            # Pobierz aktualny rozmiar z gallery managera
-            if (
-                hasattr(self.main_window, "gallery_manager")
-                and self.main_window.gallery_manager
-            ):
-                current_size = self.main_window.gallery_manager._current_size_tuple
-                self.main_window.unpaired_files_tab_manager.update_thumbnail_size(
-                    current_size
-                )
+### PATCH 6: OPTYMALIZACJA THUMBNAIL CALLBACK
+
+**Problem:** Skomplikowany callback z try-except hell
+**Rozwiązanie:** Uproszczenie logiki i lepsze error handling
+
+```python
+    def create_tile_widget_for_pair(self, file_pair: FilePair) -> Optional[object]:
+        """
+        Tworzy pojedynczy kafelek dla pary plików.
+        """
+        if not file_pair:
+            self.logger.warning("Otrzymano None zamiast FilePair")
+            return None
+
+        if not hasattr(file_pair, "archive_path") or not file_pair.archive_path:
+            self.logger.error(
+                f"Nieprawidłowy FilePair - brak archive_path: {file_pair}"
+            )
+            return None
+
+        gallery_manager = self._gallery_manager or self.main_window.gallery_manager
+        tile = gallery_manager.create_tile_widget_for_pair(file_pair, self.main_window)
+        
+        if tile:
+            self._connect_tile_signals(tile)
+            self._setup_thumbnail_callback(tile)
+
+        return tile
+
+    def _connect_tile_signals(self, tile):
+        """Łączy sygnały kafelka z handlerami."""
+        signal_handlers = [
+            (tile.archive_open_requested, self.main_window.open_archive),
+            (tile.preview_image_requested, self.main_window._show_preview_dialog),
+            (tile.tile_selected, self.main_window._handle_tile_selection_changed),
+            (tile.stars_changed, self.main_window._handle_stars_changed),
+            (tile.color_tag_changed, self.main_window._handle_color_tag_changed),
+            (tile.tile_context_menu_requested, self.main_window._show_file_context_menu),
+        ]
+        
+        for signal, handler in signal_handlers:
+            try:
+                signal.connect(handler)
+            except Exception as e:
+                self.logger.warning(f"Failed to connect signal {signal} to {handler}: {e}")
+
+    def _setup_thumbnail_callback(self, tile):
+        """Konfiguruje callback dla ładowania miniaturek."""
+        if not hasattr(tile, "_on_thumbnail_loaded"):
+            return
+
+        original_callback = tile._on_thumbnail_loaded
+
+        def enhanced_thumbnail_callback(*args, **kwargs):
+            """Enhanced callback with proper error handling."""
+            try:
+                # Check if tile is still valid
+                if not (hasattr(tile, "thumbnail_label") and tile.thumbnail_label):
+                    return None
+
+                # Check if widget is still accessible
+                tile.thumbnail_label.isVisible()
+                
+                # Call original callback
+                result = original_callback(*args, **kwargs)
+                
+                # Update progress
+                progress_mgr = self._progress_manager or self.main_window.progress_manager
+                progress_mgr.on_thumbnail_progress()
+                
+                return result
+                
+            except RuntimeError:
+                # Widget was destroyed - this is normal during cleanup
+                return None
+            except Exception as e:
+                self.logger.warning(f"Error in thumbnail callback: {e}")
+                return None
+
+        tile._on_thumbnail_loaded = enhanced_thumbnail_callback
+```
+
+---
+
+## ✅ CHECKLISTA WERYFIKACYJNA (DO WYPEŁNIENIA PRZED WDROŻENIEM)
+
+#### **FUNKCJONALNOŚCI DO WERYFIKACJI:**
+
+- [ ] **Funkcjonalność podstawowa** - czy TileManager nadal tworzy kafle poprawnie.
+- [ ] **API kompatybilność** - czy wszystkie publiczne metody działają jak wcześniej.
+- [ ] **Obsługa błędów** - czy mechanizmy obsługi błędów nadal działają.
+- [ ] **Walidacja danych** - czy walidacja FilePair działa poprawnie.
+- [ ] **Logowanie** - czy system logowania działa bez spamowania.
+- [ ] **Konfiguracja** - czy configurable batch_size i memory_threshold działają.
+- [ ] **Cache** - czy cache geometrii działa poprawnie.
+- [ ] **Thread safety** - czy kod jest bezpieczny w środowisku wielowątkowym.
+- [ ] **Memory management** - czy MemoryMonitor działa i nie ma wycieków pamięci.
+- [ ] **Performance** - czy wydajność batch processing nie została pogorszona.
+
+#### **ZALEŻNOŚCI DO WERYFIKACJI:**
+
+- [ ] **Importy** - czy wszystkie importy (threading, psutil, gc) działają poprawnie.
+- [ ] **Zależności zewnętrzne** - czy psutil jest używane prawidłowo.
+- [ ] **Zależności wewnętrzne** - czy powiązania z gallery_manager działają.
+- [ ] **Cykl zależności** - czy nie wprowadzono cyklicznych zależności.
+- [ ] **Backward compatibility** - czy kod jest kompatybilny wstecz.
+- [ ] **Interface contracts** - czy interfejsy TileManager są przestrzegane.
+- [ ] **Event handling** - czy obsługa sygnałów kafli działa poprawnie.
+- [ ] **Signal/slot connections** - czy połączenia Qt działają.
+- [ ] **Memory monitoring** - czy MemoryMonitor nie konfliktuje z innymi komponentami.
+
+#### **TESTY WERYFIKACYJNE:**
+
+- [ ] **Test jednostkowy** - czy wszystkie metody działają w izolacji.
+- [ ] **Test integracyjny** - czy integracja z gallery_manager działa.
+- [ ] **Test regresyjny** - czy nie wprowadzono regresji w tworzeniu kafli.
+- [ ] **Test wydajnościowy** - czy batch processing 1000+ kafli jest wydajny.
+- [ ] **Test thread safety** - czy operacje wielowątkowe są bezpieczne.
+- [ ] **Test memory management** - czy memory monitoring działa poprawnie.
+
+#### **KRYTERIA SUKCESU:**
+
+- [ ] **WSZYSTKIE CHECKLISTY MUSZĄ BYĆ ZAZNACZONE** przed wdrożeniem.
+- [ ] **BRAK FAILED TESTS** - wszystkie testy muszą przejść.
+- [ ] **PERFORMANCE BUDGET** - wydajność nie pogorszona o więcej niż 5%.
+- [ ] **CODE COVERAGE** - pokrycie kodu nie spadło poniżej 80%.
+- [ ] **THREAD SAFETY VERIFIED** - brak deadlocków i race conditions.
+- [ ] **MEMORY USAGE OPTIMIZED** - memory monitoring działa poprawnie.
