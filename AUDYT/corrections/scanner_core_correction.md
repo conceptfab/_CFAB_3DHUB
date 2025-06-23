@@ -2,98 +2,96 @@
 
 ---
 
-# 📋 ETAP 3: SCANNER_CORE - ANALIZA I REFAKTORYZACJA
+# 📋 ETAP 1: SCANNER_CORE - ANALIZA I REFAKTORYZACJA
 
-**Data analizy:** 2025-01-28
+**Data analizy:** 2025-01-23
 
 ### 📋 Identyfikacja
 
 - **Plik główny:** `src/logic/scanner_core.py`
 - **Plik z kodem (patch):** `../patches/scanner_core_patch_code.md`
-- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY
+- **Priorytet:** ⚫⚫⚫⚫ **KRYTYCZNE**
 - **Zależności:**
-  - `src/app_config.py` (konfiguracja cache i rozszerzeń)
-  - `src/logic/file_pairing.py` (parowanie plików)
-  - `src/logic/metadata_manager.py` (metadane folderów)
-  - `src/logic/scanner_cache.py` (cache skanowania)
-  - `src/models/file_pair.py` (model par plików)
-  - `src/models/special_folder.py` (foldery specjalne)
-  - `src/utils/path_utils.py` (operacje na ścieżkach)
+  - `src/logic/file_pairing.py`
+  - `src/logic/scanner_cache.py`
+  - `src/logic/metadata_manager.py`
+  - `src/models/file_pair.py`
+  - `src/models/special_folder.py`
+  - `src/utils/path_utils.py`
 
 ---
 
 ### 🔍 Analiza problemów
 
-1.  **Błędy krytyczne:**
+#### 1. **Błędy krytyczne:**
 
-    - **Potencjalne memory leaks w collect_files_streaming**: Memory cleanup (linie 366-369) jest wykonywany co 1000 plików, ale w przypadku przerwania skanowania może nie zostać wywołany, co prowadzi do memory leaks
-    - **Thread safety issue w progress reporting**: Mimo ThreadSafeProgressManager, w funkcji `_walk_directory_streaming` istnieje direct access do `progress_callback` (linie 277-287) bez proper locking
-    - **Race condition w visited_dirs**: Set `visited_dirs` (linia 267) nie jest thread-safe i może powodować race conditions przy concurrent access
-    - **Incomplete error handling dla critical operations**: Funkcja `collect_files_streaming` nie ma proper recovery dla MemoryError i może crash całą aplikację
+- **Thread Safety Gaps:** Funkcje `_report_progress_with_throttling()` i `_perform_memory_cleanup()` używają zmiennych globalnych bez synchronizacji
+- **Memory Leak Risk:** `ThreadSafeVisitedDirs` nie ma built-in size limits, może rosnąć bez kontroli przy deep directory structures
+- **Resource Management:** Brak `finally` blocks dla cleanup w niektórych exception handlers
+- **Inconsistent Error Handling:** Niektóre wyjątki logowane jako debug, inne jako error bez clear criteria
 
-2.  **Optymalizacje:**
+#### 2. **Optymalizacje wydajności:**
 
-    - **Inefficient progress calculation**: Aproksymacja progressu (linia 281) używa `total_folders_scanned * 2` co nie odzwierciedla rzeczywistego postępu
-    - **Suboptimal batch processing**: Różne batch sizes (50, 20) w różnych miejscach mogą być zoptymalizowane na podstawie performance testing
-    - **Cache efficiency**: Smart pre-filtering (linie 316-332) może być dalej zoptymalizowane przez early directory rejection
-    - **Memory management**: GC call co 1000 plików (linie 366-369) może być zbyt częste i wpływać na performance
+- **Memory Management Monitoring:** Excellent memory cleanup z GC_INTERVAL_FILES=1000 i memory monitoring
+- **Smart Folder Filtering:** Dobra optymalizacja z frozenset O(1) lookup dla ignored folders
+- **Thread-Safe Progress:** ThreadSafeProgressManager z throttling dobrze implementowany
+- **Session Correlation IDs:** Dobry debugging support z unique session IDs
+- **Cache Optimization:** Effective pre-computed normalized paths
 
-3.  **Refaktoryzacja:**
+#### 3. **Refaktoryzacja struktury:**
 
-    - **Complex nested function**: `_walk_directory_streaming` (linie 269-425) jest zbyt długa i complex - potrzebuje dekompozycji
-    - **Mixed responsibilities**: Funkcja łączy file scanning, progress reporting, memory management i error handling
-    - **Inconsistent logging levels**: Mieszanie DEBUG, INFO, WARNING, ERROR bez clear criteria
-    - **Dead code comments**: Komentarze o usuniętych klasach (linie 56, 59, 182, 598-600) powinny być usunięte
+- **Over-Decomposition:** Funkcja `collect_files_streaming()` zbyt rozłożona na małe funkcje (9 helper functions)
+- **Redundant Progress Callbacks:** Dwie implementacje progress reporting (`ThreadSafeProgressManager` vs local throttling)
+- **Complex Parameter Passing:** Wiele funkcji ma 8+ parametrów, co wskazuje na poor cohesion
+- **Eliminated Dead Code:** Dobra cleanup eliminated classes (ScanConfig, ScanCacheManager, ScanOrchestrator)
 
-4.  **Logowanie:**
-    - **Performance logging inconsistency**: Business metrics (linie 441-446) są logged na INFO level, ale performance warnings (linie 449-453) używają WARNING
-    - **Excessive debug logging**: Debug logs w critical path mogą wpływać na performance przy dużych zbiorach danych
-    - **Missing correlation IDs**: Brak identyfikatorów sesji skanowania dla tracking distributed operations
+#### 4. **Logowanie i monitoring:**
+
+- **Performance Metrics:** Excellent business metrics logging (files/sec, folders/sec)
+- **Session Tracking:** Dobry correlation ID system dla debugowania
+- **Memory Monitoring:** Advanced memory usage tracking z psutil integration
+- **Slow Scan Detection:** Smart alerting dla performance issues (<100 files/sec)
 
 ---
 
 ### 🛠️ PLAN REFAKTORYZACJI
 
-**Typ refaktoryzacji:** Podział pliku / Optymalizacja kodu / Poprawa thread safety / Memory management
+**Typ refaktoryzacji:** Optymalizacja kodu + Thread Safety Fixes + Struktura cleanup
 
 #### KROK 1: PRZYGOTOWANIE 🛡️
 
-- [ ] **BACKUP UTWORZONY:** `scanner_core_backup_2025_01_28.py` w folderze `AUDYT/backups/`
-- [ ] **ANALIZA ZALEŻNOŚCI:** Sprawdzenie wszystkich imports i integration points
-- [ ] **IDENTYFIKACJA API:** Lista publicznych funkcji - `collect_files_streaming()`, `scan_folder_for_pairs()`, `get_scan_statistics()`
-- [ ] **PLAN ETAPOWY:** Podział na małe, weryfikowalne kroki z preserved functionality
+- [ ] **BACKUP UTWORZONY:** `scanner_core_backup_2025_01_23.py` w folderze `AUDYT/backups/`
+- [ ] **ANALIZA ZALEŻNOŚCI:** file_pairing.py, scanner_cache.py, metadata_manager.py, models/
+- [ ] **IDENTYFIKACJA API:** `collect_files_streaming()`, `scan_folder_for_pairs()`, `get_scan_statistics()`
+- [ ] **PLAN ETAPOWY:** 4 etapy - Thread Safety → Memory Optimization → Structure Cleanup → Performance
 
 #### KROK 2: IMPLEMENTACJA 🔧
 
-- [ ] **ZMIANA 1:** Dekompozycja `_walk_directory_streaming` na mniejsze, focused functions
-- [ ] **ZMIANA 2:** Poprawa thread safety - thread-safe visited_dirs, proper locking for all shared state
-- [ ] **ZMIANA 3:** Enhanced memory management - proper cleanup w finally blocks, configurable GC intervals
-- [ ] **ZMIANA 4:** Progress calculation optimization - accurate progress based on estimated total files
-- [ ] **ZMIANA 5:** Standardization logging levels i dodanie session correlation IDs
-- [ ] **ZMIANA 6:** Error handling improvement - comprehensive recovery strategies dla critical errors
-- [ ] **ZACHOWANIE API:** Wszystkie public functions zachowane z identycznymi signatures
-- [ ] **BACKWARD COMPATIBILITY:** 100% kompatybilność wsteczna zachowana
+- [ ] **ZMIANA 1:** Fix thread safety w progress reporting (eliminate global variables)
+- [ ] **ZMIANA 2:** Add size limits do ThreadSafeVisitedDirs (max 50000 entries)
+- [ ] **ZMIANA 3:** Consolidate progress reporting mechanisms (single source of truth)
+- [ ] **ZMIANA 4:** Optimize parameter passing z dataclass structures
+- [ ] **ZACHOWANIE API:** Wszystkie publiczne funkcje zachowane, 100% backward compatibility
+- [ ] **BACKWARD COMPATIBILITY:** ThreadSafeProgressManager interface unchanged
 
 #### KROK 3: WERYFIKACJA PO KAŻDEJ ZMIANIE 🧪
 
-- [ ] **TESTY AUTOMATYCZNE:** Uruchomienie testów scanner_core po każdej zmianie
-- [ ] **URUCHOMIENIE APLIKACJI:** Sprawdzenie czy skanowanie folderów działa
-- [ ] **WERYFIKACJA FUNKCJONALNOŚCI:** Test na próbkach 1000+, 10000+ plików
+- [ ] **TESTY AUTOMATYCZNE:** pytest src/logic/scanner_core.py
+- [ ] **URUCHOMIENIE APLIKACJI:** python src/main.py (startup check)
+- [ ] **WERYFIKACJA FUNKCJONALNOŚCI:** Test skanowania katalogu z >1000 plików
 
 #### KROK 4: INTEGRACJA FINALNA 🔗
 
-- [ ] **TESTY INNYCH PLIKÓW:** Sprawdzenie czy scanning_service.py i UI components działają
-- [ ] **TESTY INTEGRACYJNE:** Pełne testy skanowania z cache i metadata management
-- [ ] **TESTY WYDAJNOŚCIOWE:** Weryfikacja 100+ plików/s dla folderów >500 plików, memory usage monitoring
+- [ ] **TESTY INNYCH PLIKÓW:** file_pairing.py, scanning_service.py integration
+- [ ] **TESTY INTEGRACYJNE:** End-to-end scan test z UI
+- [ ] **TESTY WYDAJNOŚCIOWE:** Verify >1000 files/sec performance target
 
 #### KRYTERIA SUKCESU REFAKTORYZACJI ✅
 
-- [ ] **WSZYSTKIE TESTY PASS** - 100% testów przechodzi
-- [ ] **APLIKACJA URUCHAMIA SIĘ** - bez błędów w skanowaniu
-- [ ] **FUNKCJONALNOŚĆ ZACHOWANA** - skanowanie działa identycznie
-- [ ] **KOMPATYBILNOŚĆ WSTECZNA** - wszystkie existing integrations działają
-- [ ] **PERFORMANCE MAINTAINED** - 100+ plików/s maintained, memory managed
-- [ ] **THREAD SAFETY** - zero race conditions w concurrent scanning
+- [ ] **WSZYSTKIE TESTY PASS** - pytest coverage 100%
+- [ ] **APLIKACJA URUCHAMIA SIĘ** - zero startup errors
+- [ ] **FUNKCJONALNOŚĆ ZACHOWANA** - scanning performance ≥ baseline
+- [ ] **KOMPATYBILNOŚĆ WSTECZNA** - all API calls work unchanged
 
 ---
 
@@ -101,79 +99,111 @@
 
 **Test funkcjonalności podstawowej:**
 
-- Test `collect_files_streaming()` na różnych rozmiarach folderów (100, 1000, 10000 plików)
-- Test `scan_folder_for_pairs()` z różnymi strategiami parowania
-- Test interrupt mechanism - cancellation podczas skanowania
-- Test cache operations - hit/miss scenarios, cache invalidation
-- Test special folders handling - virtual folders creation
+- Test `collect_files_streaming()` z katalogiem zawierającym 1000+ plików mixed formats
+- Test `scan_folder_for_pairs()` z different pair strategies (first_match, best_match)
+- Test thread safety z concurrent scanning operations
+- Test memory cleanup z long-running scans
+- Test interruption handling podczas skanowania
 
 **Test integracji:**
 
-- Test integracji z file_pairing.py - pipeline collect + create_pairs
-- Test integracji z metadata_manager.py - special folders z metadata
-- Test integracji z scanner_cache.py - proper cache lifecycle
-- Test integracji z path_utils.py - path normalization scenarios
+- Integration test z file_pairing.py (verify file pairs creation)
+- Integration test z scanner_cache.py (verify cache hit/miss scenarios)
+- Integration test z metadata_manager.py (special folders handling)
+- UI integration test z progress callbacks
 
 **Test wydajności:**
 
-- Benchmark `collect_files_streaming()` - target 100+ plików/s dla >500 plików
-- Memory profiling - monitor memory usage growth podczas long scans
-- Progress reporting performance - ensure progress callbacks nie blokują scanning
-- Cache performance - hit ratio optimization, cache overhead measurement
-
-**Test thread safety:**
-
-- Concurrent scanning multiple directories simultaneously
-- Interrupt handling podczas concurrent operations
-- Thread safety visited_dirs i progress reporting
-- Memory consistency checks under concurrent load
-
-**Test error handling:**
-
-- PermissionError handling - continue scanning other directories
-- FileNotFoundError handling - directory deleted during scan
-- MemoryError handling - proper cleanup i recovery
-- ScanningInterrupted exception - proper resource cleanup
+- Performance test: >1000 files/sec na standardowym hardware
+- Memory test: <500MB RAM dla 10000+ files
+- Cache performance test: <100ms dla cache hits
+- Thread safety stress test: 10 concurrent scans
 
 ---
 
 ### 📊 STATUS TRACKING
 
 - [ ] Backup utworzony
-- [ ] Plan refaktoryzacji przygotowany
-- [ ] Kod zaimplementowany (krok po kroku)
+- [ ] Plan refaktoryzacji przygotowany  
+- [ ] Thread safety fixes zaimplementowane
+- [ ] Memory optimization zaimplementowana
+- [ ] Structure cleanup zaimplementowana
 - [ ] Testy podstawowe przeprowadzone (PASS)
 - [ ] Testy integracji przeprowadzone (PASS)
-- [ ] **WERYFIKACJA FUNKCJONALNOŚCI** - test na 10000+ plików, interrupt handling
-- [ ] **WERYFIKACJA ZALEŻNOŚCI** - sprawdzenie file_pairing.py, metadata_manager.py integration
-- [ ] **WERYFIKACJA WYDAJNOŚCI** - benchmark 100+ plików/s, memory profiling
-- [ ] **WERYFIKACJA THREAD SAFETY** - concurrent scanning tests
-- [ ] **WERYFIKACJA ERROR HANDLING** - recovery scenarios, resource cleanup
+- [ ] **WERYFIKACJA FUNKCJONALNOŚCI** - scanning performance ≥1000 files/sec
+- [ ] **WERYFIKACJA ZALEŻNOŚCI** - file_pairing.py, scanner_cache.py working
+- [ ] **WERYFIKACJA WYDAJNOŚCI** - memory usage <500MB dla large datasets
 - [ ] Dokumentacja zaktualizowana
 - [ ] **Gotowe do wdrożenia**
 
 ---
 
-### 🎯 BUSINESS IMPACT
+### 🎯 BUSINESS IMPACT ANALYSIS
 
-**Krytyczny wpływ na procesy biznesowe:**
-- Główny silnik skanowania - podstawa discovery plików w aplikacji
-- Wydajność 100+ plików/s dla folderów >500 plików - krytyczna dla user experience
-- Thread safety - stabilność podczas concurrent operations
-- Memory management - zapewnienie stable operation przy dużych zbiorach danych
-- Error handling - robust operation w production environment
+**Krytyczne znaczenie dla aplikacji CFAB_3DHUB:**
 
-**Metryki sukcesu:**
-- Czas skanowania 1000 plików: <10 sekund (100+ plików/s)
-- Memory usage podczas skanowania: <200MB per 10000 plików
-- Thread safety: zero race conditions w concurrent scanning tests
-- Error recovery: 100% recovery from non-critical errors (permissions, file access)
-- Cache efficiency: >80% cache hit ratio dla repeat scans
-- Progress accuracy: <5% deviation between reported i actual progress
+1. **Performance Core:** scanner_core.py to main bottleneck dla target 1000+ files/sec
+2. **Memory Management:** Directly impacts <500MB RAM requirement dla large datasets  
+3. **Thread Safety:** Foundation dla responsive UI podczas background scanning
+4. **Cache Strategy:** Enables intelligent cache management dla repeated scans
+5. **User Experience:** Progress reporting wpływa na perceived performance
 
-**Obszary optymalizacji:**
-- Smart pre-filtering: reduce unnecessary directory traversal
-- Memory management: efficient cleanup preventing leaks
-- Progress calculation: accurate estimation based na directory size estimation
-- Batch processing: optimal batch sizes dla different operations
-- Error handling: comprehensive recovery strategies for production stability
+**Key Performance Indicators po refaktoryzacji:**
+
+- **Scanning Speed:** ≥1000 files/sec (current baseline tracking)
+- **Memory Usage:** <500MB dla 10000+ files (z memory monitoring)
+- **Thread Safety:** Zero deadlocks/race conditions w concurrent operations
+- **Cache Hit Ratio:** >80% dla repeated directory scans
+- **UI Responsiveness:** <100ms progress updates, no UI freezing
+
+**Risk Mitigation:**
+
+- Extensive testing plan z performance benchmarks
+- Incremental changes z verification po each step
+- Full backward compatibility preservation
+- Robust error handling z graceful degradation
+
+---
+
+### 🚨 OBOWIĄZKOWE UZUPEŁNIENIE BUSINESS_LOGIC_MAP.MD
+
+**🚨 KRYTYCZNE: PO ZAKOŃCZENIU WSZYSTKICH POPRAWEK MODEL MUSI OBAWIĄZKOWO UZUPEŁNIĆ PLIK `AUDYT/business_logic_map.md`!**
+
+#### OBOWIĄZKOWE KROKI PO ZAKOŃCZENIU POPRAWEK:
+
+1. ✅ **Wszystkie poprawki wprowadzone** - thread safety, memory optimization, structure cleanup
+2. ✅ **Wszystkie testy przechodzą** - pytest, integration tests, performance tests PASS
+3. ✅ **Aplikacja uruchamia się** - zero startup errors, full functionality
+4. ✅ **OTWÓRZ business_logic_map.md** - znajdź sekcję "**LOGIC** (src/logic/)" → "scanner_core.py"
+5. ✅ **DODAJ status ukończenia** - "✅ UKOŃCZONA ANALIZA"
+6. ✅ **DODAJ datę ukończenia** - 2025-01-23
+7. ✅ **DODAJ business impact** - "Zoptymalizowano main scanning algorithm: thread safety fixes, memory optimization, performance monitoring. Maintains >1000 files/sec target."
+8. ✅ **DODAJ ścieżki do plików wynikowych** - correction i patch_code paths
+
+#### FORMAT UZUPEŁNIENIA W BUSINESS_LOGIC_MAP.MD:
+
+```markdown
+### 📄 SCANNER_CORE.PY
+
+- **Status:** ✅ UKOŃCZONA ANALIZA
+- **Data ukończenia:** 2025-01-23
+- **Business impact:** Zoptymalizowano główny algorytm skanowania: thread safety fixes, memory optimization <500MB, performance monitoring >1000 files/sec. Enhanced progress reporting i error handling.
+- **Pliki wynikowe:**
+  - `AUDYT/corrections/scanner_core_correction.md`
+  - `AUDYT/patches/scanner_core_patch_code.md`
+```
+
+#### KONTROLA UZUPEŁNIENIA:
+
+- [ ] **OTWARTO business_logic_map.md** - zlokalizowano sekcję LOGIC → scanner_core.py
+- [ ] **DODANO status ukończenia** - "✅ UKOŃCZONA ANALIZA"  
+- [ ] **DODANO datę ukończenia** - 2025-01-23
+- [ ] **DODANO business impact** - thread safety, memory optimization, performance details
+- [ ] **DODANO ścieżki do plików** - correction.md i patch_code.md paths
+- [ ] **ZWERYFIKOWANO poprawność** - wszystkie informacje aktualne i dokładne
+
+**🚨 MODEL NIE MOŻE ZAPOMNIEĆ O UZUPEŁNIENIU BUSINESS_LOGIC_MAP.MD!**
+
+**🚨 BEZ TEGO KROKU ETAP NIE JEST UKOŃCZONY!**
+
+---
