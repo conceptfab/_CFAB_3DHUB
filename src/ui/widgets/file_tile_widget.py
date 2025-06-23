@@ -261,37 +261,43 @@ class FileTileWidget(QWidget):
             logger.warning(f"Thumbnail error: {error_msg}")
 
     def _on_metadata_stars_changed(self, stars: int):
-        """Callback dla zmian gwiazdek z UI."""
-        if self._is_widget_destroyed():
-            return
-        if hasattr(self, "_metadata_component") and self._metadata_component:
-            self._metadata_component.set_stars(stars)
+        """Callback dla zmian gwiazdek z UI z enhanced error handling."""
+        try:
+            if self._is_widget_destroyed():
+                return
+            if hasattr(self, "_metadata_component") and self._metadata_component:
+                self._metadata_component.set_stars(stars)
 
-        # Natychmiastowa aktualizacja UI gwiazdek
-        if hasattr(self, "metadata_controls") and self.metadata_controls:
-            self.metadata_controls.update_stars_display(stars)
+            # Natychmiastowa aktualizacja UI gwiazdek
+            if hasattr(self, "metadata_controls") and self.metadata_controls:
+                self.metadata_controls.update_stars_display(stars)
 
-        # Emituj główny sygnał dla MainWindow
-        if self.file_pair:
-            self.stars_changed.emit(self.file_pair, stars)
-            self.file_pair_updated.emit(self.file_pair)
+            # Emituj główny sygnał dla MainWindow
+            if self.file_pair:
+                self.stars_changed.emit(self.file_pair, stars)
+                self.file_pair_updated.emit(self.file_pair)
+        except Exception as e:
+            logger.debug(f"Error in _on_metadata_stars_changed: {e}")
 
     def _on_metadata_color_changed(self, color_hex: str):
-        """Callback dla zmian kolorów z UI."""
-        if self._is_widget_destroyed():
-            return
-        if hasattr(self, "_metadata_component") and self._metadata_component:
-            self._metadata_component.set_color_tag(color_hex)
-            self._update_thumbnail_border_color(color_hex)
+        """Callback dla zmian kolorów z UI z enhanced error handling."""
+        try:
+            if self._is_widget_destroyed():
+                return
+            if hasattr(self, "_metadata_component") and self._metadata_component:
+                self._metadata_component.set_color_tag(color_hex)
+                self._update_thumbnail_border_color(color_hex)
 
-        # Natychmiastowa aktualizacja UI kolorów
-        if hasattr(self, "metadata_controls") and self.metadata_controls:
-            self.metadata_controls.update_color_tag_display(color_hex)
+            # Natychmiastowa aktualizacja UI kolorów
+            if hasattr(self, "metadata_controls") and self.metadata_controls:
+                self.metadata_controls.update_color_tag_display(color_hex)
 
-        # Emituj główny sygnał dla MainWindow
-        if self.file_pair:
-            self.color_tag_changed.emit(self.file_pair, color_hex)
-            self.file_pair_updated.emit(self.file_pair)
+            # Emituj główny sygnał dla MainWindow
+            if self.file_pair:
+                self.color_tag_changed.emit(self.file_pair, color_hex)
+                self.file_pair_updated.emit(self.file_pair)
+        except Exception as e:
+            logger.debug(f"Error in _on_metadata_color_changed: {e}")
 
     def _on_tile_selection_changed(self, is_selected: bool):
         """Callback dla zmian selekcji kafelka."""
