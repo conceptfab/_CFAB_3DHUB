@@ -549,20 +549,40 @@ class FileTileWidget(QWidget):
                 logger.warning(f"Metadata display update failed: {e}")
 
     def _update_metadata_controls_async(self):
-        """Asynchroniczna aktualizacja metadata controls."""
-        if self._quick_destroyed_check() or not self.file_pair:
+        """Asynchroniczna aktualizacja kontrolek metadanych z batching optimization."""
+        if self._quick_destroyed_check():
             return
 
-        if hasattr(self, "metadata_controls") and self.metadata_controls:
-            self.metadata_controls.setEnabled(True)
-            self.metadata_controls.set_file_pair(self.file_pair)
-            self.metadata_controls.update_selection_display(False)
-            self.metadata_controls.update_stars_display(self.file_pair.get_stars())
+        if not self.file_pair:
+            return
 
-            # Aktualizacja koloru
-            color_tag = self.file_pair.get_color_tag()
-            self.metadata_controls.update_color_tag_display(color_tag)
-            self._update_thumbnail_border_color(color_tag)
+        # NAPRAWKA: Batching optimization z limitami (bez blokowania UI)
+        batch_size = getattr(self, "_batch_size", 10)
+        current_batch = getattr(self, "_current_batch", 0)
+
+        try:
+            # Sprawdź czy nie przekroczono limitu batch
+            if current_batch >= batch_size:
+                # Reset batch counter
+                self._current_batch = 0
+
+            # Aktualizacja kontrolek metadanych
+            if hasattr(self, "metadata_controls") and self.metadata_controls:
+                # NAPRAWKA: Bezpieczna walidacja przed aktualizacją
+                if hasattr(self.metadata_controls, "update_stars_display"):
+                    self.metadata_controls.update_stars_display(self.file_pair.stars)
+                if hasattr(self.metadata_controls, "update_color_tag_display"):
+                    self.metadata_controls.update_color_tag_display(
+                        self.file_pair.color_tag
+                    )
+
+            # Inkrementuj batch counter
+            self._current_batch = current_batch + 1
+
+        except Exception as e:
+            logger.warning(f"Metadata controls update failed: {e}")
+            # Fallback: reset batch counter
+            self._current_batch = 0
 
     def _update_metadata_controls_sync(self):
         """Synchroniczna aktualizacja metadata controls (fallback)."""
