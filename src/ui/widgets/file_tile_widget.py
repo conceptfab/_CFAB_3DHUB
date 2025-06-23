@@ -8,7 +8,6 @@ Zachowanie 100% kompatybilności API z legacy code.
 
 # Standard library imports
 import logging
-import os
 import threading
 import warnings
 from typing import Optional, Tuple
@@ -143,6 +142,7 @@ class FileTileWidget(QWidget):
             int, int
         ] = TileSizeConstants.DEFAULT_THUMBNAIL_SIZE,
         parent: Optional[QWidget] = None,
+        skip_resource_registration: bool = False,
     ):
         """
         Inicjalizuje widget kafelka jako controller komponentów.
@@ -151,13 +151,24 @@ class FileTileWidget(QWidget):
             file_pair: Obiekt pary plików lub None.
             default_thumbnail_size: Rozmiar całego kafelka (szer., wys.) w px.
             parent: Widget nadrzędny lub None.
+            skip_resource_registration: Czy pominąć rejestrację w TileResourceManager.
         """
         super().__init__(parent)
 
+        # Flaga do sprawdzania czy widget został zniszczony
+        self._is_destroyed = False
+
         # Resource management registration
         self._resource_manager = get_resource_manager()
-        self._is_registered = self._resource_manager.register_tile(self)
-        if not self._is_registered:
+        logging.debug(
+            f"FileTileWidget: skip_resource_registration={skip_resource_registration}"
+        )
+        self._is_registered = (
+            self._resource_manager.register_tile(self)
+            if not skip_resource_registration
+            else False
+        )
+        if not self._is_registered and not skip_resource_registration:
             logger.warning(
                 "Failed to register tile in resource manager - tile limit reached"
             )
@@ -176,7 +187,8 @@ class FileTileWidget(QWidget):
         self._event_filters = []  # Track installed event filters
 
         # Konfiguracja komponentu
-        self._config = TileConfig(thumbnail_size=default_thumbnail_size)
+        self._config = TileConfig()
+        self._config.thumbnail_size = default_thumbnail_size
 
         # Inicjalizacja komponentów FIRST
         self._initialize_components()
@@ -269,11 +281,23 @@ class FileTileWidget(QWidget):
 
     def _on_thumbnail_component_loaded(self, path: str, pixmap: QPixmap):
         """Callback gdy thumbnail component załadował miniaturę."""
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+        # Sprawdź czy widget jeszcze istnieje
+        if not hasattr(self, "thumbnail_label") or self.thumbnail_label is None:
+            return
         if pixmap and not pixmap.isNull():
             self.thumbnail_label.setPixmap(pixmap)
 
     def _on_thumbnail_loaded(self, pixmap, path, width, height):
         """Obsługuje załadowaną miniaturę - dla TileManager."""
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+        # Sprawdź czy widget jeszcze istnieje
+        if not hasattr(self, "thumbnail_label") or self.thumbnail_label is None:
+            return
         if pixmap and not pixmap.isNull():
             if hasattr(self, "thumbnail_label"):
                 self.thumbnail_label.setPixmap(pixmap)
@@ -288,17 +312,27 @@ class FileTileWidget(QWidget):
 
     def _on_thumbnail_component_error(self, path: str, error_msg: str):
         """Obsługa błędów ładowania miniatur."""
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+        # Sprawdź czy widget jeszcze istnieje
+        if not hasattr(self, "thumbnail_label") or self.thumbnail_label is None:
+            return
         self.thumbnail_label.setText("Błąd")
         if not ("does not exist" in error_msg or "File not found" in error_msg):
             logger.warning(f"Thumbnail error: {error_msg}")
 
     def _on_metadata_stars_changed(self, stars: int):
         """Callback dla zmian gwiazdek z UI."""
-        if self._metadata_component:
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+        # Sprawdź czy komponenty jeszcze istnieją
+        if hasattr(self, "_metadata_component") and self._metadata_component:
             self._metadata_component.set_stars(stars)
 
         # Natychmiastowa aktualizacja UI gwiazdek
-        if hasattr(self, "metadata_controls"):
+        if hasattr(self, "metadata_controls") and self.metadata_controls:
             self.metadata_controls.update_stars_display(stars)
 
         # Emituj główny sygnał dla MainWindow
@@ -309,12 +343,16 @@ class FileTileWidget(QWidget):
 
     def _on_metadata_color_changed(self, color_hex: str):
         """Callback dla zmian kolorów z UI."""
-        if self._metadata_component:
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+        # Sprawdź czy komponenty jeszcze istnieją
+        if hasattr(self, "_metadata_component") and self._metadata_component:
             self._metadata_component.set_color_tag(color_hex)
             self._update_thumbnail_border_color(color_hex)
 
         # Natychmiastowa aktualizacja UI kolorów
-        if hasattr(self, "metadata_controls"):
+        if hasattr(self, "metadata_controls") and self.metadata_controls:
             self.metadata_controls.update_color_tag_display(color_hex)
 
         # Emituj główny sygnał dla MainWindow
@@ -327,13 +365,23 @@ class FileTileWidget(QWidget):
 
     def _on_tile_selection_changed(self, is_selected: bool):
         """Callback dla zmian selekcji kafelka."""
-        if self._metadata_component:
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+        # Sprawdź czy komponenty jeszcze istnieją
+        if hasattr(self, "_metadata_component") and self._metadata_component:
             self._metadata_component.set_selection(is_selected)
         if self.file_pair:
             self.tile_selected.emit(self.file_pair, is_selected)
 
     def _update_thumbnail_border_color(self, color_hex: str):
         """Aktualizuje kolor obwódki wokół miniatury."""
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+        # Sprawdź czy widget jeszcze istnieje
+        if not hasattr(self, "thumbnail_frame") or self.thumbnail_frame is None:
+            return
         self.thumbnail_frame.setStyleSheet(
             TileStylesheet.get_thumbnail_frame_stylesheet(color_hex)
         )
@@ -347,8 +395,20 @@ class FileTileWidget(QWidget):
         self._event_manager.connect_signals()
 
     def _install_event_filters(self):
-        """DELEGACJA: Event filters przeniesione do Event Managera."""
-        self._event_manager.install_event_filters()
+        """Instaluje event filters dla thumbnail_label i filename_label."""
+        try:
+            # Podłącz eventFilter do thumbnail_label
+            if hasattr(self, "thumbnail_label") and self.thumbnail_label:
+                self.thumbnail_label.installEventFilter(self)
+                self._event_filters.append(self.thumbnail_label)
+
+            # Podłącz eventFilter do filename_label
+            if hasattr(self, "filename_label") and self.filename_label:
+                self.filename_label.installEventFilter(self)
+                self._event_filters.append(self.filename_label)
+
+        except Exception as e:
+            logger.warning(f"Event filters setup failed: {e}")
 
     # Event handlers with delegacja to Event Manager
     def _on_thumbnail_loaded_event(self, *args, **kwargs):
@@ -381,6 +441,10 @@ class FileTileWidget(QWidget):
         Aktualizuje dane kafelka z nowym file_pair.
         ETAP 9: BACKWARD COMPATIBILITY - z deprecation warning.
         """
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+
         # Show deprecation warning only after initialization
         if hasattr(self, "_compatibility_adapter"):
             self._compatibility_adapter.show_deprecation_warning(
@@ -416,6 +480,9 @@ class FileTileWidget(QWidget):
 
     def set_file_pair(self, file_pair: Optional[FilePair]):
         """KOMPATYBILNOŚĆ: Alias dla update_data()."""
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
         self.update_data(file_pair)
 
     def set_thumbnail_size(self, new_size):
@@ -423,6 +490,10 @@ class FileTileWidget(QWidget):
         KOMPATYBILNOŚĆ: Ustawia nowy rozmiar kafelka.
         Deleguje do komponentów.
         """
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+
         if isinstance(new_size, int):
             size_tuple = (new_size, new_size)
         else:
@@ -465,13 +536,35 @@ class FileTileWidget(QWidget):
             )
 
     def _update_filename_display(self):
-        """Aktualizuje wyświetlanie nazwy pliku."""
-        if self.file_pair and hasattr(self, "filename_label"):
-            display_name = self.file_pair.get_base_name() or "Nieznany plik"
-            self.filename_label.setText(display_name)
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+            
+        # Oryginalna nazwa pliku
+        filename = self.file_pair.base_name if self.file_pair else ""
+        # Dodaj numerację jeśli jest ustawiona
+        if (
+            hasattr(self, "_tile_number")
+            and hasattr(self, "_tile_total")
+            and self._tile_number
+            and self._tile_total
+        ):
+            display_name = f"[{self._tile_number}/{self._tile_total}] {filename}"
+        else:
+            display_name = filename
+        self.filename_label.setText(display_name)
+        # Tooltip = oryginalna ścieżka pliku (dla podglądu)
+        if self.file_pair:
+            self.filename_label.setToolTip(self.file_pair.archive_path)
+        else:
+            self.filename_label.setToolTip("")
 
     def _update_ui_from_file_pair(self):
         """Aktualizuje UI na podstawie danych z file_pair."""
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+
         if not self.file_pair:
             return
 
@@ -492,6 +585,10 @@ class FileTileWidget(QWidget):
 
     def _reset_ui_state(self):
         """Resetuje stan UI dla None file_pair."""
+        # Sprawdź czy widget nie został zniszczony
+        if self._is_destroyed:
+            return
+
         if hasattr(self, "filename_label"):
             self.filename_label.setText("Brak danych")
         if hasattr(self, "thumbnail_label"):
@@ -677,6 +774,8 @@ class FileTileWidget(QWidget):
 
     def cleanup(self):
         """DELEGACJA: Cleanup przeniesiony do Cleanup Managera."""
+        # Oznacz widget jako zniszczony
+        self._is_destroyed = True
         self._cleanup_manager.cleanup()
 
     # USUNIĘTE: ~90 linii cleanup kodu przeniesione do FileTileWidgetCleanupManager
@@ -684,6 +783,8 @@ class FileTileWidget(QWidget):
     def __del__(self):
         """Destruktor - automatyczny cleanup."""
         try:
+            # Oznacz widget jako zniszczony
+            self._is_destroyed = True
             if not self._is_cleanup_done:
                 self.cleanup()
         except Exception:
@@ -704,3 +805,8 @@ class FileTileWidget(QWidget):
             # Emit sygnał o zmianie selekcji
             if self.file_pair:
                 self.tile_selected.emit(self.file_pair, selected)
+
+    def set_tile_number(self, number: int, total: int):
+        self._tile_number = number
+        self._tile_total = total
+        self._update_filename_display()

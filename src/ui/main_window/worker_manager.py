@@ -7,14 +7,11 @@ import logging
 from functools import partial
 from typing import List
 
-from PyQt6.QtCore import QThread, QThreadPool
+from PyQt6.QtCore import QThreadPool
 
-from src.ui.delegates.workers import (
-    DataProcessingWorker,
-    ManuallyPairFilesWorker,
-    SaveMetadataWorker,
-    UnifiedBaseWorker,
-)
+from src.ui.delegates.workers import (ManuallyPairFilesWorker,
+                                      SaveMetadataWorker)
+from src.ui.delegates.workers.base_workers import UnifiedBaseWorker
 from src.ui.delegates.workers.worker_factory import WorkerFactory
 
 
@@ -173,10 +170,19 @@ class WorkerManager:
         # UNIFIED: Używamy UnifiedBaseWorker z QThreadPool
         from PyQt6.QtCore import QThreadPool
 
-        from src.ui.delegates.workers.processing_workers import DataProcessingWorker
+        from src.ui.delegates.workers.processing_workers import \
+            DataProcessingWorker
+
+        self.logger.info(
+            f"🔧 DEBUG: Tworzenie DataProcessingWorker z {len(file_pairs)} parami..."
+        )
 
         self.data_processing_worker = DataProcessingWorker(
             self.main_window.controller.current_directory, file_pairs
+        )
+
+        self.logger.info(
+            f"🔧 DEBUG: DataProcessingWorker utworzony, podłączanie sygnałów..."
         )
 
         # Podłączenie sygnałów
@@ -202,9 +208,16 @@ class WorkerManager:
             self.main_window._handle_worker_error
         )
 
+        self.logger.info(
+            f"🔧 DEBUG: Sygnały podłączone, uruchamianie przez QThreadPool..."
+        )
+
         # UNIFIED: Uruchom przez QThreadPool
         QThreadPool.globalInstance().start(self.data_processing_worker)
 
+        self.logger.info(
+            f"🔧 DEBUG: DataProcessingWorker uruchomiony przez QThreadPool"
+        )
         self.logger.info(
             f"Uruchomiono nowy worker do przetwarzania {len(file_pairs)} par plików"
         )
@@ -250,7 +263,8 @@ class WorkerManager:
         # UNIFIED: Używamy UnifiedBaseWorker z QThreadPool
         from PyQt6.QtCore import QThreadPool
 
-        from src.ui.delegates.workers.processing_workers import DataProcessingWorker
+        from src.ui.delegates.workers.processing_workers import \
+            DataProcessingWorker
 
         self.data_processing_worker = DataProcessingWorker(
             self.main_window.controller.current_directory, file_pairs
