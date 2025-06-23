@@ -72,7 +72,7 @@ class UIUpdateScheduler(QObject):
         self._lock = threading.RLock()
         self._running = True
         self._timer = QTimer()
-        self._timer.setInterval(10)  # 10ms
+        self._timer.setInterval(50)  # 50ms zamiast 10ms
         self._timer.timeout.connect(self.process_tasks)
         self._timer.start()
 

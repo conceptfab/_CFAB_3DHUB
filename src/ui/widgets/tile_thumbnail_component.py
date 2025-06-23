@@ -416,7 +416,7 @@ class ThumbnailComponent(QObject):
 
     def _handle_critical_memory_pressure(self):
         """Handle critical memory pressure."""
-        logger.warning("Critical memory pressure - aggressive cleanup")
+        logger.debug("Critical memory pressure - aggressive cleanup")
 
         # Clear all local caches
         self._scaled_pixmap_cache.clear()

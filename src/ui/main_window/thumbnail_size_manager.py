@@ -320,7 +320,8 @@ class ThumbnailSizeManager:
         return self.size_config.default_size
 
     def _update_gallery_thumbnail_size(self, size: int):
-        """Aktualizuje rozmiar miniaturek w galerii."""
+        """Aktualizuje rozmiar miniaturek w galerii i zakładce parowania."""
+        # Aktualizuj galerię
         if self._gallery_manager:
             try:
                 self._gallery_manager.update_thumbnail_size(size)
@@ -343,6 +344,32 @@ class ThumbnailSizeManager:
         else:
             self.logger.warning(
                 "No gallery manager available for thumbnail size update"
+            )
+
+        # Aktualizuj zakładkę parowania
+        if hasattr(self.main_window, "unpaired_files_tab_manager"):
+            try:
+                self.main_window.unpaired_files_tab_manager.update_thumbnail_size(size)
+                self.logger.debug(
+                    f"Unpaired files tab thumbnail size updated to: {size}px"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to update unpaired files tab thumbnail size: {e}"
+                )
+        elif hasattr(self.main_window, "unpaired_files_tab"):
+            try:
+                self.main_window.unpaired_files_tab.update_thumbnail_size(size)
+                self.logger.debug(
+                    f"Unpaired files tab thumbnail size updated via fallback: {size}px"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to update unpaired files tab thumbnail size via fallback: {e}"
+                )
+        else:
+            self.logger.debug(
+                "No unpaired files tab available for thumbnail size update"
             )
 
     def cleanup(self):

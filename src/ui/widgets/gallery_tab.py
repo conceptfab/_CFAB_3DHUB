@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -20,7 +21,6 @@ from PyQt6.QtWidgets import (
     QTreeView,
     QVBoxLayout,
     QWidget,
-    QMessageBox,
 )
 
 from src.ui.widgets.filter_panel import FilterPanel
@@ -432,8 +432,8 @@ class GalleryTab:
         Args:
             folder_path: Ścieżka do folderu
         """
-        import os
         import logging
+        import os
 
         logger = logging.getLogger(__name__)
         logger.info(f"Kliknięto ulubiony folder: {folder_path}")
@@ -466,13 +466,10 @@ class GalleryTab:
         Obsługuje kliknięcie elementu w drzewie folderów.
         """
         if hasattr(self.main_window, "directory_tree_manager"):
-            folder_path = (
-                self.main_window.directory_tree_manager.folder_tree_item_clicked(
-                    index, self.main_window.controller.current_directory
-                )
+            # Deleguj do directory_tree_manager - on już obsłuży change_directory
+            self.main_window.directory_tree_manager.folder_tree_item_clicked(
+                index, self.main_window.controller.current_directory
             )
-            if folder_path:
-                self.main_window._select_working_directory(folder_path)
 
     def update_gallery_view(self):
         """

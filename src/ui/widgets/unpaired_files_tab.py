@@ -475,15 +475,22 @@ class UnpairedFilesTab:
         Aktualizuje rozmiar miniaturek w kafelkach podglądów.
 
         Args:
-            new_size: Nowy rozmiar miniaturek
+            new_size: Nowy rozmiar miniaturek (int lub tuple)
         """
-        self.current_thumbnail_size = new_size
+        # Obsługa różnych formatów new_size
+        if isinstance(new_size, int):
+            self.current_thumbnail_size = new_size
+            size_tuple = (new_size, new_size)
+        else:
+            # Zakładamy, że new_size[0] to nowa szerokość
+            self.current_thumbnail_size = new_size[0]
+            size_tuple = new_size
 
         # Aktualizuj wszystkie istniejące kafelki
         for tile in self.preview_tile_widgets:
-            tile.set_thumbnail_size(new_size)
+            tile.set_thumbnail_size(size_tuple)
 
-        logging.debug(f"Zaktualizowano rozmiar miniaturek na: {new_size}")
+        logging.debug(f"Zaktualizowano rozmiar miniaturek na: {size_tuple}")
 
     def _handle_delete_unpaired_previews(self):
         """Obsługuje usuwanie wszystkich niesparowanych podglądów."""

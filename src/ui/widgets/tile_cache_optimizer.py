@@ -272,7 +272,7 @@ class TileCacheOptimizer(QObject):
         max_size_mb: float = 100.0,
         max_entries: int = 1000,
         strategy: CacheStrategy = CacheStrategy.ADAPTIVE,
-        enable_cache_warming: bool = True,
+        enable_cache_warming: bool = False,
     ):
         super().__init__()
 
@@ -312,7 +312,7 @@ class TileCacheOptimizer(QObject):
         # Cleanup timer
         self._cleanup_timer = QTimer()
         self._cleanup_timer.timeout.connect(self._periodic_cleanup)
-        self._cleanup_timer.start(30000)  # Cleanup every 30 seconds
+        self._cleanup_timer.start(120000)  # Cleanup every 2 minutes
 
         # Threading - improved granularity
         self._cache_locks: Dict[str, threading.RLock] = defaultdict(threading.RLock)
@@ -322,7 +322,7 @@ class TileCacheOptimizer(QObject):
         self._cache_users: Set[weakref.ref] = set()
 
         # Memory pressure tracking
-        self._memory_pressure_threshold = 0.85  # 85% of max size
+        self._memory_pressure_threshold = 0.95  # 95% of max size
         self._last_memory_check = time.time()
 
         logger.info(
@@ -658,7 +658,7 @@ class TileCacheOptimizer(QObject):
 
         if total_size_mb > max_size_mb * self._memory_pressure_threshold:
             self.memory_pressure_detected.emit(total_size_mb)
-            logger.warning(
+            logger.debug(
                 f"Memory pressure detected: {total_size_mb:.1f}MB / {max_size_mb:.1f}MB"
             )
 

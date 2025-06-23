@@ -44,7 +44,7 @@ class ResourceLimits:
     max_memory_per_tile_mb: int = 10
     max_concurrent_workers: int = 8
     cleanup_interval_seconds: int = 180
-    memory_check_interval_seconds: int = 30
+    memory_check_interval_seconds: int = 120
     cache_cleanup_threshold_ratio: float = 0.7
 
     def __post_init__(self):
