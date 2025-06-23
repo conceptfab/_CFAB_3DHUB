@@ -494,7 +494,7 @@ class FileTileWidget(QWidget):
             self.filename_label.setToolTip("")
 
     def _update_ui_from_file_pair(self):
-        """Aktualizuje UI na podstawie danych z file_pair."""
+        """Aktualizuje UI na podstawie danych z file_pair z bezpieczną walidacją komponentów."""
         if self._quick_destroyed_check():
             return
 
@@ -504,9 +504,10 @@ class FileTileWidget(QWidget):
         # Aktualizacja nazwy pliku
         self._update_filename_display()
 
-        # Optymalizacja: asynchroniczne aktualizacje UI przez async manager
+        # NAPRAWKA: Bezpieczna walidacja komponentów przed użyciem
         if hasattr(self, "_async_ui_manager") and self._async_ui_manager:
             try:
+                # Sprawdź czy async manager ma wymagane metody
                 if hasattr(self._async_ui_manager, "schedule_async_update"):
                     self._async_ui_manager.schedule_async_update(
                         lambda: self._update_metadata_controls_async()
@@ -516,11 +517,31 @@ class FileTileWidget(QWidget):
                         lambda: self._update_metadata_controls_async()
                     )
                 else:
-                    self._update_metadata_controls_sync()
-            except Exception:
-                self._update_metadata_controls_sync()
+                    # Fallback: bezpośrednia aktualizacja
+                    self._update_metadata_controls_async()
+            except Exception as e:
+                logger.warning(f"Async UI update failed: {e}")
+                # Fallback: bezpośrednia aktualizacja
+                self._update_metadata_controls_async()
         else:
-            self._update_metadata_controls_sync()
+            # Bezpośrednia aktualizacja gdy brak async manager
+            self._update_metadata_controls_async()
+
+        # NAPRAWKA: Bezpieczna walidacja thumbnail component
+        if hasattr(self, "_thumbnail_component") and self._thumbnail_component:
+            try:
+                if hasattr(self._thumbnail_component, "update_thumbnail"):
+                    self._thumbnail_component.update_thumbnail()
+            except Exception as e:
+                logger.warning(f"Thumbnail update failed: {e}")
+
+        # NAPRAWKA: Bezpieczna walidacja metadata component
+        if hasattr(self, "_metadata_component") and self._metadata_component:
+            try:
+                if hasattr(self._metadata_component, "update_display"):
+                    self._metadata_component.update_display()
+            except Exception as e:
+                logger.warning(f"Metadata display update failed: {e}")
 
     def _update_metadata_controls_async(self):
         """Asynchroniczna aktualizacja metadata controls."""
