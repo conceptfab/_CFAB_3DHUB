@@ -218,14 +218,18 @@ Na podstawie analizy README.md, kafle (tiles) są **KLUCZOWYM** komponentem apli
 
 - **Status:** ✅ UKOŃCZONA ANALIZA KAFLI
 - **Data ukończenia:** 2025-06-23
-- **Business impact:** Poprawiona responsywność resize miniaturek, dodane dependency injection, eliminacja tight coupling, implementacja debouncing dla lepszej wydajności UI kafli
+- **Business impact:** Poprawiona responsywność resize miniaturek, dodane dependency injection, eliminacja tight coupling, implementacja debouncing dla lepszej wydajności UI kafli, dodano SizeCalculator dla business logic, thread safety z locks, proper error handling i resource management, cache atrybutów main_window dla wydajności, configurable ThumbnailSizeConfig z validation
 - **Pliki wynikowe:**
   - `AUDYT/KAFLI/corrections/thumbnail_size_manager_correction_kafli.md`
   - `AUDYT/KAFLI/patches/thumbnail_size_manager_patch_code_kafli.md`
 - **Główne funkcje kafli:**
   - `ThumbnailSizeManager.update_thumbnail_size()` - Aktualizacja rozmiaru miniaturek z debouncing
-  - `SizeCalculator.calculate_size_from_slider()` - Business logic obliczania rozmiarów
-  - `handle_resize_event()` - Obsługa zdarzeń resize okna
+  - `SizeCalculator.calculate_size_from_slider()` - Business logic obliczania rozmiarów z validation
+  - `handle_resize_event()` - Obsługa zdarzeń resize okna z improved error handling
+  - `on_resize_timer_timeout()` - Dependency injection z fallback mechanism
+  - `cleanup()` - Proper resource management i memory leak prevention
+  - `get_performance_stats()` - Monitoring wydajności resize operations
+  - `force_update()` - Natychmiastowa aktualizacja bez debouncing
 - **Priorytet kafli:** 🔴🔴🔴
 - **Uzasadnienie kafli:** Manager rozmiarów miniaturek z optymalizacjami wydajności
 - **Wpływ na biznes kafli:** Bezpośredni wpływ na responsywność UI przy resize kafli
