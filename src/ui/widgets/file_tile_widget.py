@@ -110,6 +110,11 @@ class FileTileWidget(QWidget):
         self._signal_connections = []
         self._event_filters = []
 
+        # NAPRAWKA: Component state caching dla performance
+        self._component_cache = {}
+        self._components_validated = False
+        self._cache_timestamp = 0
+
         # Konfiguracja komponentu
         self._config = TileConfig()
         self._config.thumbnail_size = default_thumbnail_size
