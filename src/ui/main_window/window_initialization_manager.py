@@ -37,8 +37,8 @@ class WindowInitializationManager:
         self.main_window.resize_timer.timeout.connect(
             self.main_window._on_resize_timer_timeout
         )
-        # Ustawienie opóźnienia - używamy bezpośredniej wartości
-        self.main_window.resize_timer.setInterval(50)  # 50ms opóźnienie
+        # OPTYMALIZACJA: Skrócenie opóźnienia z 50ms na 16ms (~60fps)
+        self.main_window.resize_timer.setInterval(16)  # 16ms dla płynności
 
         # Konfiguracja rozmiarów miniaturek
         self.main_window.min_thumbnail_size = (

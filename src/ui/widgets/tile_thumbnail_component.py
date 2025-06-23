@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 class TileState(Enum):
     """Stany komponentu thumbnail."""
+
     EMPTY = auto()
     LOADING = auto()
     READY = auto()
@@ -54,11 +55,17 @@ class ThumbnailComponent(QObject):
         self._current_state: TileState = TileState.EMPTY
         self._current_path: Optional[str] = None
         self._current_size: Tuple[int, int] = (0, 0)
-        self._pending_size: Optional[Tuple[int, int]] = None  # For debounced size changes
+        self._pending_size: Optional[Tuple[int, int]] = (
+            None  # For debounced size changes
+        )
         self._pixmap: Optional[QPixmap] = None
         self._memory_usage_bytes: int = 0
         self._is_loading: bool = False
         self._is_disposed: bool = False
+
+        # OPTYMALIZACJA: Cache dla różnych rozmiarów tej samej miniaturki
+        self._scaled_pixmap_cache: Dict[Tuple[int, int], QPixmap] = {}
+        self._original_pixmap: Optional[QPixmap] = None  # Cache oryginalnej miniaturki
 
         # Worker management
         self._current_worker_id: int = 0
@@ -92,9 +99,7 @@ class ThumbnailComponent(QObject):
             self.event_bus.subscribe(
                 TileEvent.THUMBNAIL_ERROR, self._on_external_thumbnail_error
             )
-            self.event_bus.subscribe(
-                TileEvent.STATE_CHANGED, self._set_state
-            )
+            self.event_bus.subscribe(TileEvent.STATE_CHANGED, self._set_state)
 
     def load_thumbnail(
         self, file_path: str, size: Optional[Tuple[int, int]] = None
@@ -151,14 +156,16 @@ class ThumbnailComponent(QObject):
         else:
             return self._start_sync_loading(file_path, target_size)
 
-    def load_thumbnail_with_resource_management(self, file_path: str, size: Optional[Tuple[int, int]] = None) -> bool:
+    def load_thumbnail_with_resource_management(
+        self, file_path: str, size: Optional[Tuple[int, int]] = None
+    ) -> bool:
         """
         Ładuje miniaturę z uwzględnieniem resource management.
-        
+
         Args:
             file_path: Ścieżka do pliku obrazu
             size: Rozmiar miniatury
-            
+
         Returns:
             bool: True jeśli ładowanie rozpoczęte
         """
@@ -168,37 +175,41 @@ class ThumbnailComponent(QObject):
         try:
             # Importuj resource manager tutaj żeby uniknąć circular import
             from src.ui.widgets.tile_resource_manager import get_resource_manager
-            
+
             resource_manager = get_resource_manager()
-            
+
             # Sprawdź czy można uruchomić workera
             if not resource_manager.can_start_worker():
                 if self.config.enable_debug_logging:
-                    logger.debug(f"Worker limit reached, deferring thumbnail load: {file_path}")
-                
+                    logger.debug(
+                        f"Worker limit reached, deferring thumbnail load: {file_path}"
+                    )
+
                 # Można dodać do kolejki lub spróbować ponownie później
                 # Na razie po prostu logujemy i zwracamy False
                 return False
-            
+
             # Zarejestruj workera przed rozpoczęciem ładowania
             worker_id = resource_manager.register_worker()
             if worker_id is None:
-                logger.warning("Failed to register worker despite can_start_worker() returning True")
+                logger.warning(
+                    "Failed to register worker despite can_start_worker() returning True"
+                )
                 return False
-            
+
             # Store worker ID for cleanup
             self._resource_manager_worker_id = worker_id
-            
+
             # Rozpocznij normalne ładowanie
             result = self.load_thumbnail(file_path, size)
-            
+
             # Jeśli ładowanie się nie udało, wyrejestruj workera
             if not result:
                 resource_manager.unregister_worker(worker_id)
                 self._resource_manager_worker_id = None
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Error in resource-managed thumbnail loading: {e}")
             return False
@@ -219,7 +230,7 @@ class ThumbnailComponent(QObject):
 
         # Store pending size change
         self._pending_size = size
-        
+
         if immediate:
             self._apply_size_change()
         else:
@@ -230,12 +241,12 @@ class ThumbnailComponent(QObject):
         # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
         if not self._is_object_valid():
             return
-            
+
         self._apply_size_change()
 
     def _apply_size_change(self):
-        """Aplikuje zmianę rozmiaru miniatury."""
-        if not hasattr(self, '_pending_size') or self._pending_size is None:
+        """Aplikuje zmianę rozmiaru miniatury z optymalizacją cache."""
+        if not hasattr(self, "_pending_size") or self._pending_size is None:
             return
 
         new_size = self._pending_size
@@ -244,7 +255,38 @@ class ThumbnailComponent(QObject):
         if self.config.enable_debug_logging:
             logger.debug(f"Applying size change: {self._current_size} -> {new_size}")
 
-        # Reload thumbnail with new size
+        # OPTYMALIZACJA: Sprawdź czy mamy cached skalowaną wersję
+        if new_size in self._scaled_pixmap_cache:
+            cached_pixmap = self._scaled_pixmap_cache[new_size]
+            self._pixmap = cached_pixmap
+            self._current_size = new_size
+            self._set_state(TileState.READY)
+            self.thumbnail_loaded.emit(self._current_path, cached_pixmap)
+            if self.config.enable_debug_logging:
+                logger.debug(f"Used cached scaled pixmap for size {new_size}")
+            return
+
+        # OPTYMALIZACJA: Jeśli mamy oryginalną miniaturkę, skaluj ją zamiast ładować z dysku
+        if self._original_pixmap and not self._original_pixmap.isNull():
+            scaled_pixmap = self._original_pixmap.scaled(
+                new_size[0],
+                new_size[1],
+                aspectRatioMode=1,  # KeepAspectRatio
+                transformMode=1,  # SmoothTransformation
+            )
+
+            # Cache skalowaną wersję
+            self._scaled_pixmap_cache[new_size] = scaled_pixmap
+            self._pixmap = scaled_pixmap
+            self._current_size = new_size
+            self._set_state(TileState.READY)
+            self.thumbnail_loaded.emit(self._current_path, scaled_pixmap)
+
+            if self.config.enable_debug_logging:
+                logger.debug(f"Scaled original pixmap to {new_size}")
+            return
+
+        # Fallback: Przeładuj z dysku tylko jeśli nie mamy cache
         if self._current_path:
             self.load_thumbnail(self._current_path, new_size)
 
@@ -340,7 +382,7 @@ class ThumbnailComponent(QObject):
         # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
         if not self._is_object_valid():
             return
-            
+
         # Check if this is current worker
         if worker_id != self._current_worker_id:
             if self.config.enable_debug_logging:
@@ -354,7 +396,7 @@ class ThumbnailComponent(QObject):
         # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
         if not self._is_object_valid():
             return
-            
+
         # Check if this is current worker
         if worker_id != self._current_worker_id:
             return
@@ -362,17 +404,27 @@ class ThumbnailComponent(QObject):
         self._emit_error(f"Worker error: {error_msg}")
 
     def _on_thumbnail_ready(self, path: str, pixmap: QPixmap, from_cache: bool = False):
-        """Callback gdy miniatura jest gotowa."""
+        """Callback gdy miniatura jest gotowa - z cache optymalizacją."""
         # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
         if not self._is_object_valid():
             return
-            
+
         if path != self._current_path:
             # Outdated result
             return
 
+        # OPTYMALIZACJA: Cache oryginalną miniaturkę dla przyszłych skalowań
+        if not self._original_pixmap or self._original_pixmap.isNull():
+            self._original_pixmap = pixmap
+            if self.config.enable_debug_logging:
+                logger.debug(f"Cached original pixmap for {path}")
+
         # Store pixmap
         self._pixmap = pixmap
+
+        # OPTYMALIZACJA: Cache obecny rozmiar
+        if self._current_size and self._current_size != (0, 0):
+            self._scaled_pixmap_cache[self._current_size] = pixmap
 
         # Calculate memory usage
         if pixmap:
@@ -413,7 +465,7 @@ class ThumbnailComponent(QObject):
         # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
         if not self._is_object_valid():
             return
-            
+
         self._set_state(TileState.ERROR)
 
         # Emit signals - tylko jeśli obiekt Qt nadal istnieje
@@ -432,11 +484,11 @@ class ThumbnailComponent(QObject):
         # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
         if not self._is_object_valid():
             return
-            
+
         if new_state != self._current_state:
             self._current_state = new_state
-            
-            # Emit signal - tylko jeśli obiekt Qt nadal istnieje  
+
+            # Emit signal - tylko jeśli obiekt Qt nadal istnieje
             if self._is_object_valid():
                 self.state_changed.emit(new_state)
 
@@ -444,7 +496,9 @@ class ThumbnailComponent(QObject):
                 self.event_bus.emit_event(TileEvent.STATE_CHANGED, new_state)
 
             if self.config.enable_debug_logging:
-                logger.debug(f"State changed: {self._current_state.name} -> {new_state.name}")
+                logger.debug(
+                    f"State changed: {self._current_state.name} -> {new_state.name}"
+                )
 
     def _on_thumbnail_loaded(self, path: str, pixmap: QPixmap):
         """Callback dla internal thumbnail loaded signal."""
@@ -459,7 +513,7 @@ class ThumbnailComponent(QObject):
         # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
         if not self._is_object_valid():
             return
-            
+
         if path == self._current_path and not self._pixmap:
             self._on_thumbnail_ready(path, pixmap, from_cache=True)
 
@@ -468,18 +522,18 @@ class ThumbnailComponent(QObject):
         # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
         if not self._is_object_valid():
             return
-            
+
         if path == self._current_path:
             self._emit_error(f"External error: {error_message}")
 
     def _try_load_from_cache(self, file_path: str, size: Tuple[int, int]) -> bool:
         """
         Próbuje załadować miniaturę z cache.
-        
+
         Args:
             file_path: Ścieżka do pliku
             size: Rozmiar miniatury
-            
+
         Returns:
             bool: True jeśli znaleziono w cache
         """
@@ -525,11 +579,15 @@ class ThumbnailComponent(QObject):
         # Odsubskrybuj z event_bus
         if self.event_bus:
             try:
-                self.event_bus.unsubscribe(TileEvent.THUMBNAIL_LOADED, self._on_external_thumbnail_loaded)
+                self.event_bus.unsubscribe(
+                    TileEvent.THUMBNAIL_LOADED, self._on_external_thumbnail_loaded
+                )
             except Exception:
                 pass
             try:
-                self.event_bus.unsubscribe(TileEvent.THUMBNAIL_ERROR, self._on_external_thumbnail_error)
+                self.event_bus.unsubscribe(
+                    TileEvent.THUMBNAIL_ERROR, self._on_external_thumbnail_error
+                )
             except Exception:
                 pass
             try:
@@ -549,6 +607,7 @@ class ThumbnailComponent(QObject):
         if self._resource_manager_worker_id is not None:
             try:
                 from src.ui.widgets.tile_resource_manager import get_resource_manager
+
                 resource_manager = get_resource_manager()
                 resource_manager.unregister_worker(self._resource_manager_worker_id)
                 self._resource_manager_worker_id = None
@@ -585,7 +644,7 @@ class ThumbnailComponent(QObject):
             # Sprawdź flagę disposed
             if getattr(self, "_is_disposed", False):
                 return False
-                
+
             # NAPRAWKA: Sprawdź czy obiekt Qt nadal istnieje
             try:
                 # Spróbuj uzyskać dostęp do basic Qt property
@@ -597,7 +656,7 @@ class ThumbnailComponent(QObject):
                     self._is_disposed = True
                     return False
                 raise  # Inny błąd RuntimeError
-                
+
         except Exception:
             return False
 

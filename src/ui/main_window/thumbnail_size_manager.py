@@ -88,27 +88,12 @@ class ThumbnailSizeManager:
     def on_resize_timer_timeout(self):
         """
         Aktualizuje widok galerii po zakończeniu zmiany rozmiaru.
+        OPTYMALIZACJA: Używa tylko gallery_manager dla eliminacji redundancji.
         """
         self.logger.debug("Aktualizacja rozmiaru miniatur po timeout")
         try:
-            # Upewnij się, że aktualizujemy rozmiar we wszystkich komponentach
-            if (
-                hasattr(self.main_window, "gallery_tab_manager")
-                and self.main_window.gallery_tab_manager
-            ):
-                self.main_window.gallery_tab_manager.update_thumbnail_size(
-                    self.main_window.current_thumbnail_size
-                )
-
-            if (
-                hasattr(self.main_window, "unpaired_files_tab_manager")
-                and self.main_window.unpaired_files_tab_manager
-            ):
-                self.main_window.unpaired_files_tab_manager.update_thumbnail_size(
-                    self.main_window.current_thumbnail_size
-                )
-
-            # Zaktualizuj rozmiar bezpośrednio w gallery_manager dla pewności
+            # OPTYMALIZACJA: Używa tylko gallery_manager - eliminuje podwójne wywołania
+            # gallery_tab_manager i unpaired_files_tab_manager używają tego samego gallery_manager
             if (
                 hasattr(self.main_window, "gallery_manager")
                 and self.main_window.gallery_manager

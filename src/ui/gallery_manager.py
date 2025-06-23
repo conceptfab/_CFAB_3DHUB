@@ -597,7 +597,7 @@ class GalleryManager:
         Aktualizuje rozmiar miniatur i przerenderowuje galerię.
         new_size może być int lub tuple (width, height).
 
-        Zoptymalizowana wersja - aktualizuje tylko widoczne kafelki.
+        OPTYMALIZACJA: Asynchroniczne batch processing dla lepszej wydajności.
         """
         # Obsługa różnych formatów new_size
         if isinstance(new_size, int):
@@ -609,16 +609,8 @@ class GalleryManager:
             self.current_thumbnail_size = new_size[0]
             self._current_size_tuple = new_size
 
-        # Zaktualizuj rozmiar tylko dla widocznych kafelków + cache nowego rozmiaru dla pozostałych
-        with self._widgets_lock:
-            # Natychmiast zaktualizuj widoczne kafelki
-            for tile in self.gallery_tile_widgets.values():
-                if tile.isVisible():
-                    tile.set_thumbnail_size(self._current_size_tuple)
-
-            for folder_widget in self.special_folder_widgets.values():
-                if folder_widget.isVisible():
-                    folder_widget.set_thumbnail_size(self._current_size_tuple)
+        # OPTYMALIZACJA: Batch update widocznych kafelków
+        self._schedule_async_size_update()
 
         # Zaznacz, że niewidoczne kafelki potrzebują aktualizacji
         self._pending_size_update = True
@@ -629,6 +621,44 @@ class GalleryManager:
 
         # Przerenderuj galerię z nowymi rozmiarami
         self.update_gallery_view()
+
+    def _schedule_async_size_update(self):
+        """
+        OPTYMALIZACJA: Asynchroniczne aktualizowanie rozmiaru kafelków w batch'ach.
+        """
+        from PyQt6.QtCore import QTimer
+
+        def _batch_update_sizes():
+            """Batch processing aktualizacji rozmiarów."""
+            try:
+                with self._widgets_lock:
+                    # Aktualizuj widoczne kafelki w małych batch'ach
+                    visible_tiles = []
+                    for tile in self.gallery_tile_widgets.values():
+                        if tile.isVisible():
+                            visible_tiles.append(tile)
+
+                    # Process w batch'ach po 10 dla płynności UI
+                    batch_size = 10
+                    for i in range(0, len(visible_tiles), batch_size):
+                        batch = visible_tiles[i : i + batch_size]
+                        for tile in batch:
+                            tile.set_thumbnail_size(self._current_size_tuple)
+
+                        # Yield control co batch żeby UI pozostało responsive
+                        if i + batch_size < len(visible_tiles):
+                            QTimer.singleShot(1, lambda: None)  # Micro-yield
+
+                    # Aktualizuj folder widgets
+                    for folder_widget in self.special_folder_widgets.values():
+                        if folder_widget.isVisible():
+                            folder_widget.set_thumbnail_size(self._current_size_tuple)
+
+            except Exception as e:
+                logger.error(f"Błąd batch update rozmiaru: {e}")
+
+        # Schedule asynchronously
+        QTimer.singleShot(0, _batch_update_sizes)
 
     def get_all_tile_widgets(self) -> List[FileTileWidget]:
         """
