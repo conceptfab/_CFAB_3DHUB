@@ -55,8 +55,8 @@ class ConfigDefaults:
         "scanner_max_cache_entries": 500,
         "scanner_max_cache_age_seconds": 3600,  # 1 godzina
         # Parametry cache dla miniaturek
-        "thumbnail_cache_max_entries": 2000,
-        "thumbnail_cache_max_memory_mb": 500,
+        "thumbnail_cache_max_entries": 5000,
+        "thumbnail_cache_max_memory_mb": 1500,
         "thumbnail_cache_enable_disk": False,
         "thumbnail_cache_cleanup_threshold": 0.8,
         # Thumbnail format settings - NOWE

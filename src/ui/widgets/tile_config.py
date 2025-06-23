@@ -64,7 +64,7 @@ class TileConfig:
     enable_animations: bool = True
     enable_caching: bool = True
     enable_progressive_loading: bool = True
-    max_memory_per_tile_mb: int = 5  # Target po refaktoryzacji
+    max_memory_per_tile_mb: int = 8  # Zwiększono z 5 na 8 dla SBSAR
     thumbnail_quality: int = 85  # Jakość JPEG dla miniaturek
     animation_duration_ms: int = 200
     debounce_interval_ms: int = 100  # Debouncing dla rapid changes
@@ -78,7 +78,7 @@ class TileConfig:
     thumbnail_timeout_ms: int = 5000  # Timeout dla ładowania miniaturek
     
     # === CACHE ===
-    cache_size_mb: int = 100  # Max rozmiar cache miniaturek
+    cache_size_mb: int = 300  # Zwiększono z 100 na 300 dla SBSAR
     cache_ttl_seconds: int = 3600  # TTL dla cache entries
     enable_disk_cache: bool = True
     

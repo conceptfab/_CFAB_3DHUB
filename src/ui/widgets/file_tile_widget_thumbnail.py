@@ -78,16 +78,15 @@ class ThumbnailOperations:
         try:
             if not os.path.exists(path):
                 return
-
-            if hasattr(self.widget, "_thumbnail_component"):
-                self.widget._thumbnail_component.load_thumbnail(
-                    path=path, size=self.widget.thumbnail_size
-                )
-            else:
-                raise RuntimeError("Thumbnail component unavailable")
-
+            
+            # NAPRAWKA: Silniejsze zabezpieczenie przed usuniętymi obiektami Qt
+            if not self._is_component_valid():
+                return
+                
+            self.widget._thumbnail_component.load_thumbnail(
+                path=path, size=self.widget.thumbnail_size
+            )
             self.cache_thumbnail_if_loaded(cache_key)
-
         except Exception as e:
             if not ("does not exist" in str(e) or "File not found" in str(e)):
                 logger = logging.getLogger(__name__)
@@ -126,10 +125,15 @@ class ThumbnailOperations:
     def load_thumbnail_fallback(self, path: str):
         """Minimal fallback thumbnail loading."""
         try:
-            if hasattr(self.widget, "_thumbnail_component"):
-                self.widget._thumbnail_component.load_thumbnail(
-                    path=path, size=self.widget.thumbnail_size
-                )
+            if not hasattr(self.widget, "_thumbnail_component") or self.widget._thumbnail_component is None:
+                return
+            if getattr(self.widget._thumbnail_component, "_is_disposed", False):
+                return
+            if getattr(self.widget._thumbnail_component, "get_current_state", lambda: None)() == TileState.DISPOSED:
+                return
+            self.widget._thumbnail_component.load_thumbnail(
+                path=path, size=self.widget.thumbnail_size
+            )
         except Exception as e:
             logger = logging.getLogger(__name__)
             logger.error(f"Fallback thumbnail loading failed: {e}")
@@ -175,3 +179,30 @@ class ThumbnailOperations:
     ):
         """Legacy compatibility wrapper - deleguje do nowej implementacji."""
         self.execute_thumbnail_load(path, cache_key or "", worker_id)
+
+    def _is_component_valid(self) -> bool:
+        """Sprawdza czy ThumbnailComponent jest nadal ważny i można z nim komunikować."""
+        try:
+            # Sprawdź czy widget został zniszczony
+            if not hasattr(self.widget, "_thumbnail_component"):
+                return False
+            if self.widget._thumbnail_component is None:
+                return False
+            
+            # Sprawdź flagę _is_disposed
+            if getattr(self.widget._thumbnail_component, "_is_disposed", False):
+                return False
+                
+            # NAPRAWKA: Sprawdź czy obiekt Qt nadal istnieje
+            try:
+                # Spróbuj uzyskać dostęp do basic Qt property
+                _ = self.widget._thumbnail_component.objectName()
+                return True
+            except RuntimeError as e:
+                if "wrapped C/C++ object" in str(e) or "has been deleted" in str(e):
+                    # Obiekt Qt został usunięty
+                    return False
+                raise  # Inny błąd RuntimeError
+                
+        except Exception:
+            return False

@@ -108,6 +108,9 @@ class TileManager:
         Args:
             file_pairs_batch: Lista obiektów FilePair do przetworzenia w tym batch'u
         """
+        # NAPRAWKA DEBUGGING: Sprawdź czy metoda w ogóle się wykonuje
+        self.logger.info(f"🔧 DEBUG: create_tile_widgets_batch() CALLED with {len(file_pairs_batch)} file pairs")
+        
         # Resetuj liczniki na początku nowej operacji ładowania
         if not self.main_window.progress_manager.is_batch_processing():
             total_tiles = len(self.main_window.controller.current_file_pairs)
@@ -115,13 +118,48 @@ class TileManager:
 
         try:
             created_count = 0
-            for file_pair in file_pairs_batch:
+            
+            # NAPRAWKA KRYTYCZNA: Oblicz geometrię layoutu żeby dodać kafelki w odpowiednich pozycjach
+            gallery_manager = self.main_window.gallery_manager
+            geometry = gallery_manager._get_cached_geometry()
+            cols = geometry["cols"]
+            
+            # NAPRAWKA KRYTYCZNA: Pobierz aktualną liczbę kafelków w layoutu żeby kontynuować numerację
+            current_tile_count = len(gallery_manager.gallery_tile_widgets)
+            
+            for idx, file_pair in enumerate(file_pairs_batch):
                 tile = self.create_tile_widget_for_pair(file_pair)
                 if tile:
+                    # NAPRAWKA KRYTYCZNA: DODAJ KAFELEK DO LAYOUTU!
+                    total_position = current_tile_count + idx
+                    row = total_position // cols
+                    col = total_position % cols
+                    
+                    # Dodaj do grid layout
+                    gallery_manager.tiles_layout.addWidget(tile, row, col)
+                    
+                    # Pokaż kafelek
+                    tile.setVisible(True)
+                    
+                    # NAPRAWKA: Ustaw numer kafelka NA KOŃCU gdy już jest dodany do layoutu
+                    tile_number = total_position + 1
+                    total_tiles = len(self.main_window.controller.current_file_pairs)
+                    
+                    self.logger.debug(f"🔧 Setting tile number {tile_number}/{total_tiles} for tile at ({row}, {col})")
+                    tile.set_tile_number(tile_number, total_tiles)
+                    
+                    # NAPRAWKA: Wymuś aktualizację display
+                    if hasattr(tile, '_update_filename_display'):
+                        tile._update_filename_display()
+                    
                     created_count += 1
+                    
+                    self.logger.debug(f"🔧 Tile {tile_number} added to layout at ({row}, {col}) with number display")
+
+            self.logger.info(f"🔧 DEBUG: Created {created_count} tiles from batch of {len(file_pairs_batch)} and ADDED TO LAYOUT")
 
             # NAPRAWKA PROGRESS BAR: Użyj rzeczywistego licznika kafelków z galerii
-            actual_tiles_count = len(self.main_window.gallery_manager.file_pairs_list)
+            actual_tiles_count = len(self.main_window.gallery_manager.gallery_tile_widgets)
 
             # NAPRAWKA PROGRESS BAR: Aktualizuj progress używając nowej metody
             self.main_window.progress_manager.update_tile_creation_progress(

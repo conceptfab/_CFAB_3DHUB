@@ -40,7 +40,7 @@ from src.ui.widgets.metadata_controls_widget import MetadataControlsWidget
 from src.ui.widgets.thumbnail_cache import ThumbnailCache
 
 # Import new component architecture
-from src.ui.widgets.tile_config import TileConfig, TileEvent
+from src.ui.widgets.tile_config import TileConfig, TileEvent, TileState
 from src.ui.widgets.tile_event_bus import TileEventBus
 from src.ui.widgets.tile_interaction_component import TileInteractionComponent
 from src.ui.widgets.tile_metadata_component import TileMetadataComponent
@@ -493,6 +493,13 @@ class FileTileWidget(QWidget):
         # Sprawdź czy widget nie został zniszczony
         if self._is_destroyed:
             return
+        # Zabezpieczenie przed użyciem usuniętego komponentu
+        if not hasattr(self, "_thumbnail_component") or self._thumbnail_component is None:
+            return
+        if getattr(self._thumbnail_component, "_is_disposed", False):
+            return
+        if getattr(self._thumbnail_component, "get_current_state", lambda: None)() == TileState.DISPOSED:
+            return
 
         if isinstance(new_size, int):
             size_tuple = (new_size, new_size)
@@ -743,7 +750,13 @@ class FileTileWidget(QWidget):
 
     def reload_thumbnail(self):
         """NOWE API: Odświeża miniaturę."""
-        if hasattr(self, "_thumbnail_component") and self.file_pair:
+        if not hasattr(self, "_thumbnail_component") or self._thumbnail_component is None:
+            return
+        if getattr(self._thumbnail_component, "_is_disposed", False):
+            return
+        if getattr(self._thumbnail_component, "get_current_state", lambda: None)() == TileState.DISPOSED:
+            return
+        if self.file_pair:
             preview_path = self.file_pair.get_preview_path()
             if preview_path:
                 self._thumbnail_component.load_thumbnail(

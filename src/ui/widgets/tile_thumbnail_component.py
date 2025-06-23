@@ -58,6 +58,7 @@ class ThumbnailComponent(QObject):
         self._pixmap: Optional[QPixmap] = None
         self._memory_usage_bytes: int = 0
         self._is_loading: bool = False
+        self._is_disposed: bool = False
 
         # Worker management
         self._current_worker_id: int = 0
@@ -81,6 +82,7 @@ class ThumbnailComponent(QObject):
         # Connect internal signals
         self.thumbnail_loaded.connect(self._on_thumbnail_loaded)
         self.thumbnail_error.connect(self._on_thumbnail_error)
+        self.state_changed.connect(self._set_state)
 
         # Subscribe to event bus
         if self.event_bus:
@@ -89,6 +91,9 @@ class ThumbnailComponent(QObject):
             )
             self.event_bus.subscribe(
                 TileEvent.THUMBNAIL_ERROR, self._on_external_thumbnail_error
+            )
+            self.event_bus.subscribe(
+                TileEvent.STATE_CHANGED, self._set_state
             )
 
     def load_thumbnail(
@@ -104,6 +109,9 @@ class ThumbnailComponent(QObject):
         Returns:
             bool: True jeśli ładowanie rozpoczęte, False w przeciwnym razie
         """
+        if getattr(self, "_is_disposed", False):
+            return False
+
         if not file_path or not Path(file_path).exists():
             self._emit_error(f"File does not exist: {file_path}")
             return False
@@ -154,6 +162,9 @@ class ThumbnailComponent(QObject):
         Returns:
             bool: True jeśli ładowanie rozpoczęte
         """
+        if getattr(self, "_is_disposed", False):
+            return False
+
         try:
             # Importuj resource manager tutaj żeby uniknąć circular import
             from src.ui.widgets.tile_resource_manager import get_resource_manager
@@ -200,6 +211,9 @@ class ThumbnailComponent(QObject):
             size: Nowy rozmiar (width, height)
             immediate: Czy załadować natychmiast bez debouncing
         """
+        if getattr(self, "_is_disposed", False):
+            return
+
         if size == self._current_size:
             return
 
@@ -213,6 +227,10 @@ class ThumbnailComponent(QObject):
 
     def _on_resize_timer(self):
         """Callback dla resize timer - aplikuje pending size change."""
+        # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
+        if not self._is_object_valid():
+            return
+            
         self._apply_size_change()
 
     def _apply_size_change(self):
@@ -319,6 +337,10 @@ class ThumbnailComponent(QObject):
 
     def _on_worker_thumbnail_ready(self, worker_id: int, path: str, pixmap: QPixmap):
         """Callback gdy worker završí loading."""
+        # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
+        if not self._is_object_valid():
+            return
+            
         # Check if this is current worker
         if worker_id != self._current_worker_id:
             if self.config.enable_debug_logging:
@@ -329,6 +351,10 @@ class ThumbnailComponent(QObject):
 
     def _on_worker_thumbnail_error(self, worker_id: int, error_msg: str, path: str):
         """Callback gdy worker ma błąd."""
+        # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
+        if not self._is_object_valid():
+            return
+            
         # Check if this is current worker
         if worker_id != self._current_worker_id:
             return
@@ -337,6 +363,10 @@ class ThumbnailComponent(QObject):
 
     def _on_thumbnail_ready(self, path: str, pixmap: QPixmap, from_cache: bool = False):
         """Callback gdy miniatura jest gotowa."""
+        # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
+        if not self._is_object_valid():
+            return
+            
         if path != self._current_path:
             # Outdated result
             return
@@ -351,8 +381,9 @@ class ThumbnailComponent(QObject):
         # Update state
         self._set_state(TileState.READY)
 
-        # Emit signals
-        self.thumbnail_loaded.emit(path, pixmap)
+        # Emit signals - tylko jeśli obiekt Qt nadal istnieje
+        if self._is_object_valid():
+            self.thumbnail_loaded.emit(path, pixmap)
 
         # Emit via event bus
         if self.event_bus:
@@ -378,13 +409,17 @@ class ThumbnailComponent(QObject):
         self._is_loading = False
 
     def _emit_error(self, error_message: str):
-        """Emituje błąd loading."""
+        """Emit error z zabezpieczeniem przed usuniętymi obiektami Qt."""
+        # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
+        if not self._is_object_valid():
+            return
+            
         self._set_state(TileState.ERROR)
 
-        # Emit signals
-        self.thumbnail_error.emit(self._current_path or "", error_message)
+        # Emit signals - tylko jeśli obiekt Qt nadal istnieje
+        if self._is_object_valid():
+            self.thumbnail_error.emit(self._current_path or "", error_message)
 
-        # Emit via event bus
         if self.event_bus:
             self.event_bus.emit_event(
                 TileEvent.THUMBNAIL_ERROR, self._current_path or "", error_message
@@ -393,20 +428,23 @@ class ThumbnailComponent(QObject):
         logger.error(f"Thumbnail error: {error_message}")
 
     def _set_state(self, new_state: TileState):
-        """Ustaw nowy stan komponentu."""
+        """Set new state z zabezpieczeniem przed usuniętymi obiektami Qt."""
+        # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
+        if not self._is_object_valid():
+            return
+            
         if new_state != self._current_state:
-            old_state = self._current_state
             self._current_state = new_state
+            
+            # Emit signal - tylko jeśli obiekt Qt nadal istnieje  
+            if self._is_object_valid():
+                self.state_changed.emit(new_state)
 
-            # Emit state change
-            self.state_changed.emit(new_state)
-
-            # Emit via event bus
             if self.event_bus:
                 self.event_bus.emit_event(TileEvent.STATE_CHANGED, new_state)
 
             if self.config.enable_debug_logging:
-                logger.debug(f"State changed: {old_state.name} -> {new_state.name}")
+                logger.debug(f"State changed: {self._current_state.name} -> {new_state.name}")
 
     def _on_thumbnail_loaded(self, path: str, pixmap: QPixmap):
         """Callback dla internal thumbnail loaded signal."""
@@ -417,12 +455,22 @@ class ThumbnailComponent(QObject):
         pass  # Override in subclasses if needed
 
     def _on_external_thumbnail_loaded(self, path: str, pixmap: QPixmap):
-        """Callback dla external thumbnail loaded via event bus."""
-        pass  # Override in subclasses if needed
+        """Callback z external event bus."""
+        # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
+        if not self._is_object_valid():
+            return
+            
+        if path == self._current_path and not self._pixmap:
+            self._on_thumbnail_ready(path, pixmap, from_cache=True)
 
     def _on_external_thumbnail_error(self, path: str, error_message: str):
-        """Callback dla external thumbnail error via event bus."""
-        pass  # Override in subclasses if needed
+        """Callback z external event bus."""
+        # NAPRAWKA: Sprawdź czy obiekt Qt nie został usunięty
+        if not self._is_object_valid():
+            return
+            
+        if path == self._current_path:
+            self._emit_error(f"External error: {error_message}")
 
     def _try_load_from_cache(self, file_path: str, size: Tuple[int, int]) -> bool:
         """
@@ -461,6 +509,34 @@ class ThumbnailComponent(QObject):
         """Cleanup komponentu - usuwa wszystkie zasoby."""
         self._cancel_current_loading()
 
+        # Odłącz sygnały
+        try:
+            self.thumbnail_loaded.disconnect()
+        except Exception:
+            pass
+        try:
+            self.thumbnail_error.disconnect()
+        except Exception:
+            pass
+        try:
+            self.state_changed.disconnect()
+        except Exception:
+            pass
+        # Odsubskrybuj z event_bus
+        if self.event_bus:
+            try:
+                self.event_bus.unsubscribe(TileEvent.THUMBNAIL_LOADED, self._on_external_thumbnail_loaded)
+            except Exception:
+                pass
+            try:
+                self.event_bus.unsubscribe(TileEvent.THUMBNAIL_ERROR, self._on_external_thumbnail_error)
+            except Exception:
+                pass
+            try:
+                self.event_bus.unsubscribe(TileEvent.STATE_CHANGED, self._set_state)
+            except Exception:
+                pass
+
         # Clear pixmap
         self._pixmap = None
         self._memory_usage_bytes = 0
@@ -476,7 +552,6 @@ class ThumbnailComponent(QObject):
                 resource_manager = get_resource_manager()
                 resource_manager.unregister_worker(self._resource_manager_worker_id)
                 self._resource_manager_worker_id = None
-                
                 if self.config.enable_debug_logging:
                     logger.debug("Resource manager worker unregistered")
             except Exception as e:
@@ -486,6 +561,7 @@ class ThumbnailComponent(QObject):
         self._current_path = None
         self._current_size = (0, 0)
         self._set_state(TileState.DISPOSED)
+        self._is_disposed = True
 
         if self.config.enable_debug_logging:
             logger.debug("ThumbnailComponent cleaned up")
@@ -502,6 +578,28 @@ class ThumbnailComponent(QObject):
             "worker_id": self._current_worker_id,
             "config_async": self.config.async_loading,
         }
+
+    def _is_object_valid(self) -> bool:
+        """Sprawdza czy obiekt Qt nadal istnieje i można z nim komunikować."""
+        try:
+            # Sprawdź flagę disposed
+            if getattr(self, "_is_disposed", False):
+                return False
+                
+            # NAPRAWKA: Sprawdź czy obiekt Qt nadal istnieje
+            try:
+                # Spróbuj uzyskać dostęp do basic Qt property
+                _ = self.objectName()
+                return True
+            except RuntimeError as e:
+                if "wrapped C/C++ object" in str(e) or "has been deleted" in str(e):
+                    # Obiekt Qt został usunięty - mark as disposed
+                    self._is_disposed = True
+                    return False
+                raise  # Inny błąd RuntimeError
+                
+        except Exception:
+            return False
 
 
 # === FACTORY FUNCTIONS ===

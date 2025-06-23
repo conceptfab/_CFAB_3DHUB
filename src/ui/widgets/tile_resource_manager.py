@@ -39,9 +39,9 @@ class MemoryUsageStats:
 class ResourceLimits:
     """Limity zasobów dla systemu."""
 
-    max_tiles: int = 500
-    max_memory_mb: int = 300
-    max_memory_per_tile_mb: int = 3
+    max_tiles: int = 1000
+    max_memory_mb: int = 4000
+    max_memory_per_tile_mb: int = 10
     max_concurrent_workers: int = 8
     cleanup_interval_seconds: int = 180
     memory_check_interval_seconds: int = 30
@@ -84,8 +84,8 @@ class MemoryMonitor(QObject):
                 self._memory_history.pop(0)
 
             # Sprawdź limity
-            warning_threshold = self.limits.max_memory_mb * 0.6
-            critical_threshold = self.limits.max_memory_mb * 0.8
+            warning_threshold = self.limits.max_memory_mb * 0.8  # Warning przy 80%
+            critical_threshold = self.limits.max_memory_mb * 0.95  # NAPRAWKA: Critical przy 95% zamiast 80%
 
             if memory_mb > critical_threshold:
                 self.memory_critical.emit(
@@ -260,7 +260,7 @@ class TileResourceManager(QObject):
             # Initialize components
             self._performance_monitor = get_performance_monitor(enable_monitoring=True)
             self._cache_optimizer = get_cache_optimizer(
-                max_size_mb=self.limits.max_memory_mb * 0.3
+                max_size_mb=self.limits.max_memory_mb * 0.3  # 30% całości dla cache
             )
             self._async_ui_manager = get_async_ui_manager(
                 max_concurrent_tasks=self.limits.max_concurrent_workers
@@ -409,35 +409,38 @@ class TileResourceManager(QObject):
             self.cleanup_performed.emit(cleaned_count)
 
     def perform_emergency_cleanup(self):
-        """Wykonuje emergency cleanup przy krytycznym usage."""
+        """Wykonuje emergency cleanup przy krytycznym usage - MNIEJ AGRESYWNY."""
         logger.warning("Performing emergency cleanup due to high memory usage")
 
         with self._lock:
-            # Aggressive cleanup
+            # NAPRAWKA: Mniej agresywne cleanup - nie usuwaj Qt obiektów bezpośrednio
             self.perform_cleanup()
 
-            # Force cleanup wszystkich komponentów
-            for tile in list(self._active_tiles):
-                if hasattr(tile, "cleanup"):
-                    try:
-                        tile.cleanup()
-                    except Exception as e:
-                        logger.error(f"Emergency tile cleanup error: {e}")
+            # NAPRAWKA: NIE wywołuj tile.cleanup() - to usuwa Qt obiekty!
+            # Zamiast tego tylko wymuś garbage collection
+            # for tile in list(self._active_tiles):
+            #     if hasattr(tile, "cleanup"):
+            #         try:
+            #             tile.cleanup()
+            #         except Exception as e:
+            #             logger.error(f"Emergency tile cleanup error: {e}")
 
             # Worker pool cleanup
             self._worker_pool.force_cleanup()
 
-            # NAPRAWKA: Bardziej agresywne garbage collection
-            for _ in range(5):  # Zwiększone z 3 na 5
-                gc.collect()
+            # NAPRAWKA: Jeszcze bardziej agresywne garbage collection
+            for _ in range(8):  # Zwiększone z 5 na 8
+                collected = gc.collect()
+                if collected == 0:
+                    break  # Brak więcej do zebrania
 
-            # NAPRAWKA: Dodatkowe cleanup performance components
+            # NAPRAWKA: Bardziej ostrożne cleanup performance components
             if self._performance_enabled:
                 try:
                     if self._cache_optimizer:
-                        self._cache_optimizer.cleanup()
+                        self._cache_optimizer.clear()  # Tylko clear cache, nie cleanup()
                     if self._async_ui_manager:
-                        self._async_ui_manager.cleanup()
+                        pass  # Nie wywołuj cleanup() - może usunąć Qt obiekty
                 except Exception as e:
                     logger.error(f"Performance components cleanup error: {e}")
 

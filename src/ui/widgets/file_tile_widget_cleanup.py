@@ -108,6 +108,9 @@ class FileTileWidgetCleanupManager:
                         component.cleanup()
                     except Exception:
                         pass  # cichy cleanup
+                # Po cleanup usuń referencję do komponentu
+                if component_name == "_thumbnail_component":
+                    setattr(self.widget, component_name, None)
 
     def cleanup_resources(self):
         """Czyści zasoby z resource manager."""

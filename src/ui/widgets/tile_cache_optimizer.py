@@ -587,7 +587,7 @@ _cache_optimizer_instance: Optional[TileCacheOptimizer] = None
 _cache_optimizer_lock = threading.Lock()
 
 
-def get_cache_optimizer(max_size_mb: float = 100.0) -> TileCacheOptimizer:
+def get_cache_optimizer(max_size_mb: float = 300.0) -> TileCacheOptimizer:
     """Singleton access do TileCacheOptimizer."""
     global _cache_optimizer_instance
     

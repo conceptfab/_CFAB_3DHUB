@@ -79,12 +79,12 @@ class TestResourceLimits:
         limits = ResourceLimits()
         
         assert limits.max_tiles == 1000
-        assert limits.max_memory_mb == 500
-        assert limits.max_memory_per_tile_mb == 5
-        assert limits.max_concurrent_workers == 10
-        assert limits.cleanup_interval_seconds == 300
-        assert limits.memory_check_interval_seconds == 60
-        assert limits.cache_cleanup_threshold_ratio == 0.8
+        assert limits.max_memory_mb == 4000
+        assert limits.max_memory_per_tile_mb == 10
+        assert limits.max_concurrent_workers == 8
+        assert limits.cleanup_interval_seconds == 180
+        assert limits.memory_check_interval_seconds == 30
+        assert limits.cache_cleanup_threshold_ratio == 0.7
     
     def test_custom_limits(self):
         """Test custom resource limits."""
