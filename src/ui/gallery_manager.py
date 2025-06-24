@@ -515,11 +515,9 @@ class GalleryManager:
         # Dla dużych folderów używaj wirtualizacji
         self.tiles_container.setUpdatesEnabled(False)
         try:
-            # 1. Wyczyść stare widgety z layoutu, ale ZACHOWAJ je w pamięci
-            while self.tiles_layout.count() > 0:
-                item = self.tiles_layout.takeAt(0)
-                if item.widget():
-                    item.widget().setParent(None)
+            # 1. Zostaw kafle w layoutu - NAPRAWKA PROBLEMU Z PUSTYMI OKNAMI
+            # Nie usuwaj kafelków z layoutu, bo setParent(None) powoduje osobne okna
+            # Kafle już są utworzone przez DataProcessingWorker i powinny pozostać widoczne
 
             # 2. Oblicz wymiary wirtualnego layoutu
             container_width = (
