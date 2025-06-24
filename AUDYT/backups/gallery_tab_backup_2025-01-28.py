@@ -2,172 +2,31 @@
 Zakładka galerii - wydzielona z main_window.py.
 """
 
-import concurrent.futures
 import logging
 import os
-import time
-import weakref
-from functools import wraps
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QDir, QObject, Qt, pyqtSignal
+from PyQt6.QtCore import QDir, QItemSelectionModel, Qt, pyqtSignal
 from PyQt6.QtGui import QFileSystemModel
 from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
-    QMessageBox,
+    QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
+    QSlider,
     QSplitter,
     QTreeView,
     QVBoxLayout,
     QWidget,
+    QMessageBox,
 )
 
 from src.ui.widgets.filter_panel import FilterPanel
 
 if TYPE_CHECKING:
     from src.ui.main_window import MainWindow
-
-
-def performance_monitor(operation_name: str):
-    """Decorator do monitorowania wydajności operacji UI."""
-
-    def decorator(func):
-        @wraps(func)
-        def wrapper(self, *args, **kwargs):
-            start_time = time.time()
-            try:
-                result = func(self, *args, **kwargs)
-                execution_time = time.time() - start_time
-
-                # Log performance metrics
-                if execution_time > 0.1:  # Warn if operation takes >100ms
-                    logging.warning(
-                        f"UI operation '{operation_name}' took {execution_time:.3f}s"
-                    )
-                else:
-                    logging.debug(
-                        f"UI operation '{operation_name}' took {execution_time:.3f}s"
-                    )
-
-                return result
-            except Exception as e:
-                execution_time = time.time() - start_time
-                logging.error(
-                    f"UI operation '{operation_name}' failed after {execution_time:.3f}s: {e}"
-                )
-                raise
-
-        return wrapper
-
-    return decorator
-
-
-class FolderValidationWorker(QObject):
-    """Worker do asynchronicznej walidacji folderów."""
-
-    validation_finished = pyqtSignal(str, bool, str)  # path, is_valid, error_msg
-
-    def __init__(self):
-        super().__init__()
-        self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=2, thread_name_prefix="FolderValidation"
-        )
-
-    def validate_folder_async(self, folder_path: str):
-        """Asynchroniczna walidacja folderu."""
-        future = self._executor.submit(self._validate_folder, folder_path)
-        future.add_done_callback(lambda f: self._on_validation_complete(folder_path, f))
-
-    def _validate_folder(self, folder_path: str) -> tuple[bool, str]:
-        """Walidacja folderu w worker thread."""
-        try:
-            if not os.path.exists(folder_path):
-                return False, f"Folder nie istnieje: {folder_path}"
-            if not os.path.isdir(folder_path):
-                return False, f"Ścieżka nie jest folderem: {folder_path}"
-            return True, ""
-        except Exception as e:
-            return False, f"Błąd podczas walidacji: {str(e)}"
-
-    def _on_validation_complete(self, folder_path: str, future):
-        """Callback po zakończeniu walidacji."""
-        try:
-            is_valid, error_msg = future.result()
-            self.validation_finished.emit(folder_path, is_valid, error_msg)
-        except Exception as e:
-            self.validation_finished.emit(
-                folder_path, False, f"Błąd walidacji: {str(e)}"
-            )
-
-
-class FilteringWorker(QObject):
-    """Worker do asynchronicznego filtrowania z progress feedback."""
-
-    progress_updated = pyqtSignal(int, int)  # current, total
-    filtering_finished = pyqtSignal(list)  # filtered_pairs
-
-    def __init__(self):
-        super().__init__()
-        self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="Filtering"
-        )
-
-    def apply_filters_async(self, file_pairs: list, filter_criteria: dict):
-        """Asynchroniczne filtrowanie z progress feedback."""
-        future = self._executor.submit(
-            self._filter_with_progress, file_pairs, filter_criteria
-        )
-        future.add_done_callback(self._on_filtering_complete)
-
-    def _filter_with_progress(self, file_pairs: list, filter_criteria: dict) -> list:
-        """Filtrowanie z progress updates."""
-        if not file_pairs:
-            return []
-
-        filtered_pairs = []
-        total = len(file_pairs)
-        batch_size = max(1, total // 20)  # 20 progress updates
-
-        for i, pair in enumerate(file_pairs):
-            # Progress update co batch_size elementów
-            if i % batch_size == 0:
-                self.progress_updated.emit(i, total)
-
-            # Tutaj logika filtrowania - przykład uproszczony
-            if self._matches_criteria(pair, filter_criteria):
-                filtered_pairs.append(pair)
-
-        self.progress_updated.emit(total, total)  # 100% complete
-        return filtered_pairs
-
-    def _matches_criteria(self, pair, criteria) -> bool:
-        """Sprawdza czy para spełnia kryteria filtrowania."""
-        if not criteria:
-            return True
-
-        # Sprawdź gwiazdki
-        if "stars" in criteria and criteria["stars"] is not None:
-            if getattr(pair, "stars", 0) != criteria["stars"]:
-                return False
-
-        # Sprawdź kolor
-        if "color" in criteria and criteria["color"] != "ALL":
-            pair_color = getattr(pair, "color_tag", None)
-            if pair_color != criteria["color"]:
-                return False
-
-        return True
-
-    def _on_filtering_complete(self, future):
-        """Callback po zakończeniu filtrowania."""
-        try:
-            filtered_pairs = future.result()
-            self.filtering_finished.emit(filtered_pairs)
-        except Exception as e:
-            logging.error(f"Błąd podczas filtrowania: {e}")
-            self.filtering_finished.emit([])
 
 
 class GalleryTab:
@@ -182,9 +41,7 @@ class GalleryTab:
         Args:
             main_window: Referencja do głównego okna aplikacji
         """
-        # Użyj weak reference do uniknięcia circular dependencies
-        self._main_window_ref = weakref.ref(main_window)
-
+        self.main_window = main_window
         self.gallery_tab = None
         self.gallery_tab_layout = None
         self.splitter = None
@@ -195,35 +52,6 @@ class GalleryTab:
         self.tiles_container = None
         self.tiles_layout = None
         self.filter_panel = None
-
-        # Dodaj worker do walidacji folderów
-        self._folder_validator = FolderValidationWorker()
-        self._folder_validator.validation_finished.connect(
-            self._on_folder_validation_complete
-        )
-        self._pending_folder_navigation = None
-
-        # Dodaj worker do filtrowania
-        self._filtering_worker = FilteringWorker()
-        self._filtering_worker.progress_updated.connect(self._on_filtering_progress)
-        self._filtering_worker.filtering_finished.connect(self._on_filtering_finished)
-        self._is_filtering = False
-
-        # Performance monitoring cache
-        self._ui_cache = {
-            "folder_validation": {},
-            "layout_geometry": {},
-            "widget_states": {},
-        }
-        self._cache_ttl = 300  # 5 minutes TTL
-
-    @property
-    def main_window(self):
-        """Zwraca main_window przez weak reference."""
-        main_window = self._main_window_ref()
-        if main_window is None:
-            raise RuntimeError("Main window has been garbage collected")
-        return main_window
 
     def create_gallery_tab(self) -> QWidget:
         """
@@ -372,7 +200,7 @@ class GalleryTab:
         # Dodaj przyciski ulubionych folderów
         self._update_favorite_folders_buttons()
 
-        # Dodaj pasek do głównego layoutu
+        # Dodaj pasek do layoutu zakładki
         self.gallery_tab_layout.addWidget(self.favorite_folders_bar)
 
     def _update_favorite_folders_buttons(self):
@@ -599,61 +427,31 @@ class GalleryTab:
 
     def _on_favorite_folder_clicked(self, folder_path: str):
         """
-        Obsługuje kliknięcie przycisku ulubionego folderu - ASYNC VERSION.
+        Obsługuje kliknięcie przycisku ulubionego folderu.
 
         Args:
             folder_path: Ścieżka do folderu
         """
+        import os
+        import logging
+
         logger = logging.getLogger(__name__)
-        logger.info(f"Rozpoczęcie asynchronicznej walidacji folderu: {folder_path}")
+        logger.info(f"Kliknięto ulubiony folder: {folder_path}")
 
-        # Sprawdź cache walidacji folderów
-        is_cached, is_valid, error_msg = self._get_cached_folder_validation(folder_path)
-        if is_cached:
-            if is_valid:
-                self._navigate_to_folder(folder_path)
-            else:
-                QMessageBox.warning(
-                    self.main_window,
-                    "Błąd",
-                    f"Folder nie jest dostępny:\n{error_msg}",
-                )
-            return
-
-        # Zapisz pending navigation
-        self._pending_folder_navigation = folder_path
-
-        # Rozpocznij asynchroniczną walidację
-        self._folder_validator.validate_folder_async(folder_path)
-
-    def _on_folder_validation_complete(
-        self, folder_path: str, is_valid: bool, error_msg: str
-    ):
-        """Callback po zakończeniu walidacji folderu."""
-        if folder_path != self._pending_folder_navigation:
-            return  # Ignore stale validation results
-
-        self._pending_folder_navigation = None
-
-        # Cache wyniku walidacji
-        self._cache_folder_validation(folder_path, is_valid, error_msg)
-
-        if not is_valid:
+        # Sprawdź czy folder istnieje
+        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
             QMessageBox.warning(
                 self.main_window,
                 "Błąd",
-                f"Folder nie jest dostępny:\n{error_msg}",
+                f"Folder nie istnieje lub nie jest dostępny:\n{folder_path}",
             )
             return
 
-        self._navigate_to_folder(folder_path)
-
-    def _navigate_to_folder(self, folder_path: str):
-        """Nawiguje do folderu po udanej walidacji."""
         # Przełącz na zakładkę galerii
         self.main_window.tab_widget.setCurrentIndex(0)
 
-        # Użyj metody set_working_directory
+        # Użyj metody set_working_directory, aby całkowicie zresetować
+        # stan aplikacji i drzewo katalogów na nowy folder.
         self.main_window.set_working_directory(folder_path)
 
     def update_favorite_folders_bar(self):
@@ -676,22 +474,17 @@ class GalleryTab:
             if folder_path:
                 self.main_window._select_working_directory(folder_path)
 
-    @performance_monitor("update_gallery_view")
     def update_gallery_view(self):
         """
-        Aktualizuje widok galerii z performance monitoring.
+        Aktualizuje widok galerii.
         """
         if hasattr(self.main_window, "gallery_manager"):
             self.main_window.gallery_manager.update_gallery_view()
 
     def apply_filters_and_update_view(self):
         """
-        Zbiera kryteria, filtruje pary i aktualizuje galerię - ASYNC VERSION.
+        Zbiera kryteria, filtruje pary i aktualizuje galerię.
         """
-        # Prevent concurrent filtering
-        if self._is_filtering:
-            return
-
         if not self.main_window.controller.current_directory:
             if hasattr(self.main_window, "gallery_manager"):
                 self.main_window.gallery_manager.file_pairs_list = []
@@ -699,7 +492,7 @@ class GalleryTab:
             if hasattr(self.main_window, "size_control_panel"):
                 self.main_window.size_control_panel.setVisible(False)
             if hasattr(self, "filter_panel"):
-                self.filter_panel.setEnabled(False)
+                self.filter_panel.setEnabled(False)  # Zablokuj zamiast ukryć
             return
 
         if not self.main_window.controller.current_file_pairs:
@@ -710,42 +503,27 @@ class GalleryTab:
                 self.main_window.size_control_panel.setVisible(False)
             return
 
-        # Pobierz kryteria filtrowania
+        # Pobierz kryteria filtrowania z lokalnego panelu
         filter_criteria = {}
         if hasattr(self, "filter_panel"):
             filter_criteria = self.filter_panel.get_filter_criteria()
 
-        # Start async filtering
-        self._is_filtering = True
-        if hasattr(self, "filter_panel"):
-            self.filter_panel.setEnabled(False)  # Disable during filtering
-
-        self._filtering_worker.apply_filters_async(
-            self.main_window.controller.current_file_pairs, filter_criteria
-        )
-
-    def _on_filtering_progress(self, current: int, total: int):
-        """Callback dla progress updates podczas filtrowania."""
-        # Można dodać progress bar w przyszłości
-        progress_percent = (current * 100) // total if total > 0 else 0
-        logging.debug(f"Filtering progress: {progress_percent}% ({current}/{total})")
-
-    def _on_filtering_finished(self, filtered_pairs: list):
-        """Callback po zakończeniu filtrowania."""
-        self._is_filtering = False
-
-        # Update gallery with filtered results
+        # ZAWSZE zastosuj filtry z aktualną listą par plików z kontrolera
         if hasattr(self.main_window, "gallery_manager"):
-            self.main_window.gallery_manager.file_pairs_list = filtered_pairs
-            self.main_window.gallery_manager.update_gallery_view()
+            self.main_window.gallery_manager.apply_filters_and_update_view(
+                self.main_window.controller.current_file_pairs, filter_criteria
+            )
 
-        # Update UI visibility
-        is_gallery_populated = bool(filtered_pairs)
+        is_gallery_populated = bool(
+            hasattr(self.main_window, "gallery_manager")
+            and self.main_window.gallery_manager.file_pairs_list
+        )
         if hasattr(self.main_window, "size_control_panel"):
             self.main_window.size_control_panel.setVisible(is_gallery_populated)
 
+        # Włącz panel filtrów gdy są dane do filtrowania
         if hasattr(self, "filter_panel"):
-            self.filter_panel.setEnabled(True)  # Re-enable filter panel
+            self.filter_panel.setEnabled(is_gallery_populated)
 
     def get_widgets_for_main_window(self):
         """
@@ -803,56 +581,3 @@ class GalleryTab:
             and self.main_window.gallery_manager
         ):
             self.main_window.gallery_manager.update_thumbnail_size(new_size)
-
-        # Cache nowego rozmiaru
-        self._ui_cache["widget_states"]["last_thumbnail_size"] = new_size
-        self._ui_cache["widget_states"]["last_update_time"] = time.time()
-
-    def _get_cached_folder_validation(self, folder_path: str) -> tuple[bool, str, bool]:
-        """
-        Sprawdza cache walidacji folderów.
-
-        Returns:
-            tuple: (is_cached, is_valid, error_msg)
-        """
-        cache_key = folder_path
-        cache_entry = self._ui_cache["folder_validation"].get(cache_key)
-
-        if cache_entry:
-            cached_time, is_valid, error_msg = cache_entry
-            if time.time() - cached_time < self._cache_ttl:
-                return True, is_valid, error_msg
-
-        return False, False, ""
-
-    def _cache_folder_validation(
-        self, folder_path: str, is_valid: bool, error_msg: str
-    ):
-        """Cache wyniku walidacji folderu."""
-        self._ui_cache["folder_validation"][folder_path] = (
-            time.time(),
-            is_valid,
-            error_msg,
-        )
-
-    def __del__(self):
-        """Cleanup zasobów przy destrukcji."""
-        self._cleanup_resources()
-
-    def _cleanup_resources(self):
-        """Czyszczenie zasobów i worker threads."""
-        try:
-            if hasattr(self, "_folder_validator") and self._folder_validator:
-                if hasattr(self._folder_validator, "_executor"):
-                    self._folder_validator._executor.shutdown(wait=False)
-
-            if hasattr(self, "_filtering_worker") and self._filtering_worker:
-                if hasattr(self._filtering_worker, "_executor"):
-                    self._filtering_worker._executor.shutdown(wait=False)
-
-            # Clear caches
-            if hasattr(self, "_ui_cache"):
-                self._ui_cache.clear()
-
-        except Exception as e:
-            logging.error(f"Error during GalleryTab cleanup: {e}")

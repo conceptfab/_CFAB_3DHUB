@@ -1,0 +1,49 @@
+{
+  "target_metrics": [
+    "gallery_load_time_ms",
+    "memory_usage_mb",
+    "scan_time_ms",
+    "tile_creation_time_ms"
+  ],
+  "focus_components": [
+    "GalleryManager",
+    "scanner_core",
+    "file_tile_widget",
+    "main_window"
+  ],
+  "risk_tolerance": "medium",
+  "max_iterations": 15,
+  "improvement_threshold": 5.0,
+  "convergence_threshold": 3,
+  "optimization_strategies": {
+    "performance_optimizations": true,
+    "memory_optimizations": true,
+    "thread_safety_optimizations": true,
+    "ui_responsiveness_optimizations": true
+  },
+  "test_environment": {
+    "use_real_gallery": true,
+    "test_folder": "_test_gallery",
+    "max_files_per_test": 1000,
+    "timeout_seconds": 300
+  },
+  "knowledge_base": {
+    "auto_update": true,
+    "min_improvement_for_entry": 5.0,
+    "max_entries_per_category": 50,
+    "export_format": "markdown"
+  },
+  "reporting": {
+    "generate_detailed_reports": true,
+    "include_performance_charts": true,
+    "save_optimization_history": true,
+    "export_knowledge_base": true
+  },
+  "advanced_settings": {
+    "parallel_optimizations": false,
+    "rollback_failed_optimizations": true,
+    "memory_monitoring": true,
+    "cpu_monitoring": true,
+    "detailed_logging": true
+  }
+}

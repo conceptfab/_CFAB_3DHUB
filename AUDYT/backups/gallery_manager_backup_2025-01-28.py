@@ -2,24 +2,24 @@
 Manager galerii - zarządzanie wyświetlaniem kafelków.
 """
 
-import concurrent.futures
 import logging
 import math
 import os
 import threading
 import time
 import weakref
-from collections import namedtuple
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-try:
-    import psutil
-except ImportError:
-    psutil = None
-
-from PyQt6.QtCore import QMutex, QMutexLocker, QObject, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QApplication, QGridLayout, QSizePolicy, QWidget
+from PyQt6.QtWidgets import (
+    QApplication,
+    QGridLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src import app_config
 from src.controllers.gallery_controller import GalleryController
@@ -30,396 +30,6 @@ from src.ui.widgets.special_folder_tile_widget import SpecialFolderTileWidget
 from src.ui.widgets.tile_resource_manager import get_resource_manager
 
 logger = logging.getLogger(__name__)
-
-
-# Cache entry structure dla optimized cache
-CacheEntry = namedtuple("CacheEntry", ["data", "timestamp", "version"])
-
-
-class ProgressiveTileCreator(QObject):
-    """Worker do asynchronicznego tworzenia kafli z progress feedback."""
-
-    # Signals dla progress feedback
-    progress_updated = pyqtSignal(int, int, str)  # current, total, status_text
-    chunk_completed = pyqtSignal(int, list)  # chunk_id, widgets_created
-    creation_finished = pyqtSignal(bool, str)  # success, error_msg
-
-    def __init__(self, gallery_manager):
-        super().__init__()
-        self.gallery_manager = gallery_manager
-        self._cancel_requested = False
-        self._mutex = QMutex()
-
-        # Adaptive configuration based na system specs
-        self._configure_adaptive_settings()
-
-    def _configure_adaptive_settings(self):
-        """Configure settings based na system performance."""
-        try:
-            if psutil:
-                # Get system specs
-                cpu_count = psutil.cpu_count(logical=True)
-                memory_gb = psutil.virtual_memory().total / (1024**3)
-
-                # Adaptive batch sizes
-                if memory_gb >= 16 and cpu_count >= 8:
-                    self.chunk_size = 150  # High-end system
-                    self.process_events_interval = 3
-                elif memory_gb >= 8 and cpu_count >= 4:
-                    self.chunk_size = 100  # Mid-range system
-                    self.process_events_interval = 2
-                else:
-                    self.chunk_size = 50  # Low-end system
-                    self.process_events_interval = 1
-            else:
-                # Fallback gdy psutil nie dostępne
-                self.chunk_size = 75
-                self.process_events_interval = 2
-
-        except Exception:
-            # Fallback values
-            self.chunk_size = 75
-            self.process_events_interval = 2
-
-    def create_tiles_progressive(self, special_folders: list, file_pairs: list):
-        """Start progressive tile creation."""
-        with QMutexLocker(self._mutex):
-            self._cancel_requested = False
-
-        try:
-            all_items = special_folders + file_pairs
-            total_items = len(all_items)
-
-            if total_items == 0:
-                self.creation_finished.emit(True, "No items to create")
-                return
-
-            # Calculate chunks
-            chunks = []
-            for i in range(0, total_items, self.chunk_size):
-                chunk_items = all_items[i : i + self.chunk_size]
-                chunks.append((i // self.chunk_size, chunk_items, i))
-
-            # Process chunks progressively
-            for chunk_id, chunk_items, start_index in chunks:
-
-                # Check for cancellation
-                with QMutexLocker(self._mutex):
-                    if self._cancel_requested:
-                        self.creation_finished.emit(
-                            False, "Operation cancelled by user"
-                        )
-                        return
-
-                # Update progress
-                progress_text = f"Creating tiles {start_index + 1}-{start_index + len(chunk_items)} of {total_items}"
-                self.progress_updated.emit(start_index, total_items, progress_text)
-
-                # Create chunk widgets
-                chunk_widgets = self._create_chunk_widgets(chunk_items, start_index)
-
-                # Emit chunk completion
-                self.chunk_completed.emit(chunk_id, chunk_widgets)
-
-                # Process events co X chunks dla UI responsiveness
-                if chunk_id % self.process_events_interval == 0:
-                    QApplication.processEvents()
-
-                    # Yield control na moment
-                    time.sleep(0.001)  # 1ms yield
-
-            self.creation_finished.emit(True, f"Successfully created tiles")
-
-        except Exception as e:
-            self.creation_finished.emit(False, f"Error during tile creation: {str(e)}")
-
-    def _create_chunk_widgets(self, chunk_items: list, start_index: int) -> list:
-        """Create widgets dla single chunk."""
-        widgets = []
-
-        for i, item in enumerate(chunk_items):
-            try:
-                # Check cancellation frequently
-                with QMutexLocker(self._mutex):
-                    if self._cancel_requested:
-                        break
-
-                widget = None
-                absolute_index = start_index + i
-
-                if hasattr(item, "get_folder_path"):  # SpecialFolder
-                    widget = self.gallery_manager.create_folder_widget(item)
-                    if widget:
-                        # Dodaj numerację dla folderów specjalnych
-                        total_folders = len(self.gallery_manager.special_folders_list)
-                        tooltip = (
-                            f"[{absolute_index + 1}/{total_folders}] {item.folder_name}"
-                        )
-                        widget.setToolTip(tooltip)
-                        widget.setObjectName(f"SpecialFolderTile_{absolute_index + 1}")
-                else:  # FilePair
-                    widget = self.gallery_manager.create_tile_widget_for_pair(
-                        item, self.gallery_manager.tiles_container
-                    )
-                    if widget:
-                        # KRYTYCZNE: Dodaj numerację kafelków jak w oryginalnej wersji
-                        total_pairs = len(self.gallery_manager.file_pairs_list)
-                        file_pair_number = (
-                            absolute_index
-                            - len(self.gallery_manager.special_folders_list)
-                            + 1
-                        )
-
-                        if hasattr(widget, "set_tile_number"):
-                            widget.set_tile_number(file_pair_number, total_pairs)
-                        widget.setObjectName(f"FileTile_{file_pair_number}")
-
-                if widget:
-                    widgets.append((absolute_index, widget, item))
-
-            except Exception as e:
-                logging.error(f"Failed to create widget for item {i}: {e}")
-                continue
-
-        return widgets
-
-    def cancel_creation(self):
-        """Cancel ongoing tile creation."""
-        with QMutexLocker(self._mutex):
-            self._cancel_requested = True
-
-
-class AdaptiveScrollHandler:
-    """Adaptive scroll handling z performance-based throttling."""
-
-    def __init__(self, gallery_manager):
-        self.gallery_manager = gallery_manager
-
-        # Performance monitoring
-        self._frame_times = []
-        self._max_frame_samples = 10
-        self._target_fps = 60
-        self._min_fps = 30
-
-        # Adaptive throttling
-        self._current_throttle_ms = 16  # Start z 60 FPS
-        self._scroll_velocity = 0
-        self._last_scroll_value = 0
-        self._last_scroll_time = 0
-        self._last_processed_scroll_ms = 0
-
-        # Performance adaptation
-        self._performance_level = "high"  # high, medium, low
-        self._last_performance_check = 0
-        self._performance_check_interval = 5.0  # 5 seconds
-
-    def handle_scroll(self, scroll_value: int):
-        """Adaptive scroll handling."""
-        current_time = time.time()
-
-        # Calculate scroll velocity
-        if self._last_scroll_time > 0:
-            time_delta = current_time - self._last_scroll_time
-            value_delta = abs(scroll_value - self._last_scroll_value)
-            self._scroll_velocity = value_delta / time_delta if time_delta > 0 else 0
-
-        self._last_scroll_value = scroll_value
-        self._last_scroll_time = current_time
-
-        # Adapt throttling based na velocity i performance
-        self._adapt_throttling()
-
-        # Check if we should process this scroll event
-        current_time_ms = current_time * 1000
-        if (
-            current_time_ms - self._last_processed_scroll_ms
-        ) >= self._current_throttle_ms:
-            self._last_processed_scroll_ms = current_time_ms
-
-            # Process scroll z performance monitoring
-            frame_start = time.time()
-            self.gallery_manager._process_scroll_optimized(scroll_value)
-            frame_time = time.time() - frame_start
-
-            # Track frame performance
-            self._track_frame_performance(frame_time)
-
-    def _adapt_throttling(self):
-        """Adapt throttling based na scroll velocity i system performance."""
-        # High velocity scrolling = more aggressive throttling
-        if self._scroll_velocity > 1000:  # Fast scrolling
-            if self._performance_level == "low":
-                self._current_throttle_ms = 50  # 20 FPS
-            else:
-                self._current_throttle_ms = 25  # 40 FPS
-        elif self._scroll_velocity > 500:  # Medium scrolling
-            if self._performance_level == "low":
-                self._current_throttle_ms = 33  # 30 FPS
-            else:
-                self._current_throttle_ms = 20  # 50 FPS
-        else:  # Slow scrolling
-            if self._performance_level == "low":
-                self._current_throttle_ms = 25  # 40 FPS
-            else:
-                self._current_throttle_ms = 16  # 60 FPS
-
-    def _track_frame_performance(self, frame_time: float):
-        """Track frame performance i adapt system performance level."""
-        self._frame_times.append(frame_time)
-        if len(self._frame_times) > self._max_frame_samples:
-            self._frame_times.pop(0)
-
-        # Check performance periodically
-        current_time = time.time()
-        if (
-            current_time - self._last_performance_check
-            > self._performance_check_interval
-        ):
-            self._update_performance_level()
-            self._last_performance_check = current_time
-
-    def _update_performance_level(self):
-        """Update performance level based na recent frame times."""
-        if not self._frame_times:
-            return
-
-        avg_frame_time = sum(self._frame_times) / len(self._frame_times)
-        fps_estimate = 1.0 / avg_frame_time if avg_frame_time > 0 else 60
-
-        if fps_estimate >= 50:
-            self._performance_level = "high"
-        elif fps_estimate >= 35:
-            self._performance_level = "medium"
-        else:
-            self._performance_level = "low"
-
-        logging.debug(
-            f"Performance level: {self._performance_level} (Est. FPS: {fps_estimate:.1f})"
-        )
-
-
-class OptimizedLayoutGeometry:
-    """Lock-free optimized geometry cache z atomic operations."""
-
-    def __init__(self, scroll_area, tiles_layout):
-        self.scroll_area = scroll_area
-        self.tiles_layout = tiles_layout
-
-        # Atomic cache z versioning
-        self._cache_entries = {}
-        self._cache_version = 0
-        self._cache_lock = threading.RLock()  # Only dla write operations
-        self._cache_ttl = 5.0
-
-        # Performance counters
-        self._stats = {"hits": 0, "misses": 0, "lock_free_reads": 0, "locked_writes": 0}
-
-        # Background cleanup
-        self._cleanup_executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="CacheCleanup"
-        )
-        self._last_cleanup = time.time()
-        self._cleanup_interval = 30.0  # 30 seconds
-
-    def get_layout_params(self, thumbnail_size: int) -> dict:
-        """Lock-free cache read z fallback na locked write."""
-        current_time = time.time()
-        cache_key = (
-            self.scroll_area.width(),
-            self.scroll_area.height(),
-            thumbnail_size,
-        )
-
-        # Try lock-free read first
-        cache_entry = self._cache_entries.get(cache_key)
-        if cache_entry and (current_time - cache_entry.timestamp) < self._cache_ttl:
-            self._stats["hits"] += 1
-            self._stats["lock_free_reads"] += 1
-            return cache_entry.data.copy()
-
-        # Cache miss - need locked write
-        return self._compute_and_cache_params(cache_key, current_time, thumbnail_size)
-
-    def _compute_and_cache_params(
-        self, cache_key: tuple, current_time: float, thumbnail_size: int
-    ) -> dict:
-        """Compute params z thread-safe caching."""
-        with self._cache_lock:
-            self._stats["locked_writes"] += 1
-            self._stats["misses"] += 1
-
-            # Double-check pattern - może ktoś już obliczył
-            cache_entry = self._cache_entries.get(cache_key)
-            if cache_entry and (current_time - cache_entry.timestamp) < self._cache_ttl:
-                return cache_entry.data.copy()
-
-            # Calculate new params
-            container_width = (
-                self.scroll_area.width() - self.scroll_area.verticalScrollBar().width()
-            )
-            tile_width_spacing = thumbnail_size + self.tiles_layout.spacing() + 10
-            tile_height_spacing = thumbnail_size + self.tiles_layout.spacing() + 40
-            cols = max(1, math.ceil(container_width / tile_width_spacing))
-
-            params = {
-                "container_width": container_width,
-                "cols": cols,
-                "tile_width_spacing": tile_width_spacing,
-                "tile_height_spacing": tile_height_spacing,
-                "thumbnail_size": thumbnail_size,
-                "calculated_at": current_time,
-            }
-
-            # Atomic cache update
-            self._cache_version += 1
-            self._cache_entries[cache_key] = CacheEntry(
-                params, current_time, self._cache_version
-            )
-
-            # Schedule cleanup if needed
-            if current_time - self._last_cleanup > self._cleanup_interval:
-                self._schedule_background_cleanup(current_time)
-
-            return params.copy()
-
-    def _schedule_background_cleanup(self, current_time: float):
-        """Schedule background cache cleanup."""
-        self._last_cleanup = current_time
-        self._cleanup_executor.submit(self._background_cleanup, current_time)
-
-    def _background_cleanup(self, cleanup_time: float):
-        """Background cleanup expired entries."""
-        try:
-            with self._cache_lock:
-                expired_keys = [
-                    key
-                    for key, entry in self._cache_entries.items()
-                    if cleanup_time - entry.timestamp >= self._cache_ttl
-                ]
-
-                for key in expired_keys:
-                    self._cache_entries.pop(key, None)
-
-                logging.debug(
-                    f"Cache cleanup: removed {len(expired_keys)} expired entries"
-                )
-
-        except Exception as e:
-            logging.error(f"Cache cleanup error: {e}")
-
-    def invalidate_cache(self):
-        """Force invalidation całego cache."""
-        with self._cache_lock:
-            cache_size = len(self._cache_entries)
-            self._cache_entries.clear()
-            self._stats["invalidations"] = cache_size
-
-    def get_cache_stats(self) -> dict:
-        """Zwróć cache statistics dla performance monitoring."""
-        with self._cache_lock:
-            stats = self._stats.copy()
-            stats["cache_size"] = len(self._cache_entries)
-            return stats
 
 
 class LayoutGeometry:
@@ -714,22 +324,6 @@ class GalleryManager:
         # Memory management
         self.memory_manager = VirtualScrollingMemoryManager(self)
 
-        # Progressive tile creator
-        self._progressive_creator = ProgressiveTileCreator(self)
-        self._progressive_creator.progress_updated.connect(
-            self._on_tile_creation_progress
-        )
-        self._progressive_creator.chunk_completed.connect(self._on_chunk_completed)
-        self._progressive_creator.creation_finished.connect(
-            self._on_tile_creation_finished
-        )
-
-        # Progress tracking
-        self._tile_creation_in_progress = False
-
-        # Adaptive scroll handler (replace old scroll handling)
-        self._scroll_handler = AdaptiveScrollHandler(self)
-
     def _setup_scroll_throttling(self):
         """Setup throttled scroll event handling."""
         if self.scroll_area and hasattr(self.scroll_area, "verticalScrollBar"):
@@ -796,88 +390,6 @@ class GalleryManager:
 
     def _start_progressive_loading(self):
         """Start progressive loading - placeholder for now."""
-
-    def _on_tile_creation_progress(self, current: int, total: int, status: str):
-        """Handle progress updates dla tile creation."""
-        progress_percent = (current * 100) // total if total > 0 else 0
-        logging.info(f"Tile creation progress: {progress_percent}% - {status}")
-
-    def _on_chunk_completed(self, chunk_id: int, chunk_widgets: list):
-        """Handle completion pojedynczego chunk."""
-        geometry = self._get_cached_geometry()
-        cols = geometry["cols"]
-
-        for tile_index, widget, item in chunk_widgets:
-            if widget:
-                self._setup_widget_connections(widget, item)
-
-                row = tile_index // cols
-                col = tile_index % cols
-                self.tiles_layout.addWidget(widget, row, col)
-
-                if hasattr(item, "get_folder_path"):
-                    self.special_folder_widgets[item.get_folder_path()] = widget
-                else:
-                    self.gallery_tile_widgets[item.get_archive_path()] = widget
-
-    def _on_tile_creation_finished(self, success: bool, message: str):
-        """Handle completion całego procesu tile creation."""
-        self._tile_creation_in_progress = False
-
-        if success:
-            logging.info(f"Tile creation completed: {message}")
-            self._finalize_gallery_layout()
-            self.tiles_container.setUpdatesEnabled(True)
-            self.tiles_container.update()
-        else:
-            logging.error(f"Tile creation failed: {message}")
-
-    def _setup_widget_connections(self, widget, item):
-        """Setup signal connections dla widget."""
-        if hasattr(widget, "archive_open_requested"):
-            widget.archive_open_requested.connect(self.main_window.open_archive)
-        if hasattr(widget, "preview_image_requested"):
-            widget.preview_image_requested.connect(
-                self.main_window._show_preview_dialog
-            )
-        if hasattr(widget, "tile_selected"):
-            widget.tile_selected.connect(
-                self.main_window._handle_tile_selection_changed
-            )
-        # KRYTYCZNE: Dodaj sygnały metadanych jak w oryginalnej wersji
-        if hasattr(widget, "stars_changed"):
-            widget.stars_changed.connect(self.main_window._handle_stars_changed)
-        if hasattr(widget, "color_tag_changed"):
-            widget.color_tag_changed.connect(self.main_window._handle_color_tag_changed)
-        if hasattr(widget, "tile_context_menu_requested"):
-            widget.tile_context_menu_requested.connect(
-                self.main_window._show_file_context_menu
-            )
-
-    def _finalize_gallery_layout(self):
-        """Finalize gallery layout po tile creation."""
-        all_items = len(self.special_folders_list) + len(self.file_pairs_list)
-        geometry = self._get_cached_geometry()
-        cols = geometry["cols"]
-
-        if all_items > 0:
-            rows = math.ceil(all_items / cols)
-            total_height = rows * (
-                self.current_thumbnail_size + self.tiles_layout.spacing() + 40
-            )
-
-            self.tiles_container.setMinimumHeight(total_height)
-            self.tiles_container.adjustSize()
-            self.tiles_container.updateGeometry()
-
-    def _process_scroll_optimized(self, scroll_value: int):
-        """Optimized scroll processing method."""
-        if self._virtualization_enabled:
-            self._update_visible_tiles_fast()
-
-        if self._scroll_timer:
-            self._scroll_timer.stop()
-            self._scroll_timer.start(100)
         pass
 
     def _get_cached_geometry(self):
@@ -985,53 +497,17 @@ class GalleryManager:
             logger.error(f"Błąd tworzenia kafelka dla {file_pair.get_base_name()}: {e}")
             return None
 
-    def create_all_tiles_progressive(self):
-        """
-        Progressive tile creation - replacement dla force_create_all_tiles().
-        Non-blocking z progress feedback.
-        """
-        if self._tile_creation_in_progress:
-            logging.warning("Tile creation already in progress, ignoring request")
-            return
-
-        self._tile_creation_in_progress = True
-
-        # Clear existing tiles
-        self.clear_gallery()
-
-        # Disable updates during setup
-        self.tiles_container.setUpdatesEnabled(False)
-
-        # Start progressive creation
-        self._progressive_creator.create_tiles_progressive(
-            self.special_folders_list, self.file_pairs_list
-        )
-
-    def cancel_tile_creation(self):
-        """Cancel ongoing tile creation."""
-        if self._tile_creation_in_progress and hasattr(self, "_progressive_creator"):
-            self._progressive_creator.cancel_creation()
-            self._tile_creation_in_progress = False
-            logging.info("Tile creation cancelled by user")
-
     def update_gallery_view(self):
         """
-        Aktualizuje widok galerii z intelligent loading strategy.
+        Aktualizuje widok galerii z wirtualizacją.
         """
         total_items = len(self.special_folders_list) + len(self.file_pairs_list)
 
-        # Threshold dla progressive loading
-        PROGRESSIVE_THRESHOLD = 200
-
-        if total_items > PROGRESSIVE_THRESHOLD:
-            # Use progressive loading dla large datasets
-            self.create_all_tiles_progressive()
-        else:
-            # Use synchronous creation dla small datasets
-            self.force_create_all_tiles()
-
-        # Reset virtualization flag
+        # USUNIĘTO SZTYWNY PRÓG 200 - teraz działa tak samo dla wszystkich ilości
+        self.force_create_all_tiles()
+        # Wyłącz wirtualizację po force_create_all_tiles
         self._virtualization_enabled = False
+        return
 
     def _update_visible_tiles(self):
         """Tworzy/usuwa kafelki w zależności od tego, czy są widoczne."""
@@ -1322,10 +798,8 @@ class GalleryManager:
                             )
 
                             if hasattr(widget, "set_tile_number"):
-                                widget.set_tile_number(
-                                    file_pair_idx + 1, len(self.file_pairs_list)
-                                )
-                            widget.setObjectName(f"FileTile_{file_pair_idx + 1}")
+                                widget.set_tile_number(i + 1, len(self.file_pairs_list))
+                            widget.setObjectName(f"FileTile_{i + 1}")
                             self.gallery_tile_widgets[file_pair.archive_path] = widget
                             self.tiles_layout.addWidget(widget, i // cols, i % cols)
                         else:
