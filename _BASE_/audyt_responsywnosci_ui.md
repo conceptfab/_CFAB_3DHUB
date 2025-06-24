@@ -6,10 +6,10 @@
 
 
 
-Wzmocnienie stabilności aplikacji przy pracy z folderami z dużą ilością plików - szczególnie należy skoncentrowac się na procesie tworzenia kafli w galerii.
-Weryfikacja czy processy które powinny być realizowane sekwencyjnie nie kolidują ze sobą.
+Wzmocnienie stabilności aplikacji przy pracy z folderami z dużą ilością plików - szczególnie należy skoncentrowac się na procesie tworzenia kafli w galerii. Testy wskazują że przywiększej ilości par plików proces nie jest finalizowany i aplikacja się zawiesza. To jest ostatni przykładowy komunikat: "2025-06-24 21:22:42,899 - src.ui.main_window.worker_manager - INFO - Uruchomiono nowy worker do przetwarzania 1418 par plików (bez resetowania drzewa)". Jest to niedopuszczalne zachowanie był wystarczająco precyzyjnie monitorowany!
+Weryfikacja czy processy które powinny być realizowane sekwencyjnie nie kolidują ze sobą i nie powodują konfliktów. Kluczowe procesy odpowiedzialne za działanie logiki biznesowej powinny być separowane i wykonywane sekwencyjnie.
 Przeanalizowanie czy system cache jest wydajny przy dużych ilościach plików, priorytem jest wydajność i stabilność sztuczne ograniczenia cache mogą być zniesione.
-Likwiadacja sztucznych progów np dotyczących ilości par w folderze i dopasowywanie do tego algorytmu. Dopuszczalne jest, że jeśli folder zawiera n więcej danych to do jego przetworzenia potrzeba n więcej czasu. Istotne jest zakończenie operacji sukcesem.
+Likwiadacja sztucznych progów np: dotyczących ilości par w folderze i dopasowywanie do tego algorytmu. Dopuszczalne jest, że jeśli folder zawiera N więcej danych to do jego przetworzenia potrzeba N więcej czasu. Istotne jest zakończenie operacji sukcesem.
 Zapewnienie maksymalnej responsywności i skalowalności UI podczas tworzenia i zarządzania kaflami w galerii:
  - adaptacja liczby kolumn do rozmiaru okna
  - eliminacja błedu - w tym momemncie praktycznie niemożliwa jest zmiana wielkości okna aplikacji
