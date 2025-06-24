@@ -4,7 +4,17 @@
 
 ## 🎯 CEL
 
-Zapewnienie maksymalnej responsywności i skalowalności UI podczas tworzenia i zarządzania kaflami w galerii. Eliminacja sztywnych podziałów, pełna adaptacja liczby kolumn do rozmiaru okna, jeden algorytm do obsługi kafli niezależnie od liczby plików/par. Eliminacja błedu - przy zmianie rozmiaru okna galeria znika, a powinna dopasować się do aktualnych rozmiatów okna.
+
+
+Wzmocnienie stabilności aplikacji przy pracy z folderami z dużą ilością plików - szczególnie należy skoncentrowac się na procesie tworzenia kafli w galerii.
+Weryfikacja czy processy które powinny być realizowane sekwencyjnie nie kolidują ze sobą.
+Przeanalizowanie czy system cache jest wydajny przy dużych ilościach plików, priorytem jest wydajność i stabilność sztuczne ograniczenia cache mogą być zniesione.
+Likwiadacja sztucznych progów np dotyczących ilości par w folderze i dopasowywanie do tego algorytmu. Dopuszczalne jest, że jeśli folder zawiera n więcej danych to do jego przetworzenia potrzeba n więcej czasu. Istotne jest zakończenie operacji sukcesem.
+Zapewnienie maksymalnej responsywności i skalowalności UI podczas tworzenia i zarządzania kaflami w galerii:
+ - adaptacja liczby kolumn do rozmiaru okna
+ - eliminacja błedu - w tym momemncie praktycznie niemożliwa jest zmiana wielkości okna aplikacji
+ - przy zmianie wielkości okna i obszaru dostępnego dla widoku galerii, elementy galerii powinny automatucznie wypełniąć jej przestrzeń
+
 
 ### 🏛️ TRZY FILARY AUDYTU LOGIKI BIZNESOWEJ
 
@@ -116,6 +126,8 @@ Ten audyt opiera się na trzech kluczowych filarach, które stanowią najwyższe
 #### 📋 **PROCEDURA GENEROWANIA MAPY**
 
 **KROK 1: DYNAMICZNE ODKRYWANIE STRUKTURY PROJEKTU**
+
+> ****KRTYCZNE! W celu szybszego zdiagnozowania problemów z UI zalecana jest analiza wsteczna kodu od okna galerii po proces tworzenia par w pliku metadata.json****
 
 Model MUSI dynamicznie przeanalizować strukturę projektu:
 
