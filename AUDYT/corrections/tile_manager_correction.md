@@ -1,3 +1,5 @@
+**⚠️ KRYTYCZNE: Przed rozpoczęciem pracy zapoznaj się z ogólnymi zasadami refaktoryzacji, poprawek i testowania opisanymi w pliku [refactoring_rules.md](refactoring_rules.md).**
+
 # 📋 ETAP 2: TILE_MANAGER.PY - ANALIZA I REFAKTORYZACJA
 
 **Data analizy:** 2025-01-24
@@ -17,16 +19,19 @@
 ### 🔍 Analiza problemów
 
 1. **Problemy batch processing:**
+
    - **Sztywny batch size** - `_batch_size = 50` nie adaptuje się do rozmiaru folderu
    - **Brak monitoring pamięci** - memory threshold 500MB może być za niski dla dużych folderów
    - **Synchroniczne przetwarzanie** - brak asynchronicznego przetwarzania dużych batchów
 
 2. **Problemy thread safety:**
+
    - **Race condition w `_is_creating_tiles`** - może być modyfikowane z różnych wątków
    - **Brak atomic operations** - operacje na licznikach nie są atomowe
    - **Thread-unsafe callback** - `thumbnail_loaded_callback` może być wywoływany z różnych wątków
 
 3. **Problemy responsywności UI:**
+
    - **Blokujące processEvents** - wywołanie w `create_tile_widgets_batch` może blokować UI
    - **Brak throttling** - nie ma ograniczenia częstości aktualizacji UI
    - **Heavy operations w main thread** - wszystkie operacje wykonywane w głównym wątku
@@ -83,16 +88,19 @@
 ### 🧪 PLAN TESTÓW AUTOMATYCZNYCH
 
 **Test funkcjonalności podstawowej:**
+
 - Test batch processing dla 10, 100, 1000 i 5000+ plików
 - Test thread safety przy równoczesnym tworzeniu kafli
 - Test memory management z monitoring usage
 
 **Test integracji:**
+
 - Test integracji z GalleryManager przy force_create_all_tiles
 - Test integracji z ProgressManager przy progress updates
 - Test integracji z WorkerManager przy data processing
 
 **Test wydajności:**
+
 - Pomiar czasu batch processing dla różnych rozmiarów
 - Test memory usage podczas długotrwałych operacji
 - Test responsywności UI podczas intensywnego przetwarzania

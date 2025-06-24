@@ -28,8 +28,6 @@ from src.models.special_folder import SpecialFolder
 from src.ui.widgets.file_tile_widget import FileTileWidget
 from src.ui.widgets.special_folder_tile_widget import SpecialFolderTileWidget
 from src.ui.widgets.tile_resource_manager import get_resource_manager
-import psutil
-import gc
 
 logger = logging.getLogger(__name__)
 
@@ -359,24 +357,9 @@ class GalleryManager:
         self._trigger_progressive_loading_if_needed()
 
     def _update_visible_tiles_fast(self):
-        """Szybka aktualizacja widoczności kafli z bezpiecznym cleanup."""
-        if not self._virtualization_enabled:
-            return
-        try:
-            total_items = len(self.file_pairs_list) + len(self.special_folders_list)
-            if total_items == 0:
-                return
-            visible_start, visible_end, _ = self._geometry.get_visible_range(
-                self.current_thumbnail_size, total_items
-            )
-            with self._widgets_lock:
-                for i, (path, widget) in enumerate(self.gallery_tile_widgets.items()):
-                    if widget and hasattr(widget, 'setVisible'):
-                        should_be_visible = visible_start <= i < visible_end
-                        if widget.isVisible() != should_be_visible:
-                            widget.setVisible(should_be_visible)
-        except Exception as e:
-            logger.warning(f"Error in virtual scrolling update: {e}")
+        """Szybka aktualizacja widoczności kafli bez heavy operations."""
+        # Wyłączono żeby kafle nie znikały
+        return
 
     def _update_geometry_cache_if_needed(self):
         """Update geometry cache jeśli window size się zmienił."""
@@ -406,49 +389,45 @@ class GalleryManager:
                 self._start_progressive_loading()
 
     def _start_progressive_loading(self):
-        """Implementacja progressive loading dla dużych folderów."""
-        with self._loading_lock:
-            if not self._loading_chunks_queue or self._progressive_loading:
-                return
-            self._progressive_loading = True
-            if self._loading_chunks_queue:
-                chunk = self._loading_chunks_queue.pop(0)
-                self._process_chunk_async(chunk)
-
-    def _process_chunk_async(self, chunk):
-        """Asynchroniczne przetwarzanie chunk'a kafli."""
-        try:
-            for batch in chunk:
-                self._create_tiles_batch_safe(batch)
-            if self._loading_chunks_queue:
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(50, lambda: self._process_chunk_async(
-                    self._loading_chunks_queue.pop(0)
-                ))
-            else:
-                self._progressive_loading = False
-        except Exception as e:
-            logger.error(f"Error in progressive loading: {e}")
-            self._progressive_loading = False
-
-    def _create_tiles_batch_safe(self, items_batch):
-        """Bezpieczne tworzenie batch'a kafli z monitoring pamięci."""
-        try:
-            memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
-            if memory_mb > 1000:
-                gc.collect()
-                return
-            for item in items_batch:
-                if isinstance(item, SpecialFolder):
-                    self.create_folder_widget(item)
-                else:
-                    self.create_tile_widget_for_pair(item, self.tiles_container)
-        except Exception as e:
-            logger.error(f"Error creating tiles batch: {e}")
+        """Start progressive loading - placeholder for now."""
+        pass
 
     def _get_cached_geometry(self):
-        """Deleguje do LayoutGeometry jako jedynego źródła prawdy."""
-        return self._geometry.get_layout_params(self.current_thumbnail_size)
+        """Zwraca cache'owane obliczenia geometrii lub oblicza nowe."""
+        with self._geometry_cache_lock:
+            container_width = (
+                self.scroll_area.width() - self.scroll_area.verticalScrollBar().width()
+            )
+
+            # Sprawdź czy cache jest aktualny
+            if (
+                self._geometry_cache["container_width"] == container_width
+                and self._geometry_cache["last_thumbnail_size"]
+                == self.current_thumbnail_size
+            ):
+                return self._geometry_cache
+
+            # Oblicz nowe wartości
+            tile_width_spacing = (
+                self.current_thumbnail_size + self.tiles_layout.spacing() + 10
+            )
+            tile_height_spacing = (
+                self.current_thumbnail_size + self.tiles_layout.spacing() + 40
+            )
+            cols = max(1, math.ceil(container_width / tile_width_spacing))
+
+            # Zaktualizuj cache
+            self._geometry_cache.update(
+                {
+                    "container_width": container_width,
+                    "cols": cols,
+                    "tile_width_spacing": tile_width_spacing,
+                    "tile_height_spacing": tile_height_spacing,
+                    "last_thumbnail_size": self.current_thumbnail_size,
+                }
+            )
+
+            return self._geometry_cache
 
     def _on_scroll(self, value):
         """Wywołuje opóźnioną aktualizację widocznych kafelków."""
@@ -523,14 +502,11 @@ class GalleryManager:
         Aktualizuje widok galerii z wirtualizacją.
         """
         total_items = len(self.special_folders_list) + len(self.file_pairs_list)
-        VIRTUALIZATION_THRESHOLD = 1000
-        if total_items > VIRTUALIZATION_THRESHOLD:
-            self._virtualization_enabled = True
-            logger.info(f"Włączono wirtualizację dla {total_items} elementów")
-            self._update_visible_tiles()
-        else:
-            self._virtualization_enabled = False
-            self.force_create_all_tiles()
+
+        # USUNIĘTO SZTYWNY PRÓG 200 - teraz działa tak samo dla wszystkich ilości
+        self.force_create_all_tiles()
+        # Wyłącz wirtualizację po force_create_all_tiles
+        self._virtualization_enabled = False
         return
 
     def _update_visible_tiles(self):
@@ -750,51 +726,58 @@ class GalleryManager:
         Używane gdy wirtualizacja nie działa poprawnie.
         """
         import traceback
+
         from PyQt6.QtWidgets import QApplication
+
+        # Wyłącz limit TileResourceManager dla force_create_all_tiles
         original_max_tiles = get_resource_manager().limits.max_tiles
-        get_resource_manager().limits.max_tiles = 10000
+        get_resource_manager().limits.max_tiles = 10000  # Tymczasowo zwiększ limit
+
+        # Wyczyść stare kafelki przed tworzeniem nowych
         self.clear_gallery()
+
         self.tiles_container.setUpdatesEnabled(False)
         try:
+            # Wyczyść layout
             while self.tiles_layout.count() > 0:
                 item = self.tiles_layout.takeAt(0)
                 if item.widget():
                     item.widget().setParent(None)
+
             all_items = self.special_folders_list + self.file_pairs_list
-            def get_adaptive_batch_size(total_items: int) -> int:
-                try:
-                    memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
-                    if memory_mb > 800:
-                        return max(1, min(20, total_items))
-                    elif memory_mb > 400:
-                        return max(1, min(50, total_items))
-                    else:
-                        return max(1, min(100, total_items))
-                except Exception:
-                    return max(1, min(50, total_items))
-            batch_size = max(1, get_adaptive_batch_size(len(all_items)))
-            total_batches = (len(all_items) + batch_size - 1) // batch_size
             geometry = self._get_cached_geometry()
             cols = geometry["cols"]
+
+            # Twórz kafelki w batchach - większe batche dla szybkości
+            batch_size = 100  # Zwiększono z 20 na 100 dla szybkości SBSAR
+            total_batches = (len(all_items) + batch_size - 1) // batch_size
+
             for batch_num in range(total_batches):
                 start_idx = batch_num * batch_size
                 end_idx = min(start_idx + batch_size, len(all_items))
+
                 for i in range(start_idx, end_idx):
                     if i < len(self.special_folders_list):
+                        # Twórz kafelki folderów specjalnych
                         folder = self.special_folders_list[i]
-                        widget = SpecialFolderTileWidget(folder.get_folder_name(), folder.get_folder_path(), self.tiles_container)
+                        widget = SpecialFolderTileWidget(folder)
+                        # Dodaj numerację kafelków
                         tooltip = f"[{i + 1}/{len(self.special_folders_list)}] {folder.folder_name}"
                         widget.setToolTip(tooltip)
                         widget.setObjectName(f"SpecialFolderTile_{i + 1}")
-                        self.special_folder_widgets[folder.get_folder_path()] = widget
+                        self.special_folder_widgets[folder.path] = widget
                         self.tiles_layout.addWidget(widget, i // cols, i % cols)
                     else:
+                        # Twórz kafelki par plików
                         file_pair_idx = i - len(self.special_folders_list)
                         file_pair = self.file_pairs_list[file_pair_idx]
+                        # Użyj prawdziwego FileTileWidget zamiast placeholder
                         widget = self.create_tile_widget_for_pair(
                             file_pair, self.tiles_container
                         )
+
                         if widget:
+                            # Podłącz sygnały do kafelka (jak w tile_manager.py)
                             widget.archive_open_requested.connect(
                                 self.main_window.open_archive
                             )
@@ -813,6 +796,7 @@ class GalleryManager:
                             widget.tile_context_menu_requested.connect(
                                 self.main_window._show_file_context_menu
                             )
+
                             if hasattr(widget, "set_tile_number"):
                                 widget.set_tile_number(i + 1, len(self.file_pairs_list))
                             widget.setObjectName(f"FileTile_{i + 1}")
@@ -823,25 +807,33 @@ class GalleryManager:
                                 f"Failed to create widget for {file_pair.get_base_name()}"
                             )
                             continue
-                if (batch_num + 1) % 2 == 0:
+
+                # Rzadsze processEvents - tylko co 5 batchów zamiast każdy
+                if (batch_num + 1) % 5 == 0:  # Co 5 batchów zamiast każdy
                     try:
+                        from PyQt6.QtWidgets import QApplication
+
                         QApplication.processEvents()
-                        if (batch_num + 1) % 10 == 0:
-                            gc.collect()
                     except Exception:
                         pass
-            n = len(all_items)
-            k = cols
-            y = self.current_thumbnail_size
-            x = self.tiles_layout.spacing() + 40
-            z = math.ceil(n / k)
-            total_height = z * (y + x)
+
+            # Ustaw wysokość kontenera - NOWY ALGORYTM wg propozycji użytkownika
+            # n = len(all_items), k = cols, y = current_thumbnail_size, x = spacing + 40
+            n = len(all_items)  # ilość par w folderze
+            k = cols  # ilość kolumn
+            y = self.current_thumbnail_size  # wysokość kafla (thumbnail)
+            x = self.tiles_layout.spacing() + 40  # przerwa między kaflami
+
+            z = math.ceil(n / k)  # ilość par w kolumnie (zaokrąglony w górę)
+            total_height = z * (y + x)  # A = z * (y + x) - usunięto +y
             self.tiles_container.setMinimumHeight(total_height)
             self.tiles_container.adjustSize()
             self.tiles_container.updateGeometry()
             self.scroll_area.updateGeometry()
             if hasattr(self.scroll_area, "verticalScrollBar"):
                 self.scroll_area.verticalScrollBar().setValue(0)
+
+            # Wymuś pełny relayout i popraw polityki rozmiaru
             self.tiles_layout.invalidate()
             self.tiles_container.setSizePolicy(
                 QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
@@ -851,12 +843,15 @@ class GalleryManager:
             if hasattr(self.scroll_area, "widget"):
                 self.scroll_area.widget().adjustSize()
             self.scroll_area.updateGeometry()
+
         except Exception as e:
             logger.error(f"Error in force_create_all_tiles: {e}")
             logger.error(traceback.format_exc())
         finally:
             self.tiles_container.setUpdatesEnabled(True)
             self.tiles_container.update()
+
+            # Przywróć limit TileResourceManager
             get_resource_manager().limits.max_tiles = original_max_tiles
 
     def force_memory_cleanup(self):
