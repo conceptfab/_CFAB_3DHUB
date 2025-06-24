@@ -15,7 +15,7 @@ Ten audyt opiera się na trzech kluczowych filarach, które stanowią najwyższe
 - Optymalizacja czasu wykonania operacji biznesowych
 - Redukcja zużycia pamięci przy przetwarzaniu dużych zbiorów danych
 - Eliminacja wąskich gardeł w pipeline'ach przetwarzania
-- Usprawnienie operacji I/O i cache'owania
+- Usprawnienie operacji I/O i cache'owania, unikanie timeoutów
 - Minimalizacja niepotrzebnych operacji w workflow'ach
 
 #### 2️⃣ **STABILNOŚĆ OPERACJI** 🛡️

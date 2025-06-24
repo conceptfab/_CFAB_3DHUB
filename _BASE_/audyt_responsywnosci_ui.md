@@ -5,17 +5,6 @@
 ## 🎯 CEL
 
 
-
-Wzmocnienie stabilności aplikacji przy pracy z folderami z dużą ilością plików - szczególnie należy skoncentrowac się na procesie tworzenia kafli w galerii. Testy wskazują że przywiększej ilości par plików proces nie jest finalizowany i aplikacja się zawiesza. To jest ostatni przykładowy komunikat: "2025-06-24 21:22:42,899 - src.ui.main_window.worker_manager - INFO - Uruchomiono nowy worker do przetwarzania 1418 par plików (bez resetowania drzewa)". Jest to niedopuszczalne zachowanie był wystarczająco precyzyjnie monitorowany!
-Weryfikacja czy processy które powinny być realizowane sekwencyjnie nie kolidują ze sobą i nie powodują konfliktów. Kluczowe procesy odpowiedzialne za działanie logiki biznesowej powinny być separowane i wykonywane sekwencyjnie.
-Przeanalizowanie czy system cache jest wydajny przy dużych ilościach plików, priorytem jest wydajność i stabilność sztuczne ograniczenia cache mogą być zniesione.
-Likwiadacja sztucznych progów np: dotyczących ilości par w folderze i dopasowywanie do tego algorytmu. Dopuszczalne jest, że jeśli folder zawiera N więcej danych to do jego przetworzenia potrzeba N więcej czasu. Istotne jest zakończenie operacji sukcesem.
-Zapewnienie maksymalnej responsywności i skalowalności UI podczas tworzenia i zarządzania kaflami w galerii:
- - adaptacja liczby kolumn do rozmiaru okna
- - eliminacja błedu - w tym momemncie praktycznie niemożliwa jest zmiana wielkości okna aplikacji
- - przy zmianie wielkości okna i obszaru dostępnego dla widoku galerii, elementy galerii powinny automatucznie wypełniąć jej przestrzeń
-
-
 ### 🏛️ TRZY FILARY AUDYTU LOGIKI BIZNESOWEJ
 
 Ten audyt opiera się na trzech kluczowych filarach, które stanowią najwyższe priorytety każdej analizy procesów biznesowych:
@@ -25,7 +14,7 @@ Ten audyt opiera się na trzech kluczowych filarach, które stanowią najwyższe
 - Optymalizacja czasu wykonania operacji biznesowych
 - Redukcja zużycia pamięci przy przetwarzaniu dużych zbiorów danych
 - Eliminacja wąskich gardeł w pipeline'ach przetwarzania
-- Usprawnienie operacji I/O i cache'owania
+- Usprawnienie operacji I/O i cache'owania, unikanie timeoutów
 - Minimalizacja niepotrzebnych operacji w workflow'ach
 
 #### 2️⃣ **STABILNOŚĆ OPERACJI** 🛡️
