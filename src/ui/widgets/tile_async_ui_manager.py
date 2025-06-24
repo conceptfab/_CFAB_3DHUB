@@ -333,7 +333,7 @@ class TileAsyncUIManager(QObject):
     
     def handle_memory_pressure(self, memory_usage_mb: float):
         """Obsługuje memory pressure."""
-        if memory_usage_mb > 200:
+        if memory_usage_mb > 1000:
             self.performance_warning.emit("HIGH_MEMORY_USAGE", memory_usage_mb)
             logger.warning(f"Memory pressure detected: {memory_usage_mb:.1f}MB")
     

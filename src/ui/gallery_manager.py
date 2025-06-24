@@ -165,7 +165,7 @@ class VirtualScrollingMemoryManager:
         self.disposed_widgets: Set[int] = set()
 
         # Memory thresholds
-        self.max_active_widgets = 200
+        self.max_active_widgets = 10000  # Usunięto sztywny próg 200
         self.cleanup_threshold = 150
 
         # Statistics
@@ -503,59 +503,11 @@ class GalleryManager:
         """
         total_items = len(self.special_folders_list) + len(self.file_pairs_list)
 
-        # Zmniejszono próg z 1500 na 200 - duże foldery używają DataProcessingWorker
-        if total_items <= 200:
-            self.force_create_all_tiles()
-            # Wyłącz wirtualizację po force_create_all_tiles
-            self._virtualization_enabled = False
-            return
-
-        # Dla folderów >200 kafelków używaj wirtualizacji - DataProcessingWorker już działa
-
-        # Dla dużych folderów używaj wirtualizacji
-        self.tiles_container.setUpdatesEnabled(False)
-        try:
-            # 1. Zostaw kafle w layoutu - NAPRAWKA PROBLEMU Z PUSTYMI OKNAMI
-            # Nie usuwaj kafelków z layoutu, bo setParent(None) powoduje osobne okna
-            # Kafle już są utworzone przez DataProcessingWorker i powinny pozostać widoczne
-
-            # 2. Oblicz wymiary wirtualnego layoutu
-            container_width = (
-                self.scroll_area.width() - self.scroll_area.verticalScrollBar().width()
-            )
-            tile_width_with_spacing = (
-                self.current_thumbnail_size + self.tiles_layout.spacing() + 10
-            )
-            cols = max(1, math.ceil(container_width / tile_width_with_spacing))
-
-            if total_items == 0:
-                self.tiles_container.setMinimumHeight(0)
-                return
-
-            # NOWY ALGORYTM wg propozycji użytkownika:
-            # n = total_items, k = cols, y = current_thumbnail_size, x = spacing + 40
-            n = total_items  # ilość par w folderze
-            k = cols  # ilość kolumn
-            y = self.current_thumbnail_size  # wysokość kafla (thumbnail)
-            x = (
-                self.tiles_layout.spacing() + 40
-            )  # przerwa między kaflami (spacing + margines na tekst)
-
-            z = math.ceil(n / k)  # ilość par w kolumnie (zaokrąglony w górę)
-            total_height = z * (y + x)  # A = z * (y + x) - usunięto +y
-
-            # 3. Ustaw rozmiar kontenera, aby scrollbary działały poprawnie
-            self.tiles_container.setMinimumHeight(total_height)
-            self.tiles_container.adjustSize()
-            self.tiles_container.updateGeometry()
-            self.scroll_area.ensureVisible(0, 0)
-            self.scroll_area.viewport().updateGeometry()
-
-            # NIE włączaj wirtualizacji
-            self._virtualization_enabled = False  # ZAWSZE wyłączona
-
-        finally:
-            self.tiles_container.setUpdatesEnabled(True)
+        # USUNIĘTO SZTYWNY PRÓG 200 - teraz działa tak samo dla wszystkich ilości
+        self.force_create_all_tiles()
+        # Wyłącz wirtualizację po force_create_all_tiles
+        self._virtualization_enabled = False
+        return
 
     def _update_visible_tiles(self):
         """Tworzy/usuwa kafelki w zależności od tego, czy są widoczne."""

@@ -250,7 +250,7 @@ class WorkerFactory:
             # Dla usuwania - większe batch'e są szybsze
             if item_count < 50:
                 return 10
-            elif item_count < 200:
+            elif item_count < 10000:
                 return 20
             else:
                 return 30
