@@ -152,20 +152,39 @@ class DataProcessingWorker(UnifiedBaseWorker):
     """
     UNIFIED: Data processing worker converted to UnifiedBaseWorker.
     Eliminates QObject moveToThread pattern for better performance.
+    EMERGENCY: Enhanced with cancel mechanism and memory awareness.
     """
 
     tile_data_ready = None  # sygnały będą podpinane dynamicznie przez signals
     tiles_batch_ready = None
     tiles_refresh_needed = None
 
-    def __init__(
-        self, working_directory: str, file_pairs: List, timeout_seconds: int = 300
-    ):
-        super().__init__(timeout_seconds=timeout_seconds, priority=WorkerPriority.HIGH)
+    def __init__(self, working_directory: str, file_pairs: List):
+        super().__init__(priority=WorkerPriority.HIGH)
         self.working_directory = working_directory
         self.file_pairs = file_pairs or []
         self._metadata_loaded = False
+        self._emergency_cancelled = False
+        self._memory_pressure = False
+
+        # Initialize logger
+        self.logger = logging.getLogger(__name__)
+
+        # Adaptive batch size based on file count
+        self._adaptive_batch_size = self._calculate_adaptive_batch_size(len(file_pairs))
+
         self._validate_inputs()
+
+    def emergency_cancel(self):
+        """Emergency cancellation method."""
+        self.logger.warning(
+            f"EMERGENCY CANCEL triggered for {len(self.file_pairs)} pairs"
+        )
+        self._emergency_cancelled = True
+
+        # Set interrupt flag for base worker
+        if hasattr(self, "_interrupt_event"):
+            self._interrupt_event.set()
 
     def _validate_inputs(self):
         if not self.working_directory:
@@ -174,37 +193,113 @@ class DataProcessingWorker(UnifiedBaseWorker):
             raise ValueError("File pairs list cannot be empty")
 
     def _run_implementation(self):
+        """Enhanced run with memory monitoring and emergency cancel support."""
         total_pairs = len(self.file_pairs)
-        batch_size = self._calculate_adaptive_batch_size(total_pairs)
+        batch_size = self._adaptive_batch_size
 
-        logger.debug(
-            f"DataProcessingWorker starting with {total_pairs} pairs, batch_size={batch_size}"
+        self.logger.debug(
+            f"DataProcessingWorker: {total_pairs} pairs, batch_size={batch_size}"
         )
 
         self.emit_progress(0, f"Processing {total_pairs} file pairs...")
         processed_pairs = []
         current_batch = []
+
         for i, file_pair in enumerate(self.file_pairs):
-            if self.check_interruption():
-                logger.debug(f"DataProcessingWorker INTERRUPTED at index {i}")
+            # Check for emergency cancellation
+            if self._emergency_cancelled:
+                self.logger.warning(f"EMERGENCY CANCEL: Stopped at {i}/{total_pairs}")
+                self.emit_progress(100, "Operation cancelled by user")
                 return
+
+            # Check for interruption
+            if self.check_interruption():
+                self.logger.warning(f"INTERRUPTED: Stopped at {i}/{total_pairs}")
+                return
+
+            # Memory pressure check every 100 items
+            if i % 100 == 0:
+                memory_status = self._check_memory_pressure()
+                if memory_status.get("critical", False):
+                    self.logger.error(f"MEMORY PRESSURE: Stopping at {i}/{total_pairs}")
+                    self._memory_pressure = True
+                    self.emit_error(
+                        f"Operation stopped due to memory pressure at {i}/{total_pairs} pairs"
+                    )
+                    return
+
             current_batch.append(file_pair)
             processed_pairs.append(file_pair)
+
+            # Emit batch when ready
             if len(current_batch) >= batch_size:
-                logger.debug(f"Emitting batch {len(current_batch)} items at index {i}")
-                self._emit_batch_with_metadata(current_batch.copy())
+                self.logger.debug(f"Emitting batch {len(current_batch)} items at {i}")
+                self._emit_batch_with_memory_check(current_batch.copy())
                 current_batch.clear()
+
                 progress = int((i / total_pairs) * 90)
-                self.emit_progress(progress, f"Processed {i+1}/{total_pairs} pairs")
+                self.emit_progress(
+                    progress,
+                    f"Processed {i+1}/{total_pairs} pairs (batch {batch_size})",
+                )
+
+                # Brief pause for UI responsiveness with large datasets
+                if total_pairs > 1000:
+                    import time
+
+                    time.sleep(0.005)  # 5ms pause
+
+        # Emit final batch
         if current_batch:
-            logger.debug(f"Emitting final batch with {len(current_batch)} items")
+            self.logger.debug(f"Emitting final batch: {len(current_batch)} items")
+            self._emit_batch_with_memory_check(current_batch)
             self._emit_batch_with_metadata(current_batch)
 
-        logger.debug(
-            f"DataProcessingWorker COMPLETED - processed {len(processed_pairs)} pairs"
+        self.logger.warning(  # Use WARNING for important completions
+            f"DataProcessingWorker COMPLETED: {len(processed_pairs)}/{total_pairs} pairs"
         )
         self.emit_progress(100, f"Completed processing {total_pairs} file pairs")
         self.signals.finished.emit(processed_pairs)
+
+    def _check_memory_pressure(self) -> dict:
+        """Check memory pressure during processing."""
+        try:
+            import psutil
+
+            memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
+
+            # Memory thresholds
+            warning_threshold = 1200  # 1.2GB
+            critical_threshold = 1500  # 1.5GB
+
+            return {
+                "memory_mb": memory_mb,
+                "warning": memory_mb > warning_threshold,
+                "critical": memory_mb > critical_threshold,
+            }
+        except:
+            return {"memory_mb": 0, "warning": False, "critical": False}
+
+    def _emit_batch_with_memory_check(self, batch: List):
+        """Emit batch with memory pressure awareness."""
+        # Check memory before emitting large batches
+        if len(batch) > 50:
+            memory_status = self._check_memory_pressure()
+            if memory_status.get("warning", False):
+                # Split large batch if memory pressure detected
+                chunk_size = 25
+                for i in range(0, len(batch), chunk_size):
+                    chunk = batch[i : i + chunk_size]
+                    self.signals.tiles_batch_ready.emit(chunk)
+                    # Brief pause between chunks
+                    import time
+
+                    time.sleep(0.01)
+                return
+
+        # Normal batch emission
+        self.signals.tiles_batch_ready.emit(batch)
+        self._load_metadata_async(batch)
 
     def _calculate_adaptive_batch_size(self, total_pairs: int) -> int:
         if total_pairs <= 50:
@@ -229,7 +324,7 @@ class DataProcessingWorker(UnifiedBaseWorker):
             if metadata_applied:
                 self.signals.tiles_refresh_needed.emit(file_pairs)
         except Exception as e:
-            logger.error(f"Async metadata loading failed: {e}")
+            self.logger.error(f"Async metadata loading failed: {e}")
 
 
 class SaveMetadataWorker(AsyncUnifiedBaseWorker):
