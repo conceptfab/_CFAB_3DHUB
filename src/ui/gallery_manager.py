@@ -760,12 +760,12 @@ class GalleryManager:
                     if i < len(self.special_folders_list):
                         # Twórz kafelki folderów specjalnych
                         folder = self.special_folders_list[i]
-                        widget = SpecialFolderTileWidget(folder)
+                        widget = SpecialFolderTileWidget(folder.folder_name, folder.folder_path, self.tiles_container)
                         # Dodaj numerację kafelków
                         tooltip = f"[{i + 1}/{len(self.special_folders_list)}] {folder.folder_name}"
                         widget.setToolTip(tooltip)
                         widget.setObjectName(f"SpecialFolderTile_{i + 1}")
-                        self.special_folder_widgets[folder.path] = widget
+                        self.special_folder_widgets[folder.folder_path] = widget
                         self.tiles_layout.addWidget(widget, i // cols, i % cols)
                     else:
                         # Twórz kafelki par plików
