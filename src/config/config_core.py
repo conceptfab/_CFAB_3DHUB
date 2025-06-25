@@ -51,7 +51,7 @@ class AppConfig:
         "preferences_status_display_ms": "preferences_status_display_ms",
         "supported_archive_extensions": "supported_archive_extensions",
         "supported_preview_extensions": "supported_preview_extensions",
-        "default_thumbnail_size": "thumbnail_size",
+        "default_thumbnail_size": "default_thumbnail_size",
     }
 
     def __new__(cls, *args, **kwargs):

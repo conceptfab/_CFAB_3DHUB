@@ -49,7 +49,42 @@ class WindowInitializationManager:
         )
         self.main_window.initial_slider_position = 50
 
-        # Oblicz początkowy rozmiar miniaturek
+        # PRIORYTET: default_thumbnail_size z konfiguracji użytkownika
+        user_default_size = self.main_window.app_config.get("default_thumbnail_size")
+        if user_default_size is not None:
+            try:
+                validated_size = int(user_default_size)
+                if 20 <= validated_size <= 2000:  # Walidacja zakresu
+                    self.main_window.current_thumbnail_size = validated_size
+                    self.logger.info(f"Użyto default_thumbnail_size z konfiguracji: {validated_size}px")
+
+                    # Opcjonalnie: oblicz pozycję suwaka na podstawie default_thumbnail_size
+                    size_range = self.main_window.max_thumbnail_size - self.main_window.min_thumbnail_size
+                    if size_range > 0:
+                        calculated_position = ((validated_size - self.main_window.min_thumbnail_size) * 100) / size_range
+                        self.main_window.initial_slider_position = max(0, min(100, int(calculated_position)))
+                        self.logger.debug(f"Obliczona pozycja suwaka dla default_thumbnail_size: {self.main_window.initial_slider_position}%")
+                    
+                    # Zakończ - nie obliczaj z suwaka
+                    self.logger.debug(
+                        f"Initial slider position: {self.main_window.initial_slider_position}%, "
+                        f"thumbnail size: {self.main_window.current_thumbnail_size}px (z default_thumbnail_size)"
+                    )
+                    
+                    # Pozostała inicjalizacja okna
+                    self.main_window.setWindowTitle("CFAB_3DHUB")
+                    self.main_window.setMinimumSize(
+                        self.main_window.app_config.window_min_width,
+                        self.main_window.app_config.window_min_height,
+                    )
+                    self._setup_status_bar()
+                    return
+                else:
+                    self.logger.warning(f"default_thumbnail_size poza zakresem 20-2000: {validated_size}")
+            except (ValueError, TypeError) as e:
+                self.logger.error(f"Błędna wartość default_thumbnail_size: {user_default_size} ({e})")
+
+        # FALLBACK: Oblicz z suwaka tylko gdy brak prawidłowego default_thumbnail_size
         size_range = (
             self.main_window.max_thumbnail_size - self.main_window.min_thumbnail_size
         )
@@ -62,6 +97,7 @@ class WindowInitializationManager:
                 self.main_window.min_thumbnail_size
                 + int((size_range * self.main_window.initial_slider_position) / 100)
             )
+            self.logger.debug(f"Obliczono rozmiar z suwaka (brak default_thumbnail_size): {self.main_window.current_thumbnail_size}px")
 
         self.logger.debug(
             f"Initial slider position: {self.main_window.initial_slider_position}%, "

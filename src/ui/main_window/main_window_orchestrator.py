@@ -95,8 +95,7 @@ class MainWindowOrchestrator:
         self.main_window.file_pairs = []
         self.main_window.gallery_tile_widgets = {}
         self.main_window.is_scanning = False
-        self.main_window.thumbnail_size = app_config.DEFAULT_THUMBNAIL_SIZE
-        self.main_window.current_thumbnail_size = app_config.DEFAULT_THUMBNAIL_SIZE
+        # NIE ustawiamy thumbnail_size ani current_thumbnail_size tutaj!
 
         # Flags dla lazy loading
         self.main_window._managers_initialized = False
@@ -115,6 +114,22 @@ class MainWindowOrchestrator:
         # App Config
         self.main_window.app_config = app_config.AppConfig()
         self._core_components["app_config"] = self.main_window.app_config
+
+        # Inicjalizacja rozmiaru miniaturek po utworzeniu app_config
+        user_default_size = self.main_window.app_config.get("default_thumbnail_size")
+        try:
+            validated_size = int(user_default_size) if user_default_size is not None else None
+        except (ValueError, TypeError):
+            validated_size = None
+
+        if validated_size is not None and 20 <= validated_size <= 2000:
+            self.main_window.thumbnail_size = validated_size
+            self.main_window.current_thumbnail_size = validated_size
+            self.logger.info(f"Inicjalizacja z default_thumbnail_size z konfiguracji: {validated_size}px")
+        else:
+            self.main_window.thumbnail_size = app_config.DEFAULT_THUMBNAIL_SIZE
+            self.main_window.current_thumbnail_size = app_config.DEFAULT_THUMBNAIL_SIZE
+            self.logger.info(f"Inicjalizacja z domyślnej stałej: {app_config.DEFAULT_THUMBNAIL_SIZE}px")
 
         # Controller - kluczowy dla wielu innych komponentów
         self.main_window.controller = MainWindowController(self.main_window)
