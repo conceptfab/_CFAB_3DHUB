@@ -40,8 +40,8 @@ class TileConfig:
     
     # === WYMIARY PODSTAWOWE ===
     thumbnail_size: Tuple[int, int] = (250, 250)  # Rozmiar całego kafelka
-    padding: int = 8  # Padding wewnętrzny kafelka
-    tile_margin: int = 0  # Margines zewnętrzny
+    padding: int = 16  # Padding wewnętrzny kafelka
+    tile_margin: int = 6  # Margines zewnętrzny
     
     # === WYMIARY KOMPONENTÓW ===
     filename_max_height: int = 35  # Max wysokość nazwy pliku

@@ -334,7 +334,7 @@ class GalleryTab:
         # Używamy QGridLayout zamiast QHBoxLayout, aby było zgodne z GalleryManager
         tiles_layout = QGridLayout(tiles_container)
         tiles_layout.setContentsMargins(5, 5, 5, 5)
-        tiles_layout.setSpacing(10)
+        tiles_layout.setSpacing(20)  # Przerwa między kafelkami 20px
         tiles_layout.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
         )

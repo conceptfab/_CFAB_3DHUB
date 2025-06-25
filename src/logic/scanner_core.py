@@ -369,7 +369,7 @@ class AdaptiveMemoryManager:
                 f"system may be unstable"
             )
         elif final_memory > self.memory_threshold_mb:
-            logger.warning(
+            logger.debug(
                 f"[{session_id}] HIGH_MEMORY: {final_memory}MB at {total_files_found} files"
             )
         else:

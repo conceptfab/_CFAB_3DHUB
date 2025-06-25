@@ -393,9 +393,8 @@ class LayoutGeometry:
             container_width = (
                 self.scroll_area.width() - self.scroll_area.verticalScrollBar().width()
             )
-            tile_width_spacing = thumbnail_size + self.tiles_layout.spacing() + 10
-            # Używamy y + x dla spójności z nowym algorytmem wysokości
-            tile_height_spacing = thumbnail_size + self.tiles_layout.spacing() + 40
+            tile_width_spacing = thumbnail_size + 20  # spacing layoutu zawsze 20px
+            tile_height_spacing = thumbnail_size + 20  # spacing layoutu zawsze 20px
             cols = max(1, math.ceil(container_width / tile_width_spacing))
 
             params = {
@@ -955,10 +954,10 @@ class GalleryManager:
 
             # Oblicz nowe wartości
             tile_width_spacing = (
-                self.current_thumbnail_size + self.tiles_layout.spacing() + 10
+                self.current_thumbnail_size + 20  # spacing layoutu zawsze 20px
             )
             tile_height_spacing = (
-                self.current_thumbnail_size + self.tiles_layout.spacing() + 40
+                self.current_thumbnail_size + 20  # spacing layoutu zawsze 20px
             )
             cols = max(1, math.ceil(container_width / tile_width_spacing))
 

@@ -49,6 +49,7 @@ class TileStylesheet:
                 background-color: {TileColorScheme.BACKGROUND};
                 border: 1px solid {TileColorScheme.BORDER};
                 border-radius: 6px;
+                margin: 6px;
                 padding: 8px;
                 min-width: 150px;
                 min-height: 190px;
@@ -145,7 +146,7 @@ class TileSizeConstants:
     MIN_THUMBNAIL_HEIGHT = 80
 
     # Odstępy i marginesy
-    TILE_MARGIN = 0
+    TILE_MARGIN = 6
     TILE_PADDING = 8
 
     # Wymiary nazwy pliku

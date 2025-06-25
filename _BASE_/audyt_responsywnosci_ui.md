@@ -4,9 +4,7 @@
 
 ## 🎯 CEL
 
-Sprawdz dlaczego ignorowana jest wartosć "default_thumbnail_size": 136, z pliku config. to ma być wartość nadrzędna. Jeśli suwak jest na 50% to na pozycji 100% wielkosc kafla ma miniaturki ma wynosić 272 px!
-
-
+Chce by kafle w galerii zawsze były oddalone od siebie w pionie i poziomie o stałą wartośc 20px, niezależnie od skali!. Przeszukaj kod pod tym kątem i przygotuj poprawkę.
 
 ### 🏛️ TRZY FILARY AUDYTU LOGIKI BIZNESOWEJ
 
@@ -119,7 +117,7 @@ Ten audyt opiera się na trzech kluczowych filarach, które stanowią najwyższe
 
 **KROK 1: DYNAMICZNE ODKRYWANIE STRUKTURY PROJEKTU**
 
-> ****KRTYCZNE! W celu szybszego zdiagnozowania problemów z UI zalecana jest analiza wsteczna kodu od okna galerii po proces tworzenia par w pliku metadata.json****
+> \***\*KRTYCZNE! W celu szybszego zdiagnozowania problemów z UI zalecana jest analiza wsteczna kodu od okna galerii po proces tworzenia par w pliku metadata.json\*\***
 
 Model MUSI dynamicznie przeanalizować strukturę projektu:
 
