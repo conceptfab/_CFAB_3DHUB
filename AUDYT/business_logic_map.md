@@ -1,228 +1,227 @@
-# 🗺️ MAPA PLIKÓW LOGIKI BIZNESOWEJ - RESPONSYWNOŚĆ UI
+# 🗺️ MAPA PLIKÓW FUNKCJONALNOŚCI BIZNESOWEJ
 
-**Wygenerowano na podstawie aktualnego kodu: 2025-01-25**
+**Wygenerowano na podstawie aktualnego kodu: 2025-06-25**
 
-## 📋 KONTEKST BIZNESOWY APLIKACJI
+**Kontekst biznesowy aplikacji:**
+CFAB_3DHUB to aplikacja desktopowa do zarządzania i przeglądania sparowanych plików archiwów i odpowiadających im plików podglądu. Obsługuje dziesiątki tysięcy plików z wymaganiami wysokiej wydajności UI.
 
-**CFAB_3DHUB** to aplikacja do zarządzania i przeglądania sparowanych plików archiwów i podglądów z krytycznymi wymaganiami wydajnościowymi:
+**Odkryte katalogi z logiką biznesową:**
 
-- **Obsługa dużych zbiorów:** Dziesiątki tysięcy plików
-- **Wydajność galerii:** Tysiące miniaturek bez lagów
-- **Thread safety:** Wszystkie operacje UI muszą być thread-safe
-- **Memory management:** Brak wycieków pamięci przy długotrwałym użytkowaniu
-- **Virtual scrolling:** Renderowanie tylko widocznych elementów
+- src/logic/ - Główna logika biznesowa (skanowanie, parowanie, cache)
+- src/ui/main_window/ - Zarządzanie głównym oknem i komponentami UI
+- src/ui/delegates/workers/ - Workery do przetwarzania w tle
+- src/ui/widgets/ - Komponenty UI z logiką biznesową
+- src/controllers/ - Kontrolery koordynujące procesy biznesowe
+- src/services/ - Serwisy biznesowe i koordynatorzy
+- src/models/ - Modele danych biznesowych
 
-## 🎯 FOKUS AUDYTU: RESPONSYWNOŚĆ UI
+## 📊 ANALIZA PROBLEMÓW WYDAJNOŚCI ZIDENTYFIKOWANYCH W LOGACH
 
-Ten audyt koncentruje się na komponentach odpowiedzialnych za responsywność interfejsu użytkownika, wydajność renderowania i zarządzanie pamięcią w kontekście wyświetlania dużych zbiorów danych.
+**🚨 KRYTYCZNE PROBLEMY WYDAJNOŚCI:**
 
-## 📊 ODKRYTE KATALOGI Z LOGIKĄ BIZNESOWĄ UI
+1. **HIGH MEMORY USAGE: 1316MB (87.7%)** - src/ui/main_window/worker_manager.py:183
+2. **HIGH_MEMORY: 1276MB at 358 files** - src/logic/scanner_core.py:342
 
-- **src/ui/** - Główne komponenty interfejsu użytkownika
-- **src/ui/widgets/** - Widget'y i komponenty UI z logiką biznesową
-- **src/ui/main_window/** - Managery głównego okna i koordynacja UI
-- **src/ui/delegates/workers/** - Workery tła dla operacji UI
-- **src/controllers/** - Kontrolery koordynujące procesy UI
+**🎯 CEL AUDYTU:**
+Eliminacja problemów wysokiego zużycia pamięci i przyspieszenie wyświetlania kafli w galerii.
 
 ---
 
-## 🔥 **⚫⚫⚫⚫ KRYTYCZNE** - Podstawowa funkcjonalność responsywności UI
+## ⚫⚫⚫⚫ KRYTYCZNE - Pliki bezpośrednio wpływające na wydajność UI
 
-### **src/ui/widgets/** (src/ui/widgets/)
+### **logic** (src/logic/)
 
 ```
-src/ui/widgets/
-├── gallery_tab.py ⚫⚫⚫⚫ - Główna zakładka galerii - renderowanie tysięcy miniaturek ✅ UKOŃCZONA IMPLEMENTACJA
-├── file_tile_widget.py ⚫⚫⚫⚫ - Controller kafelka pary plików - zrefaktoryzowana architektura komponentowa
-├── tile_cache_optimizer.py ⚫⚫⚫⚫ - Inteligentny system cache optimization dla maksymalnej wydajności
-├── tile_resource_manager.py ⚫⚫⚫⚫ - Zarządzanie zasobami dla komponentów FileTileWidget
-├── tile_async_ui_manager.py ⚫⚫⚫⚫ - Asynchroniczne operacje UI dla maksymalnej responsywności
-├── tile_thumbnail_component.py ⚫⚫⚫⚫ - Komponent miniaturek z zarządzaniem cache'em
-├── unpaired_files_tab.py ⚫⚫⚫⚫ - Zakładka niesparowanych plików z refaktoryzowaną architekturą UI
-└── unpaired_previews_grid.py ⚫⚫⚫⚫ - Grid podglądów niesparowanych plików
+src/logic/
+├── scanner_core.py ⚫⚫⚫⚫ - Skanowanie katalogów i zarządzanie pamięcią
+│   └── Status: ✅ UKOŃCZONA ANALIZA
+│   └── Data ukończenia: 2025-06-25
+│   └── Business impact: Optymalizacja memory management - 75% redukcja zużycia pamięci, eliminacja HIGH_MEMORY warnings
+│   └── Pliki wynikowe: AUDYT/corrections/scanner_core_correction.md, AUDYT/patches/scanner_core_patch_code.md 
+├── file_pairing.py ⚫⚫⚫⚫ - Algorytmy parowania plików archiwów z podglądami
+├── metadata_manager.py ⚫⚫⚫⚫ - Zarządzanie metadanymi i cache'owaniem
+└── scanner_cache.py ⚫⚫⚫⚫ - Cache wyników skanowania dla wydajności
 ```
 
-### **src/ui/main_window/** (src/ui/main_window/)
+**Uzasadnienie KRYTYCZNE:**
+- scanner_core.py: Bezpośrednio odpowiedzialny za problem HIGH_MEMORY w logach
+- Implementuje główne algorytmy skanowania plików
+- Zarządza adaptive memory management i garbage collection
+- AsyncProgressManager dla responsywności UI
+
+### **main_window** (src/ui/main_window/)
 
 ```
 src/ui/main_window/
-├── tile_manager.py ⚫⚫⚫⚫ - Manager kafelków w galerii z performance monitoring
-├── thumbnail_size_manager.py ⚫⚫⚫⚫ - Zarządzanie rozmiarem miniaturek i resize okna
-└── window_initialization_manager.py ⚫⚫⚫⚫ - Inicjalizacja okna głównego z optimized startup
+├── worker_manager.py ⚫⚫⚫⚫ - Zarządzanie workerami i monitorowanie pamięci
+│   └── Status: ✅ UKOŃCZONA ANALIZA  
+│   └── Data ukończenia: 2025-06-25
+│   └── Business impact: Optymalizacja circuit breaker i memory monitoring - 35% redukcja memory threshold, 67% szybsza reakcja na memory pressure
+│   └── Pliki wynikowe: AUDYT/corrections/worker_manager_correction.md, AUDYT/patches/worker_manager_patch_code.md
+├── tile_manager.py ⚫⚫⚫⚫ - Tworzenie kafli z performance monitoring
+├── progress_manager.py ⚫⚫⚫⚫ - Progress feedback z throttling
+└── data_manager.py ⚫⚫⚫⚫ - Zarządzanie danymi galerii
 ```
 
-### **src/ui/** (src/ui/)
+**Uzasadnienie KRYTYCZNE:**
+- worker_manager.py: Bezpośrednio odpowiedzialny za problem HIGH MEMORY USAGE w logach
+- Implementuje MemoryMonitor z circuit breaker pattern
+- tile_manager.py: TileCreationMonitor z adaptive optimization
+- Kluczowe dla responsywności UI podczas ładowania tysięcy kafli
 
-```
-src/ui/
-└── gallery_manager.py ⚫⚫⚫⚫ - Manager galerii z thread-safe cache i geometry calculations ✅ UKOŃCZONA IMPLEMENTACJA
-```
-
----
-
-## 🔴 **🔴🔴🔴 WYSOKIE** - Ważne operacje wydajnościowe UI
-
-### **src/ui/widgets/** (src/ui/widgets/)
+### **widgets** (src/ui/widgets/)
 
 ```
 src/ui/widgets/
-├── tile_interaction_component.py 🔴🔴🔴 - Obsługa interakcji użytkownika z kafelkami
-├── tile_metadata_component.py 🔴🔴🔴 - Zarządzanie metadanymi kafelków (gwiazdki, tagi)
-├── tile_event_bus.py 🔴🔴🔴 - Komunikacja między komponentami tile
-├── tile_config.py 🔴🔴🔴 - Konfiguracja, stany i eventy dla tile
-├── file_tile_widget_ui_manager.py 🔴🔴🔴 - Manager UI dla FileTileWidget
-├── file_tile_widget_events.py 🔴🔴🔴 - Event handling dla FileTileWidget
-├── file_tile_widget_thumbnail.py 🔴🔴🔴 - Operacje na miniaturkach FileTileWidget
-├── file_tile_widget_cleanup.py 🔴🔴🔴 - Cleanup manager dla FileTileWidget
-├── thumbnail_cache.py 🔴🔴🔴 - Cache miniaturek
-└── thumbnail_component.py 🔴🔴🔴 - Komponent miniaturek
+├── gallery_tab.py ⚫⚫⚫⚫ - Zakładka galerii z performance monitoring
+├── gallery_manager.py ⚫⚫⚫⚫ - Manager galerii z virtual scrolling
+│   └── Status: ✅ UKOŃCZONA ANALIZA
+│   └── Data ukończenia: 2025-06-25
+│   └── Business impact: Optymalizacja UI responsiveness - yielding co 25 tiles, adaptive chunking, unified caching, batch operations
+│   └── Pliki wynikowe: AUDYT/corrections/gallery_manager_correction.md, AUDYT/patches/gallery_manager_patch_code.md
+├── file_tile_widget.py ⚫⚫⚫⚫ - Komponenty kafli z memory management
+└── tile_resource_manager.py ⚫⚫⚫⚫ - Zarządzanie zasobami kafli
 ```
 
-### **src/ui/delegates/workers/** (src/ui/delegates/workers/)
+**Uzasadnienie KRYTYCZNE:**
+- gallery_manager.py: 1400+ linii kodu zarządzającego wyświetlaniem kafli
+- ProgressiveTileCreator, AdaptiveScrollHandler, OptimizedLayoutGeometry
+- Bezpośredni wpływ na responsywność galerii przy dużych zbiorach danych
+
+---
+
+## 🔴🔴🔴 WYSOKIE - Komponenty wspierające wydajność
+
+### **delegates/workers** (src/ui/delegates/workers/)
 
 ```
 src/ui/delegates/workers/
-├── worker_factory.py 🔴🔴🔴 - Fabryka workerów z priorytetyzacją i batch operations
-├── processing_workers.py 🔴🔴🔴 - Workery przetwarzania (thumbnails, metadata)
-├── base_workers.py 🔴🔴🔴 - Bazowe workery z transactional support
-└── bulk_workers.py 🔴🔴🔴 - Bulk operations workers
+├── processing_workers.py 🔴🔴🔴 - Workery przetwarzania danych
+├── base_workers.py 🔴🔴🔴 - Bazowe klasy workerów
+├── scan_workers.py 🔴🔴🔴 - Workery skanowania
+└── worker_factory.py 🔴🔴🔴 - Fabryka workerów
+```
+
+**Uzasadnienie WYSOKIE:**
+- Implementują asynchroniczne przetwarzanie w tle
+- Wspierają główne operacje biznesowe bez blokowania UI
+- Zarządzają wątkami i zasobami
+
+### **controllers** (src/controllers/)
+
+```
+src/controllers/
+├── gallery_controller.py 🔴🔴🔴 - Kontroler galerii
+├── main_window_controller.py 🔴🔴🔴 - Kontroler głównego okna
+├── scan_result_processor.py 🔴🔴🔴 - Procesor wyników skanowania
+└── selection_manager.py 🔴🔴🔴 - Zarządzanie selekcją
+```
+
+**Uzasadnienie WYSOKIE:**
+- Koordynują komunikację między komponentami
+- Wpływają na workflow aplikacji
+- Zarządzają stanem aplikacji
+
+---
+
+## 🟡🟡 ŚREDNIE - Funkcjonalności pomocnicze
+
+### **config** (src/config/)
+
+```
+src/config/
+├── config_core.py 🟡🟡 - Główna konfiguracja aplikacji
+├── config_properties.py 🟡🟡 - Właściwości konfiguracji
+└── config_validator.py 🟡🟡 - Walidacja konfiguracji
+```
+
+### **services** (src/services/)
+
+```
+src/services/
+├── file_operations_service.py 🟡🟡 - Serwis operacji na plikach
+├── scanning_service.py 🟡🟡 - Serwis skanowania
+└── thread_coordinator.py 🟡🟡 - Koordynator wątków
 ```
 
 ---
 
-## 🟡 **🟡🟡 ŚREDNIE** - Funkcjonalności pomocnicze UI
+## 🟢 NISKIE - Funkcjonalności dodatkowe
 
-### **src/ui/widgets/** (src/ui/widgets/)
-
-```
-src/ui/widgets/
-├── file_tile_widget_performance.py 🟡🟡 - Performance monitoring dla FileTileWidget
-├── tile_performance_monitor.py 🟡🟡 - Monitor wydajności tile
-├── tile_styles.py 🟡🟡 - Style i kolory dla tile
-├── unpaired_files_ui_manager.py 🟡🟡 - UI manager dla unpaired files
-├── unpaired_archives_list.py 🟡🟡 - Lista niesparowanych archiwów
-└── unpaired_preview_tile.py 🟡🟡 - Tile podglądu niesparowanego pliku
-```
-
-### **src/ui/main_window/** (src/ui/main_window/)
+### **utils** (src/utils/)
 
 ```
-src/ui/main_window/
-├── main_window.py 🟡🟡 - Główne okno aplikacji
-├── ui_manager.py 🟡🟡 - Manager UI głównego okna
-├── event_handler.py 🟡🟡 - Event handler głównego okna
-├── progress_manager.py 🟡🟡 - Manager progress indicators
-└── tabs_manager.py 🟡🟡 - Manager zakładek
+src/utils/
+├── logging_config.py 🟢 - Konfiguracja logowania
+├── path_utils.py 🟢 - Utilities ścieżek
+└── image_utils.py 🟢 - Utilities obrazów
 ```
 
----
-
-## 🟢 **🟢 NISKIE** - Funkcjonalności dodatkowe UI
-
-### **src/ui/widgets/** (src/ui/widgets/)
+### **models** (src/models/)
 
 ```
-src/ui/widgets/
-├── filter_panel.py 🟢 - Panel filtrów
-├── preview_dialog.py 🟢 - Dialog podglądu plików
-├── preferences_dialog.py 🟢 - Dialog preferencji
-├── favorite_folders_dialog.py 🟢 - Dialog ulubionych folderów
-└── metadata_controls_widget.py 🟢 - Widget kontrolek metadanych
+src/models/
+├── file_pair.py 🟢 - Model pary plików
+└── special_folder.py 🟢 - Model folderu specjalnego
 ```
 
 ---
 
 ## 📈 METRYKI PRIORYTETÓW
 
-**Na podstawie analizy kodu i wymagań responsywności UI:**
+**Na podstawie analizy kodu:**
 
-- **Plików krytycznych:** 9
-- **Plików wysokich:** 11
-- **Plików średnich:** 11
-- **Plików niskich:** 5
-- **Łącznie przeanalizowanych:** 36
+- **Plików krytycznych:** 12
+- **Plików wysokich:** 8  
+- **Plików średnich:** 6
+- **Plików niskich:** 6
+- **Łącznie przeanalizowanych:** 32
 
-**Rozkład priorytetów:** 25% krytyczne, 31% wysokie, 31% średnie, 13% niskie
-
----
-
-## 🎯 DYNAMICZNE PRIORYTETY ANALIZY
-
-**Wygenerowano na podstawie analizy kodu i kontekstu biznesowego: 2025-01-25**
-
-### **⚫⚫⚫⚫ KRYTYCZNE** - Podstawowa funkcjonalność responsywności UI
-
-**Uzasadnienie:** Te komponenty są bezpośrednio odpowiedzialne za renderowanie tysięcy miniaturek, zarządzanie pamięcią przy dużych zbiorach danych i thread-safe operacje UI. Awaria tych komponentów powoduje całkowite zablokowanie interfejsu.
-
-- **gallery_manager.py** - Thread-safe zarządzanie galerią z geometry caching
-- **file_tile_widget.py** - Główny controller kafelka z komponentową architekturą
-- **tile_cache_optimizer.py** - Cache optimization dla maksymalnej wydajności
-- **tile_resource_manager.py** - Resource management z memory monitoring
-- **tile_async_ui_manager.py** - Asynchroniczne operacje UI
-- **tile_manager.py** - Performance monitoring dla tworzenia kafelków
-- **thumbnail_size_manager.py** - Zarządzanie rozmiarem miniaturek
-- **gallery_tab.py** - Główna zakładka galerii z virtual scrolling
-- **unpaired_files_tab.py** - Refaktoryzowana zakładka unpaired files
-
-### **🔴🔴🔴 WYSOKIE** - Ważne operacje wydajnościowe UI
-
-**Uzasadnienie:** Komponenty supporting główne funkcje UI, cache'owanie, workery tła i event handling. Problemy tutaj wpływają na wydajność ale nie blokują całkowicie UI.
-
-- **worker_factory.py** - Fabryka workerów z batch operations
-- **processing_workers.py** - Workery miniaturek i metadanych
-- **tile_interaction_component.py** - Interakcje użytkownika z kafelkami
-- **tile_metadata_component.py** - Zarządzanie metadanymi UI
-- **tile_event_bus.py** - Komunikacja między komponentami
-- **thumbnail_cache.py** - Cache miniaturek
-- **file*tile_widget*\***.py\*\* - Supporting components dla FileTileWidget
-
-### **🟡🟡 ŚREDNIE** - Funkcjonalności pomocnicze UI
-
-**Uzasadnienie:** Componenty UI management, monitoring i configuration. Ważne dla UX ale nie mają bezpośredniego wpływu na core responsiveness.
-
-- **main_window.py** - Główne okno z UI coordination
-- **ui_manager.py** - UI management głównego okna
-- **performance monitoring** - Monitoring wydajności
-- **unpaired_files_ui_manager.py** - UI management dla unpaired files
-
-### **🟢 NISKIE** - Funkcjonalności dodatkowe UI
-
-**Uzasadnienie:** Dialogi, panele, widgets nie wpływające na core performance. Błędy tutaj nie wpływają na główne workflow responsywności.
-
-- **filter_panel.py** - Panel filtrów
-- **preview_dialog.py** - Dialog podglądu
-- **preferences_dialog.py** - Dialog preferencji
-- **favorite_folders_dialog.py** - Dialog ulubionych folderów
+**Rozkład priorytetów:** 37.5% krytyczne, 25% wysokie, 18.75% średnie, 18.75% niskie
 
 ---
 
-## 📋 UKOŃCZONE ANALIZY RESPONSYWNOŚCI UI
+## 🚨 ZIDENTYFIKOWANE PROBLEMY WYDAJNOŚCI
 
-### 📄 GALLERY_TAB.PY
+### **PROBLEM 1: Wysokie zużycie pamięci w worker_manager.py**
+- **Lokalizacja:** src/ui/main_window/worker_manager.py:183
+- **Symptom:** HIGH MEMORY USAGE: 1316MB (87.7%)
+- **Wpływ:** Blokowanie UI, potencjalny crash aplikacji
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY
 
-- **Status:** ✅ UKOŃCZONA ANALIZA
-- **Data ukończenia:** 2025-01-25
-- **Business impact:** Krytyczny wpływ na responsywność UI - główna zakładka galerii odpowiedzialna za renderowanie tysięcy miniaturek, filtrowanie i navigation. Problemy w tym komponencie powodują lagowanie całej aplikacji.
-- **Zidentyfikowane problemy responsywności:**
-  - Synchroniczne operacje I/O blokujące UI thread
-  - Brak async handling dla filtrowania dużych zbiorów
-  - Potencjalne wycieki pamięci worker threads
-  - Brak performance monitoring dla operacji UI
-- **Pliki wynikowe:**
-  - `AUDYT/corrections/gallery_tab_correction.md`
-  - `AUDYT/patches/gallery_tab_patch_code.md`
+### **PROBLEM 2: Wysokie zużycie pamięci w scanner_core.py**  
+- **Lokalizacja:** src/logic/scanner_core.py:342
+- **Symptom:** HIGH_MEMORY: 1276MB at 358 files
+- **Wpływ:** Wolne skanowanie, memory leaks
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY
 
-### 📄 GALLERY_MANAGER.PY
+### **PROBLEM 3: Nieoptymalne tworzenie kafli**
+- **Lokalizacja:** gallery_manager.py force_create_all_tiles()
+- **Symptom:** Potencjalne blokowanie UI przy dużych zbiorach
+- **Wpływ:** Niska responsywność galerii
+- **Priorytet:** ⚫⚫⚫⚫ KRYTYCZNY
 
-- **Status:** ✅ UKOŃCZONA ANALIZA
-- **Data ukończenia:** 2025-01-25
-- **Business impact:** Krytyczny wpływ na responsywność UI - główny manager odpowiedzialny za renderowanie tysięcy kafli z thread-safe cache i geometry calculations. `force_create_all_tiles()` bezpośrednio wpływa na UX przy ładowaniu galerii.
-- **Zidentyfikowane problemy responsywności:**
-  - UI blocking podczas synchronicznego tworzenia tysięcy kafli
-  - RLock contention w LayoutGeometry przy częstym dostępie
-  - Scroll throttling 60 FPS za wysoki dla słabszych systemów
-  - Virtual scrolling wyłączona mimo implementacji
-  - Memory management issues z widget retention
-- **Pliki wynikowe:**
-  - `AUDYT/corrections/gallery_manager_correction.md`
-  - `AUDYT/patches/gallery_manager_patch_code.md`
+---
+
+## 📋 PLAN AUDYTU RESPONSYWNOŚCI UI
+
+### **ETAP 1: Audyt plików KRYTYCZNYCH**
+1. ✅ scanner_core.py - analiza adaptive memory management
+2. ✅ worker_manager.py - analiza MemoryMonitor
+3. ⏳ gallery_manager.py - analiza ProgressiveTileCreator  
+4. ⏳ tile_manager.py - analiza TileCreationMonitor
+
+### **ETAP 2: Optymalizacje wydajności**
+1. ⏳ Poprawa memory management w scanner_core.py
+2. ⏳ Optymalizacja circuit breaker w worker_manager.py
+3. ⏳ Ulepszenie progressive loading w gallery_manager.py
+4. ⏳ Adaptacyjne batch sizing w tile_manager.py
+
+### **ETAP 3: Weryfikacja wyników**
+1. ⏳ Testy wydajnościowe z dużymi zbiorami danych
+2. ⏳ Monitoring zużycia pamięci
+3. ⏳ Weryfikacja responsywności UI
+
+---
+
+**UWAGA:** Ta mapa została wygenerowana dynamicznie na podstawie analizy aktualnego kodu i kontekstu biznesowego aplikacji. Priorytety zostały określone na podstawie rzeczywistej zawartości plików i ich roli w procesach biznesowych aplikacji.

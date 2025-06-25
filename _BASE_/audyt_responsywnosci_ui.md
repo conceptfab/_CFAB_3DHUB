@@ -4,6 +4,13 @@
 
 ## 🎯 CEL
 
+Przyśpieszenie wydajność wyświetlania kafli w galerii!!!
+Wyeliminowanie: 
+2025-06-25 09:27:24,353 - src.ui.main_window.worker_manager - WARNING - HIGH MEMORY USAGE: 1316MB (87.7%)
+2025-06-25 09:29:52,646 - src.logic.scanner_core - WARNING - [b530c0ee] HIGH_MEMORY: 1276MB at 358 files
+APLIKACJA MNIE NIE MIEĆ OGRANICZEŃ ODNOŚNIE UŻYCIA PAMIĘCI! WYDAJNOŚĆ I STABILNOŚĆ JEST NAJWAŻNIEJSZA!
+
+
 
 ### 🏛️ TRZY FILARY AUDYTU LOGIKI BIZNESOWEJ
 
