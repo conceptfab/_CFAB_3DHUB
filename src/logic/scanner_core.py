@@ -3,6 +3,13 @@ Moduł odpowiedzialny za skanowanie folderów.
 
 Ten moduł zawiera funkcje do skanowania katalogów w poszukiwaniu plików
 oraz koordynowania procesu skanowania.
+
+OPTYMALIZACJE DLA SYSTEMÓW Z DUŻĄ ILOŚCIĄ RAM (128GB+):
+- Zwiększone progi pamięci: 2000MB (normalny), 4000MB (krytyczny)
+- Większy cache odwiedzonych katalogów: 50000 wpisów
+- Lepsza responsywność progress callbacks: 0.05s throttling
+- Większe kolejki progress: 100 elementów maksimum
+- Adaptacyjne GC z wyższymi progami wzrostu pamięci: 100MB+
 """
 
 import gc
@@ -42,6 +49,11 @@ MAX_CACHE_AGE_SECONDS = app_config.SCANNER_MAX_CACHE_AGE_SECONDS
 # Memory management configuration
 GC_INTERVAL_FILES = 500  # Zmniejszono z 1000 do 500 dla lepszej responsywności
 MEMORY_MONITORING_ENABLED = True  # Enable memory usage monitoring
+
+# OPTYMALIZACJA DLA SYSTEMÓW Z DUŻĄ ILOŚCIĄ RAM (128GB+)
+# Zwiększone progi pamięci dla systemów z dużą ilością RAM
+MEMORY_THRESHOLD_MB = 2000  # Zwiększono z 800MB do 2000MB dla 128GB systemów
+CRITICAL_MEMORY_THRESHOLD_MB = 4000  # Zwiększono z 1200MB do 4000MB dla 128GB systemów
 
 # Foldery ignorowane podczas skanowania
 IGNORED_FOLDERS = {
@@ -85,7 +97,7 @@ class RateLimitedLogger:
         self.rate_limit_seconds = rate_limit_seconds
         self._last_log_times = {}
 
-    def debug_throttled(self, message: str, key: str = None):
+    def debug_throttled(self, message: str, key: Optional[str] = None):
         """Debug logging with throttling based on message key."""
         if not self.logger.isEnabledFor(logging.DEBUG):
             return
@@ -119,10 +131,10 @@ rate_limited_logger = RateLimitedLogger(logger, rate_limit_seconds=1.0)
 
 # PATCH 2: Async Progress Callback Wrapper with Adaptive Queue Sizing
 class AsyncProgressManager:
-    """Non-blocking progress manager with adaptive queue sizing."""
+    """Non-blocking progress manager with adaptive queue sizing optimized for high-RAM systems."""
 
     def __init__(
-        self, progress_callback: Optional[Callable], throttle_interval: float = 0.1
+        self, progress_callback: Optional[Callable], throttle_interval: float = 0.05  # Zmniejszono z 0.1 do 0.05 dla lepszej responsywności
     ):
         self.original_callback = progress_callback
         self.throttle_interval = throttle_interval
@@ -131,9 +143,9 @@ class AsyncProgressManager:
         self._last_percent = -1
 
         # Adaptive callback queue sizing based on system load
-        base_queue_size = 10
+        base_queue_size = 20  # Zwiększono z 10 do 20 dla lepszej przepustowości
         # Increase queue size for better throughput on faster systems
-        adaptive_queue_size = min(50, max(10, base_queue_size * 2))
+        adaptive_queue_size = min(100, max(20, base_queue_size * 3))  # Zwiększono maksimum z 50 do 100
         self._callback_queue = queue.Queue(maxsize=adaptive_queue_size)
         self._stop_event = threading.Event()
         self._dropped_updates = 0
@@ -148,7 +160,7 @@ class AsyncProgressManager:
         """Background thread for non-blocking callback execution with backpressure handling."""
         while not self._stop_event.is_set():
             try:
-                percent, message = self._callback_queue.get(timeout=0.1)
+                percent, message = self._callback_queue.get(timeout=0.05)  # Zmniejszono z 0.1 do 0.05 dla lepszej responsywności
                 if self.original_callback:
                     try:
                         self.original_callback(percent, message)
@@ -161,7 +173,7 @@ class AsyncProgressManager:
                 logger.error(f"Callback worker error: {e}")
 
     def report_progress(self, percent: int, message: str, force: bool = False):
-        """Non-blocking progress reporting with improved throttling."""
+        """Non-blocking progress reporting with improved throttling for high-RAM systems."""
         if not self.original_callback:
             return
 
@@ -171,7 +183,7 @@ class AsyncProgressManager:
             if (
                 not force
                 and current_time - self._last_progress_time < self.throttle_interval
-                and abs(percent - self._last_percent) < 3  # Zmniejszono z 5 do 3 dla smoother updates
+                and abs(percent - self._last_percent) < 1  # Zmniejszono z 3 do 1 dla bardziej precyzyjnych aktualizacji
             ):
                 return
 
@@ -188,7 +200,7 @@ class AsyncProgressManager:
                 self._callback_queue.get_nowait()
                 self._callback_queue.put_nowait((percent, message))
                 self._dropped_updates += 1
-                if self._dropped_updates % 10 == 0:
+                if self._dropped_updates % 20 == 0:  # Zwiększono z 10 do 20 dla mniej logów
                     logger.debug(f"Progress queue full, dropped {self._dropped_updates} updates")
             except (queue.Empty, queue.Full):
                 # If still can't add, drop this update
@@ -236,11 +248,11 @@ class ThreadSafeProgressManager:
         return self._async_manager.create_scaled_progress_callback(scale_factor)
 
 
-# PATCH 1: Thread Safety Fix w ThreadSafeVisitedDirs with optimized size
+# PATCH 1: Thread Safety Fix w ThreadSafeVisitedDirs with optimized size for high-RAM systems
 class ThreadSafeVisitedDirs:
-    """Thread-safe visited directories tracking with optimized memory usage."""
+    """Thread-safe visited directories tracking with optimized memory usage for high-RAM systems."""
 
-    def __init__(self, max_size: int = 10000):  # Zmniejszono z 50000 do 10000
+    def __init__(self, max_size: int = 50000):  # Zwiększono z 10000 do 50000 dla systemów z dużą RAM
         self._visited = {}  # Changed: dict to track access order for LRU
         self._access_counter = 0
         self._lock = RLock()
@@ -299,19 +311,20 @@ class ThreadSafeVisitedDirs:
 
 # PATCH 3: Adaptive Memory Cleanup with increased threshold
 class AdaptiveMemoryManager:
-    """Adaptive memory management with smart GC intervals and higher thresholds."""
+    """Adaptive memory management with smart GC intervals and higher thresholds for high-RAM systems."""
 
     def __init__(self):
         self.base_gc_interval = 500  # Zmniejszono z 1000 do 500
         self.max_gc_interval = 2500  # Proporcjonalnie zmniejszono
         self.min_gc_interval = 100
-        self.memory_threshold_mb = 800  # Zwiększono z 400MB do 800MB
-        self.critical_memory_threshold_mb = 1200  # Nowy próg krytyczny
+        # Używa globalnych progów zoptymalizowanych dla 128GB systemów
+        self.memory_threshold_mb = MEMORY_THRESHOLD_MB
+        self.critical_memory_threshold_mb = CRITICAL_MEMORY_THRESHOLD_MB
         self.last_gc_files = 0
         self.last_memory_usage = 0
 
     def should_perform_gc(self, total_files_found: int) -> bool:
-        """Determine if GC should be performed based on adaptive criteria with higher thresholds."""
+        """Determine if GC should be performed based on adaptive criteria with higher thresholds for high-RAM systems."""
         current_memory = self._get_memory_usage()
         files_since_gc = total_files_found - self.last_gc_files
 
@@ -326,7 +339,7 @@ class AdaptiveMemoryManager:
 
         # Calculate adaptive interval based on memory growth rate
         memory_growth = current_memory - self.last_memory_usage
-        if memory_growth > 50:  # Significant memory growth (50MB+)
+        if memory_growth > 100:  # Zwiększono z 50MB do 100MB dla systemów z dużą RAM
             # More frequent GC if memory is growing fast
             adaptive_interval = max(
                 self.min_gc_interval, self.base_gc_interval - (memory_growth * 2)
@@ -343,7 +356,7 @@ class AdaptiveMemoryManager:
         session_id: str,
         progress_manager: Optional[AsyncProgressManager] = None,
     ):
-        """Enhanced memory cleanup with adaptive intervals and better logging."""
+        """Enhanced memory cleanup with adaptive intervals and better logging for high-RAM systems."""
         if not self.should_perform_gc(total_files_found):
             return
 
@@ -362,7 +375,7 @@ class AdaptiveMemoryManager:
         self.last_gc_files = total_files_found
         self.last_memory_usage = final_memory
 
-        # Enhanced logging with better thresholds
+        # Enhanced logging with better thresholds for high-RAM systems
         if final_memory > self.critical_memory_threshold_mb:
             logger.error(
                 f"[{session_id}] CRITICAL_MEMORY: {final_memory}MB at {total_files_found} files - "
@@ -757,7 +770,8 @@ def collect_files_streaming(
         normalized_dir = normalize_path(directory)
 
         if force_refresh:
-            cache.clear_cache()
+            # Naprawka: używam właściwej metody do czyszczenia cache
+            cache.clear()
 
         if not path_exists(normalized_dir) or not os.path.isdir(normalized_dir):
             logger.warning(f"[{session_id}] Katalog {normalized_dir} nie istnieje")

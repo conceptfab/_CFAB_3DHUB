@@ -4,7 +4,18 @@
 
 ## 🎯 CEL
 
-Chce by kafle w galerii zawsze były oddalone od siebie w pionie i poziomie o stałą wartośc 20px, niezależnie od skali!. Przeszukaj kod pod tym kątem i przygotuj poprawkę.
+Zindetyfikuj i napraw nastepujace problemy:
+- przy folderach z większą ilościa par błędnie rysowana jest galeria, kafle nachodzą na siebie, ilość kolumn nie odpowiada szerokości okna galerii
+- przy folderach z większą ilością par rysowany jest na początku w galerii tylko jeden rząd kafli!!!
+- po chuj jakaś virtualizacja w kodzie skoro jest wyłączona!!!!! 2025-06-25 12:59:41,781 - src.ui.gallery_manager - INFO - Gallery loaded: 0 active widgets, virtualization: False
+
+- olbrzymim problemem jest wydajność a włąściwie jaj brak
+- co to są za komunikaty?? 
+2025-06-25 12:53:28,346 - src.logic.scanner_core - WARNING - CRITICAL_MEMORY: 1904MB - forcing immediate GC
+2025-06-25 12:53:28,474 - src.logic.scanner_core - ERROR - [8497f3ed] CRITICAL_MEMORY: 1895MB at 207 files - system may be unstable
+2025-06-25 12:53:28,475 - src.logic.scanner_core - WARNING - CRITICAL_MEMORY: 1899MB - forcing immediate GC
+2025-06-25 12:53:28,597 - src.logic.scanner_core - ERROR - [8497f3ed] CRITICAL_MEMORY: 1888MB at 208 files - system may be unstable
+skaner powinen zrealizowć swoje zadanie i po jego skończeniu dopiero mają być tworzone i rysowane kafle, to wyglada tak jakby wszystko było robione naraz! to jest niedopuszczalne!!! mam 128 GB RAM, ograniczenia pamięci mnie nie interesują!
 
 ### 🏛️ TRZY FILARY AUDYTU LOGIKI BIZNESOWEJ
 
