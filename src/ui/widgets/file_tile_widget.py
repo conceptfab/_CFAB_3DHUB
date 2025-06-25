@@ -81,6 +81,9 @@ class FileTileWidget(QWidget):
         """
         super().__init__(parent)
 
+        if parent is None:
+            logger.error(f"TWORZENIE FileTileWidget BEZ PARENTA! To spowoduje puste okno!")
+
         # Thread-safe flaga do sprawdzania czy widget został zniszczony
         self._is_destroyed = False
         self._destroy_lock = threading.RLock()

@@ -234,6 +234,30 @@ class FileExplorerTab(QWidget):
         )
         tools_layout.addWidget(self.refresh_files_button)
 
+        # Dodaj przycisk czyszczenia cache
+        self.clear_cache_button = QPushButton("🗑️ Wyczyść Cache")
+        self.clear_cache_button.setToolTip("Czyści cache skanowania dla tego folderu")
+        self.clear_cache_button.clicked.connect(self._clear_folder_cache)
+        self.clear_cache_button.setStyleSheet("""
+            QPushButton {
+                background-color: #DC2626;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #B91C1C;
+            }
+            QPushButton:pressed {
+                background-color: #991B1B;
+            }
+        """)
+        
+        # Dodaj do layoutu
+        tools_layout.addWidget(self.clear_cache_button)
+
         # Dodaj więcej narzędzi w przyszłości
         tools_layout.addStretch()
 
@@ -492,6 +516,7 @@ class FileExplorerTab(QWidget):
 
             # Zaktualizuj UI
             self._update_files_list(path)
+            self._update_folder_info()  # Dodaj informacje o cache
             # NAPRAWKA: Usunięto _update_path_label - zbędne po usunięciu header panelu
 
             # Zaktualizuj label z folderem - pokaż pełną ścieżkę
@@ -652,3 +677,75 @@ class FileExplorerTab(QWidget):
         except Exception as e:
             logging.debug(f"Could not get resolution for {file_path}: {e}")
             return ""
+
+    def _clear_folder_cache(self):
+        """Czyści cache skanowania dla tego folderu."""
+        if not self.current_path or not os.path.exists(self.current_path):
+            QMessageBox.information(self, "Informacja", "Najpierw wybierz folder do wyczyszczenia cache.")
+            return
+            
+        try:
+            from src.logic.persistent_cache_manager import get_persistent_cache_manager
+            from src.logic.scanner_cache import cache
+            
+            # Wyczyść persistent cache
+            persistent_cache = get_persistent_cache_manager()
+            persistent_cache.clear_cache(self.current_path)
+            
+            # Wyczyść memory cache
+            cache.remove_entry(self.current_path, pattern_match=True)
+            
+            QMessageBox.information(
+                self, 
+                "Cache wyczyszczony", 
+                f"Wyczyszczono cache dla folderu:\n{self.current_path}\n\n"
+                "Cache będzie odbudowany przy następnym skanowaniu."
+            )
+            
+            logging.info(f"Wyczyszczono cache dla folderu: {self.current_path}")
+            
+            # Zaktualizuj informacje o folderze
+            self._update_folder_info()
+            
+        except Exception as e:
+            logging.error(f"Błąd czyszczenia cache dla {self.current_path}: {e}")
+            QMessageBox.critical(
+                self, "Błąd", f"Błąd podczas czyszczenia cache:\n{e}"
+            )
+
+    def _update_folder_info(self):
+        """Aktualizuje informacje o folderze."""
+        if not self.current_path or not os.path.exists(self.current_path):
+            self.folder_info_label.setText("Nie wybrano folderu")
+            return
+
+        try:
+            # Podstawowe informacje o folderze
+            folder_name = os.path.basename(self.current_path)
+            file_count = len([f for f in os.listdir(self.current_path) if os.path.isfile(os.path.join(self.current_path, f))])
+            
+            # Informacje o cache
+            cache_info = ""
+            try:
+                from src.logic.persistent_cache_manager import get_persistent_cache_manager
+                persistent_cache = get_persistent_cache_manager()
+                cache_stats = persistent_cache.get_cache_stats(self.current_path)
+                
+                if cache_stats.get('exists'):
+                    cache_size_mb = cache_stats['cache_size_bytes'] / (1024 * 1024)
+                    age_days = cache_stats.get('age_days', 0)
+                    pairs_count = cache_stats.get('pairs_count', 0)
+                    
+                    cache_info = f" | Cache: {cache_size_mb:.1f}MB, {pairs_count} par, {age_days:.1f}d"
+                else:
+                    cache_info = " | Cache: brak"
+            except Exception as e:
+                cache_info = f" | Cache: błąd ({e})"
+            
+            self.folder_info_label.setText(
+                f"📁 {folder_name} | {file_count} plików{cache_info}"
+            )
+            
+        except Exception as e:
+            self.folder_info_label.setText(f"Błąd: {e}")
+            logger.error(f"Błąd aktualizacji informacji o folderze: {e}")

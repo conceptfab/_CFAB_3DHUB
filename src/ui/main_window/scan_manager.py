@@ -214,7 +214,32 @@ class ScanManager:
         self.main_window.gallery_manager.clear_gallery()
 
         if found_pairs:
-            self.main_window.worker_manager.start_data_processing_worker(found_pairs)
+            # Sprawdź czy cache istnieje - jeśli tak, nie uruchamiaj workera
+            from src.logic.persistent_cache_manager import get_persistent_cache_manager
+            persistent_cache = get_persistent_cache_manager()
+            
+            # Sprawdź czy cache jest aktualny dla tego folderu
+            cached_result = persistent_cache.get_scan_result(
+                self.main_window.controller.current_directory, "first_match"
+            )
+            
+            if cached_result:
+                # Cache istnieje - użyj danych z cache bez uruchamiania workera
+                logging.info(f"Używam cache dla {self.main_window.controller.current_directory} - pomijam DataProcessingWorker")
+                
+                # Zaktualizuj kontroler z danymi z cache
+                cached_pairs, cached_archives, cached_previews, cached_special_folders = cached_result
+                self.main_window.controller.current_file_pairs = cached_pairs
+                self.main_window.controller.unpaired_archives = cached_archives
+                self.main_window.controller.unpaired_previews = cached_previews
+                self.main_window.controller.special_folders = cached_special_folders
+                
+                # Zakończ bez uruchamiania workera
+                self.main_window.tile_manager.on_tile_loading_finished()
+            else:
+                # Cache nie istnieje - uruchom worker
+                logging.info(f"Cache nie istnieje dla {self.main_window.controller.current_directory} - uruchamiam DataProcessingWorker")
+                self.main_window.worker_manager.start_data_processing_worker(found_pairs)
         else:
             self.main_window.tile_manager.on_tile_loading_finished()
 

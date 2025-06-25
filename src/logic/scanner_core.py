@@ -35,6 +35,7 @@ from src.logic.file_pairing import (
 )
 from src.logic.metadata_manager import MetadataManager
 from src.logic.scanner_cache import cache
+from src.logic.persistent_cache_manager import get_persistent_cache_manager
 from src.models.file_pair import FilePair
 from src.models.special_folder import SpecialFolder
 from src.utils.path_utils import normalize_path, path_exists
@@ -827,15 +828,28 @@ def _get_cached_scan_result(
     force_refresh: bool,
     progress_manager: AsyncProgressManager,
 ) -> Optional[Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]]]:
-    """Simplified cache retrieval."""
+    """Enhanced cache retrieval z persistent cache."""
     if use_cache and not force_refresh:
-        cached_result = cache.get_scan_result(directory, pair_strategy)
+        # Najpierw sprawdź persistent cache
+        persistent_cache = get_persistent_cache_manager()
+        cached_result = persistent_cache.get_scan_result(directory, pair_strategy)
+        
         if cached_result:
-            logger.debug(f"CACHE HIT: Zwracam zbuforowany wynik dla {directory}")
+            logger.info(f"PERSISTENT CACHE HIT: Załadowano z .cache dla {directory}")
             progress_manager.report_progress(
-                100, f"Używam cache dla {directory}", force=True
+                100, f"Używam persistent cache dla {directory}", force=True
             )
             return cached_result
+        
+        # Fallback do memory cache
+        cached_result = cache.get_scan_result(directory, pair_strategy)
+        if cached_result:
+            logger.debug(f"MEMORY CACHE HIT: Zwracam zbuforowany wynik dla {directory}")
+            progress_manager.report_progress(
+                100, f"Używam memory cache dla {directory}", force=True
+            )
+            return cached_result
+            
     return None
 
 
@@ -845,8 +859,16 @@ def _save_scan_result(
     result: Tuple[List[FilePair], List[str], List[str], List[SpecialFolder]],
     use_cache: bool,
 ):
-    """Simplified cache saving."""
+    """Enhanced cache saving z persistent cache."""
     if use_cache:
+        # Zapisz do persistent cache
+        persistent_cache = get_persistent_cache_manager()
+        file_pairs, unpaired_archives, unpaired_previews, special_folders = result
+        persistent_cache.save_scan_result(
+            directory, pair_strategy, file_pairs, unpaired_archives, unpaired_previews, special_folders
+        )
+        
+        # Fallback do memory cache
         cache.set_scan_result(directory, pair_strategy, result)
 
 

@@ -204,14 +204,8 @@ class TileManager:
         """
         Tworzy pojedynczy kafelek dla pary plików.
         """
-        if not file_pair:
-            self.logger.warning("Otrzymano None zamiast FilePair")
-            return None
-
-        if not hasattr(file_pair, "archive_path") or not file_pair.archive_path:
-            self.logger.error(
-                f"Nieprawidłowy FilePair - brak archive_path: {file_pair}"
-            )
+        if not file_pair or not hasattr(file_pair, "archive_path") or not file_pair.archive_path:
+            self.logger.warning(f"POMINIĘTO tworzenie kafelka: file_pair={file_pair}")
             return None
 
         gallery_manager = self._gallery_manager or self.main_window.gallery_manager
@@ -389,9 +383,33 @@ class TileManager:
         # Disable UI updates during initial setup
         self.main_window.gallery_manager.tiles_container.setUpdatesEnabled(False)
 
-        # Start worker with enhanced monitoring
-        worker_mgr = self._worker_manager or self.main_window.worker_manager
-        worker_mgr.start_data_processing_worker(file_pairs)
+        # Sprawdź czy cache istnieje - jeśli tak, nie uruchamiaj workera
+        from src.logic.persistent_cache_manager import get_persistent_cache_manager
+        persistent_cache = get_persistent_cache_manager()
+        
+        # Sprawdź czy cache jest aktualny dla tego folderu
+        cached_result = persistent_cache.get_scan_result(
+            self.main_window.controller.current_directory, "first_match"
+        )
+        
+        if cached_result:
+            # Cache istnieje - użyj danych z cache bez uruchamiania workera
+            self.logger.info(f"Używam cache dla {self.main_window.controller.current_directory} - pomijam DataProcessingWorker")
+            
+            # Zaktualizuj kontroler z danymi z cache
+            cached_pairs, cached_archives, cached_previews, cached_special_folders = cached_result
+            self.main_window.controller.current_file_pairs = cached_pairs
+            self.main_window.controller.unpaired_archives = cached_archives
+            self.main_window.controller.unpaired_previews = cached_previews
+            self.main_window.controller.special_folders = cached_special_folders
+            
+            # Zakończ bez uruchamiania workera
+            self.on_tile_loading_finished()
+        else:
+            # Cache nie istnieje - uruchom worker
+            self.logger.info(f"Cache nie istnieje dla {self.main_window.controller.current_directory} - uruchamiam DataProcessingWorker")
+            worker_mgr = self._worker_manager or self.main_window.worker_manager
+            worker_mgr.start_data_processing_worker(file_pairs)
 
     def cancel_tile_creation(self):
         """Cancel ongoing tile creation with graceful cleanup."""

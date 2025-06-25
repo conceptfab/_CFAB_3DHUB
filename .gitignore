@@ -165,5 +165,6 @@ $RECYCLE.BIN/
 cache/
 temp/
 thumbnails/
+.cache/  # Persistent cache folders
 local_config.json
 user_settings.json

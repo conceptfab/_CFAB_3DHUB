@@ -1043,28 +1043,30 @@ class GalleryManager:
             self.tiles_container.setUpdatesEnabled(True)
             self.tiles_container.update()
 
-    def create_tile_widget_for_pair(self, file_pair: FilePair, parent_widget):
+    def create_tile_widget_for_pair(self, file_pair: FilePair, parent_widget=None):
         """
         Tworzy pojedynczy kafelek dla pary plików - thread safe.
         """
         try:
-            # Przekaż _current_size_tuple jako krotkę (width, height)
+            # WALIDACJA: Nie twórz kafelka jeśli file_pair jest None lub nie ma archive_path
+            if not file_pair or not hasattr(file_pair, 'archive_path') or not file_pair.archive_path:
+                logger.warning(f"POMINIĘTO tworzenie kafelka: file_pair={file_pair}")
+                return None
+            # Wymuś parenta na tiles_container jeśli nie podano
+            if parent_widget is None:
+                parent_widget = self.tiles_container
             tile = FileTileWidget(
                 file_pair,
                 self._current_size_tuple,
                 parent_widget,
                 skip_resource_registration=True,
             )
-            # NIE ukrywaj kafli na starcie
             tile.setVisible(True)  # ZAWSZE widoczne
-
-            # Thread-safe dodanie do słownika
             with self._widgets_lock:
                 self.gallery_tile_widgets[file_pair.get_archive_path()] = tile
-
             return tile
         except Exception as e:
-            logger.error(f"Błąd tworzenia kafelka dla {file_pair.get_base_name()}: {e}")
+            logger.error(f"Błąd tworzenia kafelka dla {getattr(file_pair, 'base_name', file_pair)}: {e}")
             return None
 
     def create_all_tiles_progressive(self):

@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QScreen
-from PyQt6.QtWidgets import QDialog, QLabel, QSizePolicy, QVBoxLayout
+from PyQt6.QtWidgets import QDialog, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from typing import Optional
 
 
 class PreviewDialog(QDialog):
@@ -8,7 +9,7 @@ class PreviewDialog(QDialog):
     Okno dialogowe do wyświetlania większego podglądu obrazu.
     """
 
-    def __init__(self, pixmap: QPixmap, parent=None):
+    def __init__(self, pixmap: QPixmap, parent: Optional[QWidget] = None):
         """
         Inicjalizuje PreviewDialog.
 
@@ -17,6 +18,10 @@ class PreviewDialog(QDialog):
             parent (QWidget, optional): Widget nadrzędny. Defaults to None.
         """
         super().__init__(parent)
+        if parent is None:
+            import logging
+            logging.error(f"TWORZENIE PreviewDialog BEZ PARENTA! To spowoduje puste okno!")
+
         self.setWindowTitle("Podgląd Obrazu")
 
         self.original_pixmap = pixmap

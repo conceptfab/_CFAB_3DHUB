@@ -275,9 +275,37 @@ class FilePair:
 
     def get_color_tag(self) -> Optional[str]:
         """
-        Zwraca tag kolorystyczny przypisany do pliku.
+        Zwraca aktualny tag koloru.
 
         Returns:
-            Tag kolorystyczny lub None, jeśli nie ustawiono.
+            Tag koloru lub None, jeśli nie jest ustawiony.
         """
         return self.color_tag
+
+    def to_dict(self) -> dict:
+        """Konwertuje FilePair na słownik do serializacji JSON."""
+        return {
+            'archive_path': self.archive_path,
+            'preview_path': self.preview_path,
+            'working_directory': self.working_directory,
+            'base_name': self.base_name,
+            'archive_size_bytes': self.archive_size_bytes,
+            'stars': self.stars,
+            'color_tag': self.color_tag
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'FilePair':
+        """Tworzy FilePair ze słownika (deserializacja JSON)."""
+        file_pair = cls(
+            archive_path=data['archive_path'],
+            preview_path=data.get('preview_path'),
+            working_directory=data['working_directory']
+        )
+        
+        # Przywróć metadane
+        file_pair.archive_size_bytes = data.get('archive_size_bytes')
+        file_pair.stars = data.get('stars', 0)
+        file_pair.color_tag = data.get('color_tag')
+        
+        return file_pair

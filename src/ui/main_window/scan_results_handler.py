@@ -10,6 +10,7 @@ from PyQt6.QtCore import QTimer
 
 # Import clear_cache usunięty bo nieużywany
 from src.utils.path_utils import normalize_path
+from src.logic.persistent_cache_manager import get_persistent_cache_manager
 
 
 class ScanResultsHandler:
@@ -187,9 +188,31 @@ class ScanResultsHandler:
                 )
 
             if scan_result.file_pairs:
-                self.main_window.worker_manager.start_data_processing_worker_without_tree_reset(
-                    scan_result.file_pairs
-                )
+                # Sprawdź czy cache istnieje - jeśli tak, nie uruchamiaj workera
+                persistent_cache = get_persistent_cache_manager()
+                
+                # Sprawdź czy cache jest aktualny dla tego folderu
+                cached_result = persistent_cache.get_scan_result(normalized_path, "first_match")
+                
+                if cached_result:
+                    # Cache istnieje - użyj danych z cache bez uruchamiania workera
+                    self.logger.info(f"Używam cache dla {normalized_path} - pomijam DataProcessingWorker")
+                    
+                    # Zaktualizuj kontroler z danymi z cache
+                    cached_pairs, cached_archives, cached_previews, cached_special_folders = cached_result
+                    self.main_window.controller.current_file_pairs = cached_pairs
+                    self.main_window.controller.unpaired_archives = cached_archives
+                    self.main_window.controller.unpaired_previews = cached_previews
+                    self.main_window.controller.special_folders = cached_special_folders
+                    
+                    # Zakończ bez uruchamiania workera
+                    self.finish_folder_change_without_tree_reset()
+                else:
+                    # Cache nie istnieje - uruchom worker
+                    self.logger.info(f"Cache nie istnieje dla {normalized_path} - uruchamiam DataProcessingWorker")
+                    self.main_window.worker_manager.start_data_processing_worker_without_tree_reset(
+                        scan_result.file_pairs
+                    )
             else:
                 self.finish_folder_change_without_tree_reset()
 
