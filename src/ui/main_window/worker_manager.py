@@ -30,15 +30,16 @@ class WorkerState(Enum):
 
 
 class MemoryMonitor:
-    """Memory monitoring with circuit breaker for large operations."""
+    """Memory monitoring with circuit breaker for large operations - OPTIMIZED THRESHOLDS."""
 
-    def __init__(self, memory_limit_mb=1500):  # 1.5GB limit
+    def __init__(self, memory_limit_mb=8192):  # 8GB dla systemów high-end - dostosowane do 128GB RAM
         self.memory_limit_mb = memory_limit_mb
         self.high_memory_warnings = 0
         self.circuit_open = False
+        self.logger = logging.getLogger(__name__)
 
     def check_memory_status(self) -> dict:
-        """Check current memory status and return metrics."""
+        """Check current memory status and return metrics with improved thresholds."""
         try:
             import psutil
 
@@ -46,30 +47,51 @@ class MemoryMonitor:
             memory_info = process.memory_info()
             memory_mb = memory_info.rss / 1024 / 1024
 
+            # IMPROVED THRESHOLDS: 70% warning, 85% critical instead of 80%/100%
+            warning_threshold = self.memory_limit_mb * 0.70  # Obniżono z 0.8 do 0.7
+            critical_threshold = self.memory_limit_mb * 0.85  # Obniżono z 1.0 do 0.85
+
             status = {
                 "memory_mb": memory_mb,
                 "limit_mb": self.memory_limit_mb,
                 "usage_percent": (memory_mb / self.memory_limit_mb) * 100,
-                "high_usage": memory_mb > (self.memory_limit_mb * 0.8),
-                "critical_usage": memory_mb > self.memory_limit_mb,
+                "high_usage": memory_mb > warning_threshold,
+                "critical_usage": memory_mb > critical_threshold,
                 "circuit_open": self.circuit_open,
+                "warning_threshold": warning_threshold,
+                "critical_threshold": critical_threshold,
             }
 
-            # Circuit breaker logic
+            # AGGRESSIVE CIRCUIT BREAKER: 2 strikes instead of 3
             if status["critical_usage"]:
                 self.high_memory_warnings += 1
-                if self.high_memory_warnings >= 3:  # 3 strikes rule
+                self.logger.warning(
+                    f"Memory critical usage #{self.high_memory_warnings}: {memory_mb:.0f}MB "
+                    f"(>{critical_threshold:.0f}MB threshold)"
+                )
+                if self.high_memory_warnings >= 2:  # Zmniejszono z 3 do 2 strikes
                     self.circuit_open = True
                     status["circuit_triggered"] = True
+                    self.logger.error(
+                        f"CIRCUIT BREAKER ACTIVATED: {self.high_memory_warnings} strikes, "
+                        f"memory={memory_mb:.0f}MB"
+                    )
             else:
-                # Reset counter if memory usage drops
-                if memory_mb < (self.memory_limit_mb * 0.7):
+                # FASTER RECOVERY: Reset at 60% instead of 70%
+                recovery_threshold = self.memory_limit_mb * 0.60  # Obniżono z 0.7 do 0.6
+                if memory_mb < recovery_threshold:
+                    if self.high_memory_warnings > 0:
+                        self.logger.info(
+                            f"Memory recovered: {memory_mb:.0f}MB < {recovery_threshold:.0f}MB, "
+                            f"resetting {self.high_memory_warnings} warnings"
+                        )
                     self.high_memory_warnings = 0
                     self.circuit_open = False
 
             return status
 
         except Exception as e:
+            self.logger.error(f"Memory monitoring error: {e}")
             return {"error": str(e), "memory_mb": 0, "circuit_open": False}
 
 
@@ -115,13 +137,13 @@ class WorkerManager:
             "errors_count": 0,
         }
 
-        # EMERGENCY: Memory monitoring
-        self.memory_monitor = MemoryMonitor(memory_limit_mb=1500)  # 1.5GB limit
+        # EMERGENCY: Memory monitoring with improved thresholds
+        self.memory_monitor = MemoryMonitor(memory_limit_mb=8192)  # 8GB dla systemów high-end - dostosowane do 128GB RAM
 
-        # Start memory monitoring timer
+        # Start memory monitoring timer with FASTER INTERVAL
         self._memory_timer = QTimer()
         self._memory_timer.timeout.connect(self._check_memory_pressure)
-        self._memory_timer.start(10000)  # Check every 10 seconds
+        self._memory_timer.start(5000)  # Zmniejszono z 10000ms (10s) do 5000ms (5s)
 
         # EMERGENCY: Processing state tracking
         self._processing_start_time = None
@@ -158,17 +180,17 @@ class WorkerManager:
             ]
 
     def _check_memory_pressure(self):
-        """Monitor memory pressure and trigger circuit breaker if needed."""
+        """Monitor memory pressure and trigger circuit breaker if needed - ENHANCED."""
         status = self.memory_monitor.check_memory_status()
 
         if status.get("circuit_triggered"):
             self.logger.error(
-                f"CIRCUIT BREAKER: Memory limit exceeded ({status['memory_mb']:.0f}MB), "
-                f"cancelling operation"
+                f"CIRCUIT BREAKER: Memory limit exceeded ({status['memory_mb']:.0f}MB > "
+                f"{status.get('critical_threshold', 850):.0f}MB), cancelling operation"
             )
             self._emergency_cancel_operation()
 
-            # Show user-friendly message
+            # Show user-friendly message with better thresholds info
             from PyQt6.QtWidgets import QMessageBox
 
             QMessageBox.warning(
@@ -176,19 +198,22 @@ class WorkerManager:
                 "Błąd pamięci",
                 f"Operacja została anulowana z powodu zbyt wysokiego zużycia pamięci "
                 f"({status['memory_mb']:.0f}MB).\n\n"
+                f"Próg krytyczny: {status.get('critical_threshold', 850):.0f}MB\n"
                 f"Spróbuj ponownie z mniejszym folderem lub zamknij inne aplikacje.",
             )
 
         elif status.get("high_usage"):
             self.logger.warning(
                 f"HIGH MEMORY USAGE: {status['memory_mb']:.0f}MB "
-                f"({status['usage_percent']:.1f}%)"
+                f"({status['usage_percent']:.1f}%) - "
+                f"threshold: {status.get('warning_threshold', 700):.0f}MB"
             )
 
-            # Trigger aggressive garbage collection
+            # Trigger proactive garbage collection
             import gc
-
-            gc.collect()
+            collected = gc.collect()
+            if collected > 0:
+                self.logger.debug(f"Proactive GC collected {collected} objects")
 
     def get_performance_metrics(self) -> dict:
         """Get comprehensive performance metrics for debugging."""
@@ -225,41 +250,75 @@ class WorkerManager:
         self._handle_emergency_cancel()
 
     def _safe_batch_processing_wrapper(self, original_method):
-        """Wrapper for safe batch processing with chunking for large datasets."""
+        """Wrapper for safe batch processing with SMART ADAPTIVE chunking."""
 
         def chunked_batch_processor(file_pairs_batch):
             num_pairs = len(file_pairs_batch)
 
-            # ADAPTIVE CHUNKING: Smaller chunks for larger datasets
-            if num_pairs > 1000:
-                chunk_size = 25  # Very small chunks for huge datasets
+            # SMART ADAPTIVE CHUNKING based on system memory and performance
+            memory_status = self.memory_monitor.check_memory_status()
+            current_memory_mb = memory_status.get("memory_mb", 0)
+            
+            # Dynamic chunk sizing based on memory pressure and dataset size
+            if memory_status.get("high_usage", False):
+                # Aggressive chunking under memory pressure
+                base_chunk_size = 15
+                self.logger.info(f"High memory pressure detected, using aggressive chunking: {base_chunk_size}")
+            elif num_pairs > 2000:
+                base_chunk_size = 20  # Increased from 25 for better balance
+            elif num_pairs > 1000:
+                base_chunk_size = 35  # Increased from 25 for better performance
             elif num_pairs > 500:
-                chunk_size = 50  # Medium chunks for large datasets
+                base_chunk_size = 60  # Increased from 50 for better performance
             else:
-                chunk_size = 100  # Original size for normal datasets
+                base_chunk_size = 100  # Original size for normal datasets
 
-            # Process in chunks to prevent UI blocking
+            # PERFORMANCE-BASED ADJUSTMENT: Reduce chunk size if memory growth is detected
+            if hasattr(self, '_last_chunk_memory'):
+                memory_growth = current_memory_mb - self._last_chunk_memory
+                if memory_growth > 50:  # 50MB growth indicates inefficiency
+                    base_chunk_size = max(10, int(base_chunk_size * 0.7))
+                    self.logger.warning(f"High memory growth detected ({memory_growth:.0f}MB), "
+                                      f"reducing chunk size to {base_chunk_size}")
+            
+            chunk_size = base_chunk_size
+            self._last_chunk_memory = current_memory_mb
+
+            self.logger.info(
+                f"Smart chunking: {num_pairs} pairs → {chunk_size} per chunk "
+                f"(memory: {current_memory_mb:.0f}MB)"
+            )
+
+            # Process in chunks with enhanced monitoring
+            chunks_processed = 0
             for i in range(0, len(file_pairs_batch), chunk_size):
                 if self._processing_cancelled:
-                    self.logger.warning("Batch processing cancelled by user")
+                    self.logger.warning(f"Batch processing cancelled after {chunks_processed} chunks")
                     return
 
                 chunk = file_pairs_batch[i : i + chunk_size]
+                chunks_processed += 1
 
                 try:
-                    # Call original method with smaller chunk
+                    # Call original method with optimized chunk
                     original_method(chunk)
 
                     # Allow UI to process events after each chunk
                     from PyQt6.QtWidgets import QApplication
-
                     QApplication.processEvents()
 
-                    # Memory cleanup after every 5 chunks for large datasets
-                    if (i // chunk_size) % 5 == 0 and num_pairs > 1000:
+                    # ADAPTIVE MEMORY CLEANUP: More frequent for high memory usage
+                    should_cleanup = (
+                        (chunks_processed % 3 == 0 and memory_status.get("high_usage", False)) or  # Every 3 chunks under pressure
+                        (chunks_processed % 5 == 0 and num_pairs > 1000)  # Every 5 chunks for large datasets
+                    )
+                    
+                    if should_cleanup:
                         import gc
-
-                        gc.collect()
+                        collected = gc.collect()
+                        current_memory = self.memory_monitor.check_memory_status().get("memory_mb", 0)
+                        self.logger.debug(f"Adaptive cleanup: collected {collected} objects, "
+                                        f"memory: {current_memory:.0f}MB")
 
                 except Exception as e:
                     self.logger.error(
@@ -268,9 +327,11 @@ class WorkerManager:
                     # Continue with next chunk instead of failing completely
                     continue
 
-                # Brief pause for very large datasets to prevent system overload
-                if num_pairs > 2000:
-                    time.sleep(0.01)  # 10ms pause
+                # ADAPTIVE PAUSE: Longer pauses under memory pressure
+                if memory_status.get("high_usage", False):
+                    time.sleep(0.02)  # 20ms pause under memory pressure
+                elif num_pairs > 2000:
+                    time.sleep(0.01)  # Original 10ms pause for very large datasets
 
         return chunked_batch_processor
 

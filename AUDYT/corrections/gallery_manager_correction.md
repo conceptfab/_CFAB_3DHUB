@@ -1,3 +1,4 @@
+**⚠️ KRYTYCZNE: Przed rozpoczęciem pracy zapoznaj się z ogólnymi zasadami refaktoryzacji, poprawek i testowania opisanymi w pliku [refactoring_rules.md](refactoring_rules.md).**
 # 📋 ETAP 3: GALLERY_MANAGER.PY - ANALIZA I REFAKTORYZACJA
 
 **Data analizy:** 2025-06-25
