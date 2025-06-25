@@ -140,6 +140,8 @@ class FileTileWidget(QWidget):
         if file_pair:
             self.update_data(file_pair)
 
+        logger.info(f"[FileTileWidget] __init__: default_thumbnail_size={default_thumbnail_size}")
+
     def _is_widget_destroyed(self) -> bool:
         """Thread-safe sprawdzenie czy widget został zniszczony."""
         with self._destroy_lock:
@@ -439,6 +441,8 @@ class FileTileWidget(QWidget):
             self._event_bus.emit_event(
                 TileEvent.SIZE_CHANGED, {"old_size": old_size, "new_size": size_tuple}
             )
+
+        logger.info(f"[FileTileWidget] after set_thumbnail_size: self.thumbnail_size={self.thumbnail_size}, sizeHint={self.sizeHint()}, height={self.height()}")
 
     def _update_filename_display(self):
         if self._quick_destroyed_check():

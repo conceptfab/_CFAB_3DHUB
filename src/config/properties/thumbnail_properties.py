@@ -36,6 +36,18 @@ class ThumbnailProperties:
         Oblicza rozmiar miniaturek na podstawie pozycji suwaka i zakresu.
         Optymalizacja - cache wyniku w _thumbnail_size.
         """
+        # PRIORYTET: default_thumbnail_size z configu użytkownika
+        default_size = self._config.get("default_thumbnail_size")
+        if default_size is not None:
+            try:
+                validated = int(default_size)
+                if validated < 20 or validated > 2000:
+                    raise ValueError("default_thumbnail_size poza zakresem 20-2000")
+                self._thumbnail_size = (validated, validated)
+                self.logger.info(f"[THUMBNAIL] Użyto default_thumbnail_size z configu: {validated}px")
+                return
+            except Exception as e:
+                self.logger.error(f"Błędna wartość default_thumbnail_size: {default_size} ({e}) – używam suwaka/min/max")
         slider_pos = self._config.get("thumbnail_slider_position", 50)
         min_size = self._config.get(
             "min_thumbnail_size", ConfigDefaults.get_default_value("min_thumbnail_size")
@@ -177,6 +189,16 @@ class ThumbnailProperties:
         Returns:
             Tuple z rozmiarem miniaturek (width, height)
         """
+        # PRIORYTET: default_thumbnail_size z configu użytkownika
+        default_size = self._config.get("default_thumbnail_size")
+        if default_size is not None:
+            try:
+                validated = int(default_size)
+                if validated < 20 or validated > 2000:
+                    raise ValueError("default_thumbnail_size poza zakresem 20-2000")
+                return (validated, validated)
+            except Exception as e:
+                self.logger.error(f"Błędna wartość default_thumbnail_size: {default_size} ({e}) – używam suwaka/min/max")
         return self._thumbnail_size
 
     def get_current_thumbnail_width(self) -> int:
@@ -186,6 +208,16 @@ class ThumbnailProperties:
         Returns:
             Szerokość miniaturek w pikselach
         """
+        # PRIORYTET: default_thumbnail_size z configu użytkownika
+        default_size = self._config.get("default_thumbnail_size")
+        if default_size is not None:
+            try:
+                validated = int(default_size)
+                if validated < 20 or validated > 2000:
+                    raise ValueError("default_thumbnail_size poza zakresem 20-2000")
+                return validated
+            except Exception as e:
+                self.logger.error(f"Błędna wartość default_thumbnail_size: {default_size} ({e}) – używam suwaka/min/max")
         return self._thumbnail_size[0]
 
     def reset_to_defaults(self) -> bool:

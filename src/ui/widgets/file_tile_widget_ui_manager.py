@@ -88,8 +88,7 @@ class FileTileWidgetUIManager:
             TileSizeConstants.MIN_THUMBNAIL_HEIGHT,
         )
 
-        thumb_size = self._calculate_thumbnail_size()
-        self.widget.thumbnail_label.setFixedSize(thumb_size, thumb_size)
+        self.widget.thumbnail_label.setFixedSize(self.widget.thumbnail_size[0], self.widget.thumbnail_size[1])
         self.widget.thumbnail_label.setScaledContents(True)
         self.widget.thumbnail_label.setFrameShape(QFrame.Shape.NoFrame)
         self.widget.thumbnail_label.setStyleSheet(

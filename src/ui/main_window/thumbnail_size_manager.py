@@ -60,10 +60,7 @@ class ThumbnailSizeManager:
                 if hasattr(self.main_window, "resize_timer"):
                     self.main_window.resize_timer.start()
 
-                self.logger.debug(
-                    f"Nowy rozmiar miniatur: {self.main_window.current_thumbnail_size}px "
-                    f"(slider: {slider_value}%)"
-                )
+                self.logger.debug(f"[THUMBNAIL SIZE] min={self.main_window.min_thumbnail_size}, max={self.main_window.max_thumbnail_size}, slider={slider_value}%, current={self.main_window.current_thumbnail_size}px")
                 self.logger.debug(
                     f"Zakres rozmiarów: {self.main_window.min_thumbnail_size}-"
                     f"{self.main_window.max_thumbnail_size}px"

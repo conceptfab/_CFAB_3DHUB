@@ -70,7 +70,15 @@ class SpecialFolderTileWidget(QWidget):
         icon_path = self._get_icon_path()
         if icon_path and os.path.exists(icon_path):
             pixmap = QPixmap(icon_path)
-            self.icon_label.setPixmap(pixmap)
+            # 🚨 KRYTYCZNE: Przeskaluj ikonę od razu przy ładowaniu
+            scaled_pixmap = pixmap.scaled(
+                self.thumbnail_size,
+                self.thumbnail_size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self.icon_label.setPixmap(scaled_pixmap)
+            logger.debug(f"Załadowano ikonę PNG: {icon_path}")
         else:
             msg = f"Nie znaleziono ikony folderu w '{icon_path}'. Używam emoji."
             logger.warning(msg)
@@ -79,7 +87,10 @@ class SpecialFolderTileWidget(QWidget):
             self.icon_label.setFont(font)
             self.icon_label.setText("📁")
 
+        # 🚨 KRYTYCZNE: Ustaw rozmiary etykiety ikony
         self.icon_label.setMinimumSize(self.thumbnail_size, self.thumbnail_size)
+        self.icon_label.setMaximumSize(self.thumbnail_size, self.thumbnail_size)
+        self.icon_label.setScaledContents(False)  # Nie rozciągaj zawartości
 
         # Etykieta z nazwą folderu
         self.name_label = QLabel(self.folder_name, self)
@@ -113,17 +124,26 @@ class SpecialFolderTileWidget(QWidget):
         
         self.thumbnail_size = thumbnail_size
         self.icon_label.setMinimumSize(thumbnail_size, thumbnail_size)
+        self.icon_label.setMaximumSize(thumbnail_size, thumbnail_size)
 
         # Skalowanie pixmapy, jeśli istnieje
         if self.icon_label.pixmap():
-            pixmap = self.icon_label.pixmap()
-            scaled_pixmap = pixmap.scaled(
+            original_pixmap = self.icon_label.pixmap()
+            scaled_pixmap = original_pixmap.scaled(
                 thumbnail_size,
                 thumbnail_size,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
             self.icon_label.setPixmap(scaled_pixmap)
+        else:
+            # Jeśli to emoji, zaktualizuj rozmiar czcionki proporcjonalnie
+            if self.icon_label.text() == "📁":
+                font = self.icon_label.font()
+                # Emoji font size proporcjonalny do thumbnail_size
+                emoji_size = max(12, min(72, int(thumbnail_size * 0.4)))
+                font.setPointSize(emoji_size)
+                self.icon_label.setFont(font)
 
         self.setMinimumSize(thumbnail_size + 10, thumbnail_size + 30)
         self.setMaximumSize(thumbnail_size + 10, thumbnail_size + 60)

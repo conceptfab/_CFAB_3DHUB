@@ -4,11 +4,7 @@
 
 ## 🎯 CEL
 
-Przyśpieszenie wydajność wyświetlania kafli w galerii!!!
-Wyeliminowanie: 
-2025-06-25 09:27:24,353 - src.ui.main_window.worker_manager - WARNING - HIGH MEMORY USAGE: 1316MB (87.7%)
-2025-06-25 09:29:52,646 - src.logic.scanner_core - WARNING - [b530c0ee] HIGH_MEMORY: 1276MB at 358 files
-APLIKACJA MNIE NIE MIEĆ OGRANICZEŃ ODNOŚNIE UŻYCIA PAMIĘCI! WYDAJNOŚĆ I STABILNOŚĆ JEST NAJWAŻNIEJSZA!
+Sprawdz dlaczego ignorowana jest wartosć "default_thumbnail_size": 136, z pliku config. to ma być wartość nadrzędna. Jeśli suwak jest na 50% to na pozycji 100% wielkosc kafla ma miniaturki ma wynosić 272 px!
 
 
 
